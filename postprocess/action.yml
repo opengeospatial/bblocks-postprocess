@@ -1,0 +1,29 @@
+name: OGC Building Blocks postprocess
+description: Generates documentation and output files for OGC building blocks
+author: Alejandro Villar
+inputs:
+  register_file:
+    description: JSON register file for output
+    default: register.json
+  items_dir:
+    description: Root directory where building blocks (subdirectories with bblock.json) are located
+    default: registereditems
+  generated_docs_path:
+    description: Output directory for documentation
+    default: generateddocs
+  base_url:
+    description: Base URL to use for asset linkage
+    default: https://raw.githubusercontent.com/${{github.repository}}/${{github.ref_name}}
+  fail_on_error:
+    description: Whether to fail on errors
+    default: 'false'
+
+runs:
+  using: docker
+  image: docker://ghcr.io/avillar/bblocks-postprocess
+  args:
+    - ${{ inputs.register_file }}
+    - ${{ inputs.items_dir }}
+    - ${{ inputs.generated_docs_path }}
+    - ${{ inputs.base_url }}
+    - ${{ inputs.fail_on_error }}

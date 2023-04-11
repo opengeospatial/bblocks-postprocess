@@ -1,0 +1,38 @@
+name: OGC Building Blocks full postprocess
+description: Generates documentation and output files for OGC building blocks, including Slate templats
+author: Alejandro Villar
+inputs:
+  register_file:
+    description: JSON register file for output
+    default: register.json
+  items_dir:
+    description: Root directory where building blocks (subdirectories with bblock.json) are located
+    default: registereditems
+  generated_docs_path:
+    description: Output directory for documentation
+    default: generateddocs
+  base_url:
+    description: Base URL to use for asset linkage
+    default: https://raw.githubusercontent.com/${{github.repository}}/${{github.ref_name}}
+  fail_on_error:
+    description: Whether to fail on errors
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Run OGC BBR postprocess
+      uses: avillar/bblocks-postprocess/postprocess@master
+      with:
+        register_file: ${{ inputs.register_file }}
+        items_dir: ${{ inputs.items_dir }}
+        generated_docs_path: ${{ inputs.generated_docs_path }}
+        base_url: ${{ inputs.base_url }}
+        fail_on_error: ${{ inputs.fail_on_error }}
+    - name: Generate Slate documentation
+      run: |
+        SOURCE_PATH=/src/ogc/bblocks/slate-assets
+        BUILD_PATH="$(realpath "${{ inputs.generated_docs_path }}")/slate-build"
+        docker run --rm -v "${SOURCE_PATH}:/srv/slate/source" \
+          -v "${BUILD_PATH}:/srv/slate/build" slatedocs/slate build
+      shell: bash
