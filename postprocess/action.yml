@@ -17,6 +17,9 @@ inputs:
   fail_on_error:
     description: Whether to fail on errors
     default: 'false'
+  annotated_path:
+    description: Output path for annotated schemas
+    default: 'annotated'
 
 runs:
   using: docker
@@ -27,3 +30,4 @@ runs:
     - ${{ inputs.generated_docs_path }}
     - ${{ inputs.base_url }}
     - ${{ inputs.fail_on_error }}
+    - ${{ inputs.annotated_path }}

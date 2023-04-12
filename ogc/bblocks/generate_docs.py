@@ -53,10 +53,7 @@ class DocGenerator:
 
     def generate_doc(self, bblock: BuildingBlock, base_url: str = None):
         for template in self.templates:
-            tpl_out = self.output_dir / template.lang
-            if self.id_prefix:
-                tpl_out /= Path(*(self.id_prefix.split('.')[1:]))
-            tpl_out /= bblock.subdirs / template.filename
+            tpl_out = self.output_dir / template.lang / bblock.subdirs / template.filename
             tpl_out.parent.mkdir(parents=True, exist_ok=True)
             bblock_rel = relpath(bblock.files_path, tpl_out.parent)
             assets_rel = relpath(bblock.assets_path, tpl_out.parent) if bblock.assets_path else None

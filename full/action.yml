@@ -17,6 +17,9 @@ inputs:
   fail_on_error:
     description: Whether to fail on errors
     default: 'false'
+  annotated_path:
+    description: Output path for annotated schemas
+    default: 'annotated'
 
 runs:
   using: composite
@@ -29,10 +32,12 @@ runs:
         generated_docs_path: ${{ inputs.generated_docs_path }}
         base_url: ${{ inputs.base_url }}
         fail_on_error: ${{ inputs.fail_on_error }}
+        annotated_path: ${{ inputs.annotated_path }}
     - name: Generate Slate documentation
       run: |
-        SOURCE_PATH=/src/ogc/bblocks/slate-assets
-        BUILD_PATH="$(realpath "${{ inputs.generated_docs_path }}")/slate-build"
+        GENDOCS_PATH="$(realpath "${{ inputs.generated_docs_path }}")"
+        SOURCE_PATH="${GENDOCS_PATH}/slate/"
+        BUILD_PATH="${GENDOCS_PATH}/slate-build/"
         docker run --rm -v "${SOURCE_PATH}:/srv/slate/source" \
           -v "${BUILD_PATH}:/srv/slate/build" slatedocs/slate build
       shell: bash

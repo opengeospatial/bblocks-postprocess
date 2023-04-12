@@ -10,5 +10,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+        with:
+          repository: ${{ github.event.repository.owner.login }}/bblock-template
       - name: OGC BB postprocess
         uses: avillar/bblocks-postprocess/full@master
+      - name: Log resulting files
+        run: |
+          find -type f -not -path './.git/*' | sort

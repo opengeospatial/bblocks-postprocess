@@ -4,7 +4,7 @@ WORKDIR /src
 COPY requirements.txt metadata-schema.yaml /
 
 RUN apk update && \
-    apk add git && \
+    apk add git rsync && \
     python -m pip install --upgrade pip && \
     python -m pip install -r /requirements.txt
 

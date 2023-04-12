@@ -35,6 +35,8 @@ class BuildingBlock:
             self.metadata['itemIdentifier'] = identifier
 
         self.subdirs = rel_path
+        if '.' in self.identifier:
+            self.subdirs = Path(*(identifier.split('.')[1:])) / self.subdirs
 
         fp = metadata_file.parent
         self.files_path = fp
