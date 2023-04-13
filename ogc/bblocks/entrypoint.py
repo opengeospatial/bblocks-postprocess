@@ -92,7 +92,7 @@ if __name__ == '__main__':
                 follow_refs=False)
             for annotated_schema in annotate_schema.dump_annotated_schemas(annotator, annotated_path):
                 ctx_builder = annotate_schema.ContextBuilder(fn=annotated_schema)
-                jsonld_fn = annotated_schema.parent / 'contest.jsonld'
+                jsonld_fn = annotated_schema.parent / 'context.jsonld'
                 with open(jsonld_fn, 'w') as f:
                     json.dump(ctx_builder.context, f, indent=2)
 
