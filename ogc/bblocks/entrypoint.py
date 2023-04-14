@@ -116,6 +116,12 @@ if __name__ == '__main__':
     print('Annotating schemas', file=sys.stderr)
     for fn in ('schema.yaml', 'schema.json'):
         for schema in items_dir.glob(f"**/{fn}"):
+
+            # Skip schemas inside "build" or "annotated" directories
+            schema_path_parts = schema.parts
+            if any(x in schema_path_parts for x in ('build', 'annotated')):
+                continue
+
             try:
                 print(f" - Schema {schema}", file=sys.stderr)
                 annotator = annotate_schema.SchemaAnnotator(
@@ -128,7 +134,7 @@ if __name__ == '__main__':
                     print(f"  - {context_fn}", file=sys.stderr)
                     with open(context_fn, 'w') as f:
                         json.dump(ctx_builder.context, f, indent=2)
-            except:
+            except Exception as e:
                 if fail_on_error:
                     raise
                 import traceback
