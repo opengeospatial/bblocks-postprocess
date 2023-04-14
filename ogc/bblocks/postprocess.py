@@ -15,7 +15,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 generated_docs_path: str | Path = 'generateddocs',
                 templates_dir: str | Path = 'templates',
                 fail_on_error: bool = False,
-                id_prefix: str = ''):
+                id_prefix: str = '',
+                annotated_path: str | Path = 'annotated'):
 
     doc_generator = DocGenerator(output_dir=generated_docs_path,
                                  templates_dir=templates_dir,
@@ -58,7 +59,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                                        filter_ids=filter_ids,
                                        metadata_schema_file=metadata_schema,
                                        fail_on_error=fail_on_error,
-                                       prefix=id_prefix):
+                                       prefix=id_prefix,
+                                       annotated_path=annotated_path):
         print(f"Processing building block {building_block.identifier}", file=sys.stderr)
         if do_postprocess(building_block):
             output_bblocks.append(building_block.metadata)

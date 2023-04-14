@@ -21,49 +21,42 @@ if __name__ == '__main__':
     parser.add_argument(
         '--register-file',
         default='build/register.json',
-        nargs='?',
         help='Output JSON Building Blocks register document',
     )
 
     parser.add_argument(
         '--items-dir',
         default='.',
-        nargs='?',
         help='Registered items directory',
     )
 
     parser.add_argument(
         '--generated-docs-path',
         default='build/generateddocs',
-        nargs='?',
         help='Output directory for generated documentation',
     )
 
     parser.add_argument(
         '--base-url',
         default='',
-        nargs='?',
         help='Base URL for hyperlink generation',
     )
 
     parser.add_argument(
         '--fail-on-error',
         default='false',
-        nargs='?',
         help='Fail run if an error is encountered',
     )
 
     parser.add_argument(
         '--annotated-path',
         default='build/annotated',
-        nargs='?',
         help='Fail run if an error is encountered',
     )
 
     parser.add_argument(
         '--clean',
         default='false',
-        nargs='?',
         help='Delete output directories and files before generating the new ones',
     )
 
@@ -149,7 +142,8 @@ if __name__ == '__main__':
                 generated_docs_path=args.generated_docs_path,
                 templates_dir=templates_dir,
                 fail_on_error=fail_on_error,
-                id_prefix=id_prefix)
+                id_prefix=id_prefix,
+                annotated_path=annotated_path)
 
     # 3. Uplift register.json
     print(f"Running semantic uplift of {register_file}", file=sys.stderr)

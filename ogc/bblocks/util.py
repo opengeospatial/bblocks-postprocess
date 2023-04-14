@@ -24,7 +24,7 @@ class BuildingBlock:
     def __init__(self, identifier: str, metadata_file: Path,
                  rel_path: Path,
                  metadata_schema: Any | None = None,
-                 root_path: Path = Path()):
+                 annotated_path: Path = Path()):
         self.identifier = identifier
         with open(metadata_file) as f:
             self.metadata = json.load(f)
@@ -63,7 +63,7 @@ class BuildingBlock:
             self.schema = None
             self.schema_contents = None
 
-        annotated_path = root_path / 'annotated' / self.subdirs
+        annotated_path = annotated_path / self.subdirs
         if annotated_path.is_dir():
             self.annotated_path = annotated_path
             annotated_schema = annotated_path / 'schema.yaml'
@@ -82,7 +82,7 @@ class BuildingBlock:
 
 
 def load_bblocks(registered_items_path: Path,
-                 root_path: Path = Path(),
+                 annotated_path: Path = Path(),
                  filter_ids: str | list[str] | None = None,
                  metadata_schema_file: str | Path | None = None,
                  fail_on_error: bool = False,
@@ -93,13 +93,13 @@ def load_bblocks(registered_items_path: Path,
         metadata_schema = None
 
     for metadata_file in sorted(registered_items_path.glob("**/bblock.json")):
-        bblock_id, bblock_rel_path = get_bblock_identifier(metadata_file, root_path, prefix)
+        bblock_id, bblock_rel_path = get_bblock_identifier(metadata_file, registered_items_path, prefix)
         if not filter_ids or bblock_id in filter_ids:
             try:
                 yield BuildingBlock(bblock_id, metadata_file,
                                     metadata_schema=metadata_schema,
                                     rel_path=bblock_rel_path,
-                                    root_path=root_path)
+                                    annotated_path=annotated_path)
             except Exception as e:
                 if fail_on_error:
                     raise
