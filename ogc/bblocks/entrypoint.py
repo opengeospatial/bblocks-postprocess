@@ -84,20 +84,20 @@ if __name__ == '__main__':
     """, file=sys.stderr)
 
     register_file = Path(args.register_file)
-    jsonld_fn = register_file.with_suffix('.jsonld') \
+    register_jsonld_fn = register_file.with_suffix('.jsonld') \
         if register_file.suffix != '.jsonld' else register_file.with_suffix(register_file.suffix + '.jsonld')
-    ttl_fn = register_file.with_suffix('.ttl')
+    register_ttl_fn = register_file.with_suffix('.ttl')
 
     if clean:
-        for old_file in register_file, jsonld_fn, ttl_fn:
-            print(f"Deleting {old_file}")
+        for old_file in register_file, register_jsonld_fn, register_ttl_fn:
+            print(f"Deleting {old_file}", file=sys.stderr)
             old_file.unlink(missing_ok=True)
         cwd = Path().resolve()
         for old_dir in args.generated_docs_path, args.annotated_path:
             # Only delete if not current path and not ancestor
-            print(f"Deleting {old_dir} recursively")
             old_dir = Path(old_dir).resolve()
             if old_dir != cwd and old_dir not in cwd.parents:
+                print(f"Deleting {old_dir} recursively", file=sys.stderr)
                 shutil.rmtree(old_dir, ignore_errors=True)
 
     bb_config_file = Path(args.items_dir) / 'bblocks-config.yaml'
@@ -113,18 +113,23 @@ if __name__ == '__main__':
         annotated_path = annotated_path.joinpath(Path(*subdirs))
 
     # 1. Annotate schemas
+    print('Annotating schemas', file=sys.stderr)
     for fn in ('schema.yaml', 'schema.json'):
         for schema in items_dir.glob(f"**/{fn}"):
+            print(f" - Schema {schema}", file=sys.stderr)
             annotator = annotate_schema.SchemaAnnotator(
                 fn=schema,
                 follow_refs=False)
             for annotated_schema in annotate_schema.dump_annotated_schemas(annotator, annotated_path):
+                print(f"  - {annotated_schema}", file=sys.stderr)
                 ctx_builder = annotate_schema.ContextBuilder(fn=annotated_schema)
-                jsonld_fn = annotated_schema.parent / 'context.jsonld'
-                with open(jsonld_fn, 'w') as f:
+                context_fn = annotated_schema.parent / 'context.jsonld'
+                print(f"  - {context_fn}", file=sys.stderr)
+                with open(context_fn, 'w') as f:
                     json.dump(ctx_builder.context, f, indent=2)
 
     # 2. Postprocess BBs
+    print(f"Running postprocess...", file=sys.stderr)
     postprocess(registered_items_path=items_dir,
                 output_file=args.register_file,
                 base_url=args.base_url,
@@ -135,13 +140,17 @@ if __name__ == '__main__':
                 id_prefix=id_prefix)
 
     # 3. Uplift register.json
+    print(f"Running semantic uplift of {register_file}", file=sys.stderr)
+    print(f" - {register_jsonld_fn}", file=sys.stderr)
+    print(f" - {register_ttl_fn}", file=sys.stderr)
     ingest_json.process_file(register_file,
                              context_fn=uplift_context_file,
-                             jsonld_fn=jsonld_fn,
-                             ttl_fn=ttl_fn)
+                             jsonld_fn=register_jsonld_fn,
+                             ttl_fn=register_ttl_fn)
 
     # 4. Copy Slate assets
     # Run rsync -rlt /src/ogc/bblocks/slate-assets/ "${GENERATED_DOCS_PATH}/slate/"
+    print(f"Copying Slate assets to {args.generated_docs_path}/slate", file=sys.stderr)
     subprocess.run([
         'rsync',
         '-rlt',
