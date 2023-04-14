@@ -20,6 +20,9 @@ inputs:
   annotated_path:
     description: Output path for annotated schemas
     default: 'annotated'
+  clean:
+    description: Whether to delete all output files and directories before generating new ones
+    default: 'true'
 
 runs:
   using: docker
@@ -31,3 +34,4 @@ runs:
     - ${{ inputs.base_url }}
     - ${{ inputs.fail_on_error }}
     - ${{ inputs.annotated_path }}
+    - ${{ inputs.clean }}

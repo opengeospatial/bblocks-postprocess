@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import shutil
 import subprocess
 import sys
 from argparse import ArgumentParser
@@ -59,7 +60,17 @@ if __name__ == '__main__':
         help='Fail run if an error is encountered',
     )
 
+    parser.add_argument(
+        'clean',
+        default='false',
+        nargs='?',
+        help='Delete output directories and files before generating the new ones',
+    )
+
     args = parser.parse_args()
+
+    fail_on_error = args.fail_on_error in ('true', 'on', 'yes')
+    clean = args.clean in ('true', 'on', 'yes')
 
     print(f"""Running with the following configuration:
 - register_file: {args.register_file}
@@ -68,9 +79,26 @@ if __name__ == '__main__':
 - base_url: {args.base_url}
 - templates_dir: {str(templates_dir)}
 - annotated_path: {str(args.annotated_path)}
+- fail_on_error: {fail_on_error}
+- clean: {clean}
     """, file=sys.stderr)
 
-    fail_on_error = args.fail_on_error in ('true', 'on', 'yes')
+    register_file = Path(args.register_file)
+    jsonld_fn = register_file.with_suffix('.jsonld') \
+        if register_file.suffix != '.jsonld' else register_file.with_suffix(register_file.suffix + '.jsonld')
+    ttl_fn = register_file.with_suffix('.ttl')
+
+    if clean:
+        for old_file in register_file, jsonld_fn, ttl_fn:
+            print(f"Deleting {old_file}")
+            old_file.unlink(missing_ok=True)
+        cwd = Path().resolve()
+        for old_dir in args.generated_docs_path, args.annotated_path:
+            # Only delete if not current path and not ancestor
+            print(f"Deleting {old_dir} recursively")
+            old_dir = Path(old_dir).resolve()
+            if old_dir != cwd and old_dir not in cwd.parents:
+                shutil.rmtree(old_dir, ignore_errors=True)
 
     bb_config_file = Path(args.items_dir) / 'bblocks-config.yaml'
 
@@ -107,10 +135,6 @@ if __name__ == '__main__':
                 id_prefix=id_prefix)
 
     # 3. Uplift register.json
-    register_file = Path(args.register_file)
-    jsonld_fn = register_file.with_suffix('.jsonld') \
-        if register_file.suffix != '.jsonld' else register_file.with_suffix(register_file.suffix + '.jsonld')
-    ttl_fn = register_file.with_suffix('.ttl')
     ingest_json.process_file(register_file,
                              context_fn=uplift_context_file,
                              jsonld_fn=jsonld_fn,
