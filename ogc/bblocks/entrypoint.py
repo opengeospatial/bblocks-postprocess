@@ -116,17 +116,23 @@ if __name__ == '__main__':
     print('Annotating schemas', file=sys.stderr)
     for fn in ('schema.yaml', 'schema.json'):
         for schema in items_dir.glob(f"**/{fn}"):
-            print(f" - Schema {schema}", file=sys.stderr)
-            annotator = annotate_schema.SchemaAnnotator(
-                fn=schema,
-                follow_refs=False)
-            for annotated_schema in annotate_schema.dump_annotated_schemas(annotator, annotated_path):
-                print(f"  - {annotated_schema}", file=sys.stderr)
-                ctx_builder = annotate_schema.ContextBuilder(fn=annotated_schema)
-                context_fn = annotated_schema.parent / 'context.jsonld'
-                print(f"  - {context_fn}", file=sys.stderr)
-                with open(context_fn, 'w') as f:
-                    json.dump(ctx_builder.context, f, indent=2)
+            try:
+                print(f" - Schema {schema}", file=sys.stderr)
+                annotator = annotate_schema.SchemaAnnotator(
+                    fn=schema,
+                    follow_refs=False)
+                for annotated_schema in annotate_schema.dump_annotated_schemas(annotator, annotated_path):
+                    print(f"  - {annotated_schema}", file=sys.stderr)
+                    ctx_builder = annotate_schema.ContextBuilder(fn=annotated_schema)
+                    context_fn = annotated_schema.parent / 'context.jsonld'
+                    print(f"  - {context_fn}", file=sys.stderr)
+                    with open(context_fn, 'w') as f:
+                        json.dump(ctx_builder.context, f, indent=2)
+            except:
+                if fail_on_error:
+                    raise
+                import traceback
+                traceback.print_exception(e, file=sys.stderr)
 
     # 2. Postprocess BBs
     print(f"Running postprocess...", file=sys.stderr)
