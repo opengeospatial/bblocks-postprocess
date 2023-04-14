@@ -19,49 +19,49 @@ if __name__ == '__main__':
     parser = ArgumentParser()
 
     parser.add_argument(
-        'register_file',
+        '--register-file',
         default='build/register.json',
         nargs='?',
         help='Output JSON Building Blocks register document',
     )
 
     parser.add_argument(
-        'items_dir',
+        '--items-dir',
         default='.',
         nargs='?',
         help='Registered items directory',
     )
 
     parser.add_argument(
-        'generated_docs_path',
+        '--generated-docs-path',
         default='build/generateddocs',
         nargs='?',
         help='Output directory for generated documentation',
     )
 
     parser.add_argument(
-        'base_url',
+        '--base-url',
         default='',
         nargs='?',
         help='Base URL for hyperlink generation',
     )
 
     parser.add_argument(
-        'fail_on_error',
+        '--fail-on-error',
         default='false',
         nargs='?',
         help='Fail run if an error is encountered',
     )
 
     parser.add_argument(
-        'annotated_path',
+        '--annotated-path',
         default='build/annotated',
         nargs='?',
         help='Fail run if an error is encountered',
     )
 
     parser.add_argument(
-        'clean',
+        '--clean',
         default='false',
         nargs='?',
         help='Delete output directories and files before generating the new ones',

@@ -28,10 +28,17 @@ runs:
   using: docker
   image: docker://ghcr.io/avillar/bblocks-postprocess
   args:
+    - '--register-file'
     - ${{ inputs.register_file }}
+    - '--items-dir'
     - ${{ inputs.items_dir }}
+    - '--generated-docs'
     - ${{ inputs.generated_docs_path }}
+    - '--base-url'
     - ${{ inputs.base_url }}
+    - '--fail-on-error'
     - ${{ inputs.fail_on_error }}
+    - '--annotated-path'
     - ${{ inputs.annotated_path }}
+    - '--clean'
     - ${{ inputs.clean }}
