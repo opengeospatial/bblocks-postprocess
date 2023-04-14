@@ -20,7 +20,7 @@ if __name__ == '__main__':
 
     parser.add_argument(
         'register_file',
-        default='register.json',
+        default='build/register.json',
         nargs='?',
         help='Output JSON Building Blocks register document',
     )
@@ -34,7 +34,7 @@ if __name__ == '__main__':
 
     parser.add_argument(
         'generated_docs_path',
-        default='generateddocs',
+        default='build/generateddocs',
         nargs='?',
         help='Output directory for generated documentation',
     )
@@ -55,7 +55,7 @@ if __name__ == '__main__':
 
     parser.add_argument(
         'annotated_path',
-        default='annotated',
+        default='build/annotated',
         nargs='?',
         help='Fail run if an error is encountered',
     )
