@@ -4,6 +4,7 @@ from pathlib import Path
 import os.path
 from typing import Generator, Any
 import jsonschema
+from ogc.na import annotate_schema
 
 from ogc.na.util import load_yaml, dump_yaml
 
@@ -181,3 +182,11 @@ def write_superbblock_schemas(items_dir: Path,
         dump_yaml(process_sbb(annotated_output_file.parent.parent, True), annotated_output_file)
         result.append(annotated_output_file)
         return result
+
+
+def write_jsonld_context(annotated_schema: Path) -> Path:
+    ctx_builder = annotate_schema.ContextBuilder(fn=annotated_schema)
+    context_fn = annotated_schema.parent / 'context.jsonld'
+    with open(context_fn, 'w') as f:
+        json.dump(ctx_builder.context, f, indent=2)
+    return context_fn

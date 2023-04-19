@@ -125,10 +125,8 @@ if __name__ == '__main__':
                 for annotated_schema in annotate_schema.dump_annotated_schemas(annotator, annotated_path, items_dir):
                     print(f"  - {annotated_schema}", file=sys.stderr)
                     ctx_builder = annotate_schema.ContextBuilder(fn=annotated_schema)
-                    context_fn = annotated_schema.parent / 'context.jsonld'
+                    context_fn = util.write_jsonld_context(annotated_schema)
                     print(f"  - {context_fn}", file=sys.stderr)
-                    with open(context_fn, 'w') as f:
-                        json.dump(ctx_builder.context, f, indent=2)
             except Exception as e:
                 if fail_on_error:
                     raise
@@ -139,7 +137,10 @@ if __name__ == '__main__':
     print('Building superbblock schemas', file=sys.stderr)
     annotated_superbblock_schemas = util.write_superbblock_schemas(items_dir, annotated_path=annotated_path)
     if annotated_superbblock_schemas:
-        print(' -', '\n - '.join(str(f) for f in annotated_superbblock_schemas), file=sys.stderr)
+        for asbs in annotated_superbblock_schemas:
+            print(f"  - {str(asbs)}", file=sys.stderr)
+            context_fn = util.write_jsonld_context(asbs)
+            print(f"    - {str(context_fn)}", file=sys.stderr)
     else:
         print('  None found', file=sys.stderr)
 
