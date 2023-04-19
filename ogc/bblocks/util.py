@@ -5,7 +5,10 @@ import os.path
 from typing import Generator, Any
 import jsonschema
 
-from ogc.na.util import load_yaml
+from ogc.na.util import load_yaml, dump_yaml
+
+SUPERBBLOCK_DIRNAME = '_superbblock'
+BBLOCK_METADATA_FILE = 'bblock.json'
 
 
 def load_file(fn):
@@ -16,6 +19,9 @@ def load_file(fn):
 def get_bblock_identifier(metadata_file: Path, root_path: Path = Path(),
                           prefix: str = '') -> tuple[str, Path]:
     rel_parts = Path(os.path.relpath(metadata_file.parent, root_path)).parts
+    if rel_parts[-1] == SUPERBBLOCK_DIRNAME:
+        # Super Building Block -> remove suffix
+        rel_parts = rel_parts[:-1]
     return f"{prefix}{'.'.join(rel_parts)}", Path(*rel_parts)
 
 
@@ -26,6 +32,15 @@ class BuildingBlock:
                  metadata_schema: Any | None = None,
                  annotated_path: Path = Path()):
         self.identifier = identifier
+        metadata_file = metadata_file.resolve()
+
+        # Super Building Block whose schema is an aggregation
+        # of all the building blocks in its same directory and its descendants
+        self.superbblock = metadata_file.parent.name == SUPERBBLOCK_DIRNAME
+        potential_clash = metadata_file.parent.parent / BBLOCK_METADATA_FILE
+        if self.superbblock and potential_clash.exists():
+            raise ValueError(f"Found superbblock at {metadata_file}, but another one exists at {potential_clash}")
+
         with open(metadata_file) as f:
             self.metadata = json.load(f)
 
@@ -92,8 +107,12 @@ def load_bblocks(registered_items_path: Path,
     else:
         metadata_schema = None
 
-    for metadata_file in sorted(registered_items_path.glob("**/bblock.json")):
+    seen_ids = set()
+    for metadata_file in sorted(registered_items_path.glob(f"**/{BBLOCK_METADATA_FILE}")):
         bblock_id, bblock_rel_path = get_bblock_identifier(metadata_file, registered_items_path, prefix)
+        if bblock_id in seen_ids:
+            raise ValueError(f"Found duplicate bblock id: {bblock_id}")
+        seen_ids.add(bblock_id)
         if not filter_ids or bblock_id in filter_ids:
             try:
                 yield BuildingBlock(bblock_id, metadata_file,
@@ -109,3 +128,56 @@ def load_bblocks(registered_items_path: Path,
                 print('=========', file=sys.stderr)
         else:
             print(f"Skipping building block {bblock_id} (not in filter_ids)", file=sys.stderr)
+
+
+def write_superbblock_schemas(items_dir: Path,
+                              annotated_path: Path | None = None) -> list[Path]:
+    result = []
+    for super_bblock_dir in items_dir.glob(f"**/{SUPERBBLOCK_DIRNAME}"):
+        if not super_bblock_dir.is_dir():
+            continue
+
+        if annotated_path:
+            annotated_path = annotated_path.resolve()
+            resolved_super_bblock_dir = super_bblock_dir.resolve()
+            if annotated_path in resolved_super_bblock_dir.parents:
+                # If we are in the annotated directory, skip
+                continue
+
+        metadata = load_yaml(super_bblock_dir / BBLOCK_METADATA_FILE)
+
+        def process_sbb(schemas_path: Path, process_inside_annotated = False):
+            one_of = []
+            schemas_path = schemas_path.resolve()
+            for fn in ('schema.yaml', 'schema.json'):
+                for schema_file in sorted(schemas_path.glob(f"**/{fn}")):
+                    if schema_file.parent.name == SUPERBBLOCK_DIRNAME:
+                        # Skip descendant superbblocks
+                        continue
+                    if annotated_path in schema_file.parents and not process_inside_annotated:
+                        # If not processing annotated schemas but this schema is
+                        # inside the annotated directory, skip it
+                        continue
+
+                    schema = load_yaml(schema_file)
+                    if 'schema' in schema:
+                        # OpenAPI sub spec - skip
+                        continue
+                    imported_props = {k: v for k, v in schema.items() if k[0] != '$'}
+                    one_of.append(imported_props)
+
+            output_schema = {
+                '$schema': 'https://json-schema.org/draft/2020-12/schema',
+                'description': metadata['name'],
+            }
+            if one_of:
+                output_schema['oneOf'] = one_of
+            return output_schema
+
+        dump_yaml(process_sbb(super_bblock_dir.parent), super_bblock_dir / 'schema.yaml')
+        result.append(super_bblock_dir / 'schema.yaml')
+        annotated_output_file = annotated_path / super_bblock_dir.relative_to(items_dir) / 'schema.yaml'
+        annotated_output_file.parent.mkdir(parents=True, exist_ok=True)
+        dump_yaml(process_sbb(annotated_output_file.parent.parent, True), annotated_output_file)
+        result.append(annotated_output_file)
+        return result

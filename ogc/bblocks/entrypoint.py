@@ -8,6 +8,7 @@ from pathlib import Path
 
 from ogc.na.util import load_yaml
 
+from ogc.bblocks import util
 from ogc.bblocks.postprocess import postprocess
 from ogc.na import ingest_json, annotate_schema
 
@@ -110,17 +111,18 @@ if __name__ == '__main__':
     for fn in ('schema.yaml', 'schema.json'):
         for schema in items_dir.glob(f"**/{fn}"):
 
-            # Skip schemas inside "build" or "annotated" directories
+            # Skip schemas inside "build", "annotated" and "_superbblock" directories
             schema_path_parts = schema.parts
-            if any(x in schema_path_parts for x in ('build', 'annotated')):
+            if any(x in schema_path_parts for x in ('build', 'annotated', util.SUPERBBLOCK_DIRNAME)):
                 continue
 
             try:
                 print(f" - Schema {schema}", file=sys.stderr)
                 annotator = annotate_schema.SchemaAnnotator(
                     fn=schema,
-                    follow_refs=False)
-                for annotated_schema in annotate_schema.dump_annotated_schemas(annotator, annotated_path):
+                    follow_refs=False
+                )
+                for annotated_schema in annotate_schema.dump_annotated_schemas(annotator, annotated_path, items_dir):
                     print(f"  - {annotated_schema}", file=sys.stderr)
                     ctx_builder = annotate_schema.ContextBuilder(fn=annotated_schema)
                     context_fn = annotated_schema.parent / 'context.jsonld'
@@ -133,7 +135,15 @@ if __name__ == '__main__':
                 import traceback
                 traceback.print_exception(e, file=sys.stderr)
 
-    # 2. Postprocess BBs
+    # 2. Write superbblock schemas
+    print('Building superbblock schemas', file=sys.stderr)
+    annotated_superbblock_schemas = util.write_superbblock_schemas(items_dir, annotated_path=annotated_path)
+    if annotated_superbblock_schemas:
+        print(' -', '\n - '.join(str(f) for f in annotated_superbblock_schemas), file=sys.stderr)
+    else:
+        print('  None found', file=sys.stderr)
+
+    # 3. Postprocess BBs
     print(f"Running postprocess...", file=sys.stderr)
     postprocess(registered_items_path=items_dir,
                 output_file=args.register_file,
@@ -145,7 +155,7 @@ if __name__ == '__main__':
                 id_prefix=id_prefix,
                 annotated_path=annotated_path)
 
-    # 3. Uplift register.json
+    # 4. Uplift register.json
     print(f"Running semantic uplift of {register_file}", file=sys.stderr)
     print(f" - {register_jsonld_fn}", file=sys.stderr)
     print(f" - {register_ttl_fn}", file=sys.stderr)
@@ -154,7 +164,7 @@ if __name__ == '__main__':
                              jsonld_fn=register_jsonld_fn,
                              ttl_fn=register_ttl_fn)
 
-    # 4. Copy Slate assets
+    # 5. Copy Slate assets
     # Run rsync -rlt /src/ogc/bblocks/slate-assets/ "${GENERATED_DOCS_PATH}/slate/"
     print(f"Copying Slate assets to {args.generated_docs_path}/slate", file=sys.stderr)
     subprocess.run([

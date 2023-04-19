@@ -16,7 +16,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 templates_dir: str | Path = 'templates',
                 fail_on_error: bool = False,
                 id_prefix: str = '',
-                annotated_path: str | Path = 'annotated'):
+                annotated_path: str | Path = 'annotated') -> list[BuildingBlock]:
 
     doc_generator = DocGenerator(output_dir=generated_docs_path,
                                  templates_dir=templates_dir,
@@ -28,7 +28,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         base_url += '/'.join(id_prefix.split('.')[1:])
 
     def do_postprocess(bblock: BuildingBlock) -> bool:
-        cwd = Path()
+        cwd = Path().resolve()
         if base_url:
             if bblock.schema:
                 rel_schema = bblock.schema.relative_to(cwd)
@@ -75,6 +75,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 json.dump(output_bblocks, f, indent=2)
 
     print(f"Finished processing {len(output_bblocks)} building blocks", file=sys.stderr)
+    return output_bblocks
 
 
 def _main():
