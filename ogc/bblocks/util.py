@@ -179,7 +179,8 @@ def write_superbblocks_schemas(super_bblocks: dict[Path, BuildingBlock],
                   annotated_output_file)
         result.append(annotated_output_file)
         result.append(write_jsonld_context(annotated_output_file))
-        return result
+
+    return result
 
 
 def write_jsonld_context(annotated_schema: Path) -> Path:
