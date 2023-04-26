@@ -178,6 +178,7 @@ def write_superbblocks_schemas(super_bblocks: dict[Path, BuildingBlock],
         dump_yaml(process_sbb(annotated_output_file.parent, super_bblock, annotated_super_bblock_dirs),
                   annotated_output_file)
         result.append(annotated_output_file)
+        result.append(write_jsonld_context(annotated_output_file))
         return result
 
 
