@@ -1,10 +1,14 @@
+from __future__ import annotations
+
 import json
 import sys
 from argparse import ArgumentParser
 from pathlib import Path
 
 from ogc.bblocks.generate_docs import DocGenerator
-from ogc.bblocks.util import load_bblocks, BuildingBlock
+from ogc.bblocks.util import load_bblocks, write_superbblocks_schemas, annotate_schema, BuildingBlock
+
+ANNOTATED_ITEM_CLASSES = ('schema', 'datatype')
 
 
 def postprocess(registered_items_path: str | Path = 'registereditems',
@@ -54,14 +58,40 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
     if not isinstance(registered_items_path, Path):
         registered_items_path = Path(registered_items_path)
 
-    output_bblocks = []
+    all_bblocks = []
+    super_bblocks = {}
     for building_block in load_bblocks(registered_items_path,
                                        filter_ids=filter_ids,
                                        metadata_schema_file=metadata_schema,
                                        fail_on_error=fail_on_error,
                                        prefix=id_prefix,
                                        annotated_path=annotated_path):
+        if building_block.super_bblock:
+            super_bblocks[building_block.files_path] = building_block
+        elif building_block.itemClass in ANNOTATED_ITEM_CLASSES:
+            # Annotate schema
+            schema_file = building_block.files_path / 'schema.yaml'
+            try:
+                for annotated in annotate_schema(schema_file, registered_items_path, annotated_path):
+                    print(f"  - {annotated}", file=sys.stderr)
+            except Exception as e:
+                if fail_on_error:
+                    raise
+                import traceback
+                traceback.print_exception(e, file=sys.stderr)
+
+        all_bblocks.append(building_block)
+
+    # Create super bblock schemas
+    print(f"Generating Super Building Block schemas", file=sys.stderr)
+    for super_bblock_schema in write_superbblocks_schemas(super_bblocks, registered_items_path, annotated_path):
+        print(f"  - {super_bblock_schema}", file=sys.stderr)
+
+
+    output_bblocks = []
+    for building_block in all_bblocks:
         print(f"Processing building block {building_block.identifier}", file=sys.stderr)
+        building_block.load_files()
         if do_postprocess(building_block):
             output_bblocks.append(building_block.metadata)
         else:

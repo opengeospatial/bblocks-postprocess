@@ -144,3 +144,6 @@ properties:
     items:
       type: string
       format: uri
+  superBBlock:
+    description: Whether this is a Super Building Block, aggregating the schema of its descendants
+    type: boolean

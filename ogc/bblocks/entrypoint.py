@@ -81,7 +81,10 @@ if __name__ == '__main__':
     register_jsonld_fn = register_file.with_suffix('.jsonld') \
         if register_file.suffix != '.jsonld' else register_file.with_suffix(register_file.suffix + '.jsonld')
     register_ttl_fn = register_file.with_suffix('.ttl')
+    bb_config_file = Path(args.items_dir) / 'bblocks-config.yaml'
+    items_dir = Path(args.items_dir)
 
+    # Clean old output
     if clean:
         for old_file in register_file, register_jsonld_fn, register_ttl_fn:
             print(f"Deleting {old_file}", file=sys.stderr)
@@ -94,10 +97,7 @@ if __name__ == '__main__':
                 print(f"Deleting {old_dir} recursively", file=sys.stderr)
                 shutil.rmtree(old_dir, ignore_errors=True)
 
-    bb_config_file = Path(args.items_dir) / 'bblocks-config.yaml'
-
-    items_dir = Path(args.items_dir)
-
+    # Read local bblocks-config.yaml, if present
     id_prefix = 'r1.'
     annotated_path = Path(args.annotated_path)
     if bb_config_file.is_file():
@@ -106,45 +106,7 @@ if __name__ == '__main__':
         subdirs = id_prefix.split('.')[1:]
         annotated_path = annotated_path.joinpath(Path(*subdirs))
 
-    # 1. Annotate schemas
-    print('Annotating schemas', file=sys.stderr)
-    for fn in ('schema.yaml', 'schema.json'):
-        for schema in items_dir.glob(f"**/{fn}"):
-
-            # Skip schemas inside "build", "annotated" and "_superbblock" directories
-            schema_path_parts = schema.parts
-            if any(x in schema_path_parts for x in ('build', 'annotated', util.SUPERBBLOCK_DIRNAME)):
-                continue
-
-            try:
-                print(f" - Schema {schema}", file=sys.stderr)
-                annotator = annotate_schema.SchemaAnnotator(
-                    fn=schema,
-                    follow_refs=False
-                )
-                for annotated_schema in annotate_schema.dump_annotated_schemas(annotator, annotated_path, items_dir):
-                    print(f"  - {annotated_schema}", file=sys.stderr)
-                    ctx_builder = annotate_schema.ContextBuilder(fn=annotated_schema)
-                    context_fn = util.write_jsonld_context(annotated_schema)
-                    print(f"  - {context_fn}", file=sys.stderr)
-            except Exception as e:
-                if fail_on_error:
-                    raise
-                import traceback
-                traceback.print_exception(e, file=sys.stderr)
-
-    # 2. Write superbblock schemas
-    print('Building superbblock schemas', file=sys.stderr)
-    annotated_superbblock_schemas = util.write_superbblock_schemas(items_dir, annotated_path=annotated_path)
-    if annotated_superbblock_schemas:
-        for asbs in annotated_superbblock_schemas:
-            print(f"  - {str(asbs)}", file=sys.stderr)
-            context_fn = util.write_jsonld_context(asbs)
-            print(f"    - {str(context_fn)}", file=sys.stderr)
-    else:
-        print('  None found', file=sys.stderr)
-
-    # 3. Postprocess BBs
+    # 1. Postprocess BBs
     print(f"Running postprocess...", file=sys.stderr)
     postprocess(registered_items_path=items_dir,
                 output_file=args.register_file,
@@ -156,7 +118,7 @@ if __name__ == '__main__':
                 id_prefix=id_prefix,
                 annotated_path=annotated_path)
 
-    # 4. Uplift register.json
+    # 2. Uplift register.json
     print(f"Running semantic uplift of {register_file}", file=sys.stderr)
     print(f" - {register_jsonld_fn}", file=sys.stderr)
     print(f" - {register_ttl_fn}", file=sys.stderr)
@@ -165,7 +127,7 @@ if __name__ == '__main__':
                              jsonld_fn=register_jsonld_fn,
                              ttl_fn=register_ttl_fn)
 
-    # 5. Copy Slate assets
+    # 3. Copy Slate assets
     # Run rsync -rlt /src/ogc/bblocks/slate-assets/ "${GENERATED_DOCS_PATH}/slate/"
     print(f"Copying Slate assets to {args.generated_docs_path}/slate", file=sys.stderr)
     subprocess.run([

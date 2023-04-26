@@ -1,14 +1,15 @@
+from __future__ import annotations
+
 import json
 import sys
 from pathlib import Path
 import os.path
-from typing import Generator, Any
+from typing import Generator, Any, Sequence
 import jsonschema
-from ogc.na import annotate_schema
+from ogc.na.annotate_schema import dump_annotated_schemas, SchemaAnnotator, ContextBuilder
 
 from ogc.na.util import load_yaml, dump_yaml
 
-SUPERBBLOCK_DIRNAME = '_superbblock'
 BBLOCK_METADATA_FILE = 'bblock.json'
 
 
@@ -20,10 +21,7 @@ def load_file(fn):
 def get_bblock_identifier(metadata_file: Path, root_path: Path = Path(),
                           prefix: str = '') -> tuple[str, Path]:
     rel_parts = Path(os.path.relpath(metadata_file.parent, root_path)).parts
-    if rel_parts[-1] == SUPERBBLOCK_DIRNAME:
-        # Super Building Block -> remove suffix
-        rel_parts = rel_parts[:-1]
-    return f"{prefix}{'.'.join(rel_parts)}", Path(*rel_parts)
+    return f"{prefix}{'.'.join(p for p in rel_parts if not p.startswith('_'))}", Path(*rel_parts)
 
 
 class BuildingBlock:
@@ -34,13 +32,7 @@ class BuildingBlock:
                  annotated_path: Path = Path()):
         self.identifier = identifier
         metadata_file = metadata_file.resolve()
-
-        # Super Building Block whose schema is an aggregation
-        # of all the building blocks in its same directory and its descendants
-        self.superbblock = metadata_file.parent.name == SUPERBBLOCK_DIRNAME
-        potential_clash = metadata_file.parent.parent / BBLOCK_METADATA_FILE
-        if self.superbblock and potential_clash.exists():
-            raise ValueError(f"Found superbblock at {metadata_file}, but another one exists at {potential_clash}")
+        self.metadata_file = metadata_file
 
         with open(metadata_file) as f:
             self.metadata = json.load(f)
@@ -54,8 +46,25 @@ class BuildingBlock:
         if '.' in self.identifier:
             self.subdirs = Path(*(identifier.split('.')[1:]))
 
+        self.super_bblock = self.metadata.get('superBBlock', False)
+
         fp = metadata_file.parent
         self.files_path = fp
+
+        self.schema_contents = None
+        self.schema = None
+        self.assets_path = None
+        self.description = None
+        self.examples = None
+        self.annotated_path = None
+        self.annotated_schema = None
+        self.jsonld_context = None
+
+        self._annotated_path = annotated_path / self.subdirs
+
+    def load_files(self):
+
+        fp = self.files_path
 
         examples_file = fp / 'examples.yaml'
         self.examples = load_yaml(filename=examples_file) if examples_file.exists() else None
@@ -79,8 +88,8 @@ class BuildingBlock:
             self.schema = None
             self.schema_contents = None
 
-        annotated_path = annotated_path / self.subdirs
-        if annotated_path.is_dir():
+        if self._annotated_path.is_dir():
+            annotated_path = self._annotated_path
             self.annotated_path = annotated_path
             annotated_schema = annotated_path / 'schema.yaml'
             if not annotated_schema.exists():
@@ -88,10 +97,6 @@ class BuildingBlock:
             self.annotated_schema = annotated_schema if annotated_schema.is_file() else None
             jsonld_context = annotated_path / 'context.jsonld'
             self.jsonld_context = jsonld_context if jsonld_context.is_file() else None
-        else:
-            self.annotated_path = None
-            self.annotated_schema = None
-            self.jsonld_context = None
 
     def __getattr__(self, item):
         return self.metadata.get(item)
@@ -131,62 +136,68 @@ def load_bblocks(registered_items_path: Path,
             print(f"Skipping building block {bblock_id} (not in filter_ids)", file=sys.stderr)
 
 
-def write_superbblock_schemas(items_dir: Path,
+def write_superbblocks_schemas(super_bblocks: dict[Path, BuildingBlock],
+                              items_dir: Path,
                               annotated_path: Path | None = None) -> list[Path]:
+
+    def process_sbb(sbb_dir: Path, sbb: BuildingBlock, skip_dirs) -> dict:
+        one_of = []
+        for schema_fn in ('schema.yaml', 'schema.json'):
+            for schema_file in sorted(sbb_dir.glob(f"**/{schema_fn}")):
+                if schema_file in skip_dirs:
+                    # Skip descendant super bblocks
+                    continue
+
+                schema = load_yaml(schema_file)
+                if 'schema' in schema:
+                    # OpenAPI sub spec - skip
+                    continue
+                imported_props = {k: v for k, v in schema.items() if k[0] != '$'}
+                one_of.append(imported_props)
+        output_schema = {
+            '$schema': 'https://json-schema.org/draft/2020-12/schema',
+            'description': sbb.name,
+        }
+        if one_of:
+            output_schema['oneOf'] = one_of
+        return output_schema
+
+    annotated_super_bblock_dirs = set(annotated_path / b.subdirs for b in super_bblocks.values())
     result = []
-    for super_bblock_dir in items_dir.glob(f"**/{SUPERBBLOCK_DIRNAME}"):
-        if not super_bblock_dir.is_dir():
-            continue
 
-        if annotated_path:
-            annotated_path = annotated_path.resolve()
-            resolved_super_bblock_dir = super_bblock_dir.resolve()
-            if annotated_path in resolved_super_bblock_dir.parents:
-                # If we are in the annotated directory, skip
-                continue
+    for super_bblock_dir, super_bblock in super_bblocks.items():
 
-        metadata = load_yaml(super_bblock_dir / BBLOCK_METADATA_FILE)
-
-        def process_sbb(schemas_path: Path, process_inside_annotated = False):
-            one_of = []
-            schemas_path = schemas_path.resolve()
-            for fn in ('schema.yaml', 'schema.json'):
-                for schema_file in sorted(schemas_path.glob(f"**/{fn}")):
-                    if schema_file.parent.name == SUPERBBLOCK_DIRNAME:
-                        # Skip descendant superbblocks
-                        continue
-                    if annotated_path in schema_file.parents and not process_inside_annotated:
-                        # If not processing annotated schemas but this schema is
-                        # inside the annotated directory, skip it
-                        continue
-
-                    schema = load_yaml(schema_file)
-                    if 'schema' in schema:
-                        # OpenAPI sub spec - skip
-                        continue
-                    imported_props = {k: v for k, v in schema.items() if k[0] != '$'}
-                    one_of.append(imported_props)
-
-            output_schema = {
-                '$schema': 'https://json-schema.org/draft/2020-12/schema',
-                'description': metadata['name'],
-            }
-            if one_of:
-                output_schema['oneOf'] = one_of
-            return output_schema
-
-        dump_yaml(process_sbb(super_bblock_dir.parent), super_bblock_dir / 'schema.yaml')
+        dump_yaml(process_sbb(super_bblock_dir, super_bblock, super_bblocks.keys()),
+                  super_bblock_dir / 'schema.yaml')
         result.append(super_bblock_dir / 'schema.yaml')
-        annotated_output_file = annotated_path / super_bblock_dir.relative_to(items_dir) / 'schema.yaml'
+        annotated_output_file = annotated_path / super_bblock.subdirs / 'schema.yaml'
         annotated_output_file.parent.mkdir(parents=True, exist_ok=True)
-        dump_yaml(process_sbb(annotated_output_file.parent.parent, True), annotated_output_file)
+        dump_yaml(process_sbb(annotated_output_file.parent, super_bblock, annotated_super_bblock_dirs),
+                  annotated_output_file)
         result.append(annotated_output_file)
         return result
 
 
 def write_jsonld_context(annotated_schema: Path) -> Path:
-    ctx_builder = annotate_schema.ContextBuilder(fn=annotated_schema)
+    ctx_builder = ContextBuilder(fn=annotated_schema)
     context_fn = annotated_schema.parent / 'context.jsonld'
     with open(context_fn, 'w') as f:
         json.dump(ctx_builder.context, f, indent=2)
     return context_fn
+
+
+def annotate_schema(schema_file: Path, items_path: Path, annotated_path: Path) -> list[Path]:
+    result = []
+    if schema_file.is_file():
+        print(f"Annotating {schema_file}", file=sys.stderr)
+        annotator = SchemaAnnotator(
+            fn=schema_file,
+            follow_refs=False
+        )
+        for annotated_schema in dump_annotated_schemas(annotator,
+                                                       annotated_path,
+                                                       items_path):
+            context_fn = write_jsonld_context(annotated_schema)
+            result.append(annotated_schema)
+            result.append(context_fn)
+    return result
