@@ -7,7 +7,7 @@ inputs:
     default: build/register.json
   items_dir:
     description: Root directory where building blocks (subdirectories with bblock.json) are located
-    default: .
+    default: _sources
   generated_docs_path:
     description: Output directory for documentation
     default: build/generateddocs

@@ -27,7 +27,7 @@ if __name__ == '__main__':
 
     parser.add_argument(
         '--items-dir',
-        default='.',
+        default='_sources',
         help='Registered items directory',
     )
 
