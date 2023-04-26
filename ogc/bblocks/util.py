@@ -21,7 +21,10 @@ def load_file(fn):
 def get_bblock_identifier(metadata_file: Path, root_path: Path = Path(),
                           prefix: str = '') -> tuple[str, Path]:
     rel_parts = Path(os.path.relpath(metadata_file.parent, root_path)).parts
-    return f"{prefix}{'.'.join(p for p in rel_parts if not p.startswith('_'))}", Path(*rel_parts)
+    identifier = f"{prefix}{'.'.join(p for p in rel_parts if not p.startswith('_'))}"
+    if identifier[-1] == '.':
+        identifier = identifier[:-1]
+    return identifier, Path(*rel_parts)
 
 
 class BuildingBlock:
@@ -170,7 +173,7 @@ def write_superbblocks_schemas(super_bblocks: dict[Path, BuildingBlock],
         dump_yaml(process_sbb(super_bblock_dir, super_bblock, super_bblocks.keys()),
                   super_bblock_dir / 'schema.yaml')
         result.append(super_bblock_dir / 'schema.yaml')
-        annotated_output_file = annotated_path / super_bblock.subdirs / 'schema.yaml'
+        annotated_output_file = annotated_path / os.path.relpath(super_bblock.files_path, items_dir) / 'schema.yaml'
         annotated_output_file.parent.mkdir(parents=True, exist_ok=True)
         dump_yaml(process_sbb(annotated_output_file.parent, super_bblock, annotated_super_bblock_dirs),
                   annotated_output_file)
@@ -189,14 +192,18 @@ def write_jsonld_context(annotated_schema: Path) -> Path:
 def annotate_schema(schema_file: Path, items_path: Path, annotated_path: Path) -> list[Path]:
     result = []
     if schema_file.is_file():
-        print(f"Annotating {schema_file}", file=sys.stderr)
         annotator = SchemaAnnotator(
             fn=schema_file,
             follow_refs=False
         )
+
+        def process_fn(p: Path) -> Path:
+            return Path(*(d for d in p.parts if not d.startswith('_')))
+
         for annotated_schema in dump_annotated_schemas(annotator,
                                                        annotated_path,
-                                                       items_path):
+                                                       items_path,
+                                                       process_fn):
             context_fn = write_jsonld_context(annotated_schema)
             result.append(annotated_schema)
             result.append(context_fn)

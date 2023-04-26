@@ -72,6 +72,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         elif building_block.itemClass in ANNOTATED_ITEM_CLASSES:
             # Annotate schema
             schema_file = building_block.files_path / 'schema.yaml'
+            print(f"Annotating {schema_file}", file=sys.stderr)
             try:
                 for annotated in annotate_schema(schema_file, registered_items_path, annotated_path):
                     print(f"  - {annotated}", file=sys.stderr)
@@ -87,7 +88,6 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
     print(f"Generating Super Building Block schemas", file=sys.stderr)
     for super_bblock_schema in write_superbblocks_schemas(super_bblocks, registered_items_path, annotated_path):
         print(f"  - {super_bblock_schema}", file=sys.stderr)
-
 
     output_bblocks = []
     for building_block in all_bblocks:
