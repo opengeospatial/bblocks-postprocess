@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os.path
 import sys
 from argparse import ArgumentParser
 from pathlib import Path
@@ -35,12 +36,12 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         cwd = Path().resolve()
         if base_url:
             if bblock.schema:
-                rel_schema = bblock.schema.relative_to(cwd)
+                rel_schema = os.path.relpath(bblock.schema, cwd)
                 schema_url = f"{base_url}{rel_schema}"
                 existing_schemas = bblock.metadata.setdefault('schema', [])
 
                 if bblock.annotated_schema:
-                    rel_annotated = bblock.annotated_schema.relative_to(cwd)
+                    rel_annotated = os.path.relpath(bblock.annotated_schema, cwd)
                     add_schema_url = f"{base_url}{rel_annotated}"
 
                     # Remove old, non-annotated schema if present
