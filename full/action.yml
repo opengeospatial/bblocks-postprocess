@@ -28,7 +28,7 @@ runs:
   using: composite
   steps:
     - name: Run OGC BBR postprocess
-      uses: avillar/bblocks-postprocess/postprocess@v1
+      uses: opengeospatial/bblocks-postprocess/postprocess@v1
       with:
         register_file: ${{ inputs.register_file }}
         items_dir: ${{ inputs.items_dir }}
