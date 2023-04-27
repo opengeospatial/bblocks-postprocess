@@ -191,12 +191,14 @@ def write_jsonld_context(annotated_schema: Path) -> Path:
     return context_fn
 
 
-def annotate_schema(schema_file: Path, items_path: Path, annotated_path: Path) -> list[Path]:
+def annotate_schema(schema_file: Path, items_path: Path, annotated_path: Path,
+                    ref_root: str | None = None) -> list[Path]:
     result = []
     if schema_file.is_file():
         annotator = SchemaAnnotator(
             fn=schema_file,
-            follow_refs=False
+            follow_refs=False,
+            ref_root=ref_root,
         )
 
         def process_fn(p: Path) -> Path:

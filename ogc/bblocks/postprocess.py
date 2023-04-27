@@ -5,11 +5,17 @@ import os.path
 import sys
 from argparse import ArgumentParser
 from pathlib import Path
+import traceback
+
+from jsf import JSF
+from ogc.na.util import load_yaml
 
 from ogc.bblocks.generate_docs import DocGenerator
 from ogc.bblocks.util import load_bblocks, write_superbblocks_schemas, annotate_schema, BuildingBlock
 
 ANNOTATED_ITEM_CLASSES = ('schema', 'datatype')
+OGC_BBR_REF_ROOT = 'https://raw.githubusercontent.com/opengeospatial/bblocks/master/build/'
+FAKE_JSON_COUNT = 3
 
 
 def postprocess(registered_items_path: str | Path = 'registereditems',
@@ -53,6 +59,43 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 if add_schema_url not in existing_schemas:
                     existing_schemas.append(add_schema_url)
 
+                if bblock.itemClass in ('datatype', 'schema') and not bblock.super_bblock:
+                    # generate fake JSON
+                    print("Generating JSON examples", file=sys.stderr)
+                    try:
+                        if bblock.jsonld_context:
+                            jsonld_context_contents = load_yaml(bblock.jsonld_context).get('@context')
+                        else:
+                            jsonld_context_contents = None
+
+                        json_faker = JSF(load_yaml(content=bblock.schema_contents))
+                        for i in range(FAKE_JSON_COUNT):
+                            fake_json = json_faker.generate()
+                            fake_json_fn = bblock.annotated_path / f"example{i + 1}.json"
+                            with open(fake_json_fn, 'w') as f:
+                                print(f"  - {fake_json_fn}", file=sys.stderr)
+                                json.dump(fake_json, f, indent=2)
+
+                            if jsonld_context_contents:
+                                if isinstance(fake_json, dict):
+                                    fake_json = {
+                                        '@context': jsonld_context_contents,
+                                        **fake_json
+                                    }
+                                elif isinstance(fake_json, list):
+                                    fake_json = {
+                                        '@context': jsonld_context_contents,
+                                        '@graph': fake_json
+                                    }
+                                fake_jsonld_fn = fake_json_fn.with_suffix('.jsonld')
+                                with open(fake_jsonld_fn, 'w') as f:
+                                    print(f"  - {fake_jsonld_fn}", file=sys.stderr)
+                                    json.dump(fake_json, f, indent=2)
+
+                    except Exception as e:
+                        print(f"Error generating fake JSON for {bblock.identifier}", file=sys.stderr)
+                        traceback.print_exception(e, file=sys.stderr)
+
         doc_generator.generate_doc(bblock, base_url=base_url)
         return True
 
@@ -74,12 +117,12 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             schema_file = building_block.files_path / 'schema.yaml'
             print(f"Annotating {schema_file}", file=sys.stderr)
             try:
-                for annotated in annotate_schema(schema_file, registered_items_path, annotated_path):
+                for annotated in annotate_schema(schema_file, registered_items_path, annotated_path,
+                                                 ref_root=OGC_BBR_REF_ROOT):
                     print(f"  - {annotated}", file=sys.stderr)
             except Exception as e:
                 if fail_on_error:
                     raise
-                import traceback
                 traceback.print_exception(e, file=sys.stderr)
 
         all_bblocks.append(building_block)

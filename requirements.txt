@@ -3,3 +3,4 @@ pyyaml
 Mako
 jsonschema
 ogc-na
+jsf @ git+https://github.com/avillar/jsf.git
