@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 import os.path
-from typing import Generator, Any, Sequence
+from typing import Generator, Any
 import jsonschema
 from ogc.na.annotate_schema import dump_annotated_schemas, SchemaAnnotator, ContextBuilder
 
@@ -55,52 +55,46 @@ class BuildingBlock:
         fp = metadata_file.parent
         self.files_path = fp
 
-        self.schema_contents = None
-        self.schema = None
-        self.assets_path = None
-        self.description = None
-        self.examples = None
-        self.annotated_path = None
-        self.annotated_schema = None
-        self.jsonld_context = None
-
-        self._annotated_path = annotated_path / self.subdirs
-
-    def load_files(self):
-
-        fp = self.files_path
-
-        examples_file = fp / 'examples.yaml'
-        self.examples = load_yaml(filename=examples_file) if examples_file.exists() else None
-
-        desc_file = fp / 'description.md'
-        if desc_file.exists():
-            self.description = load_file(desc_file)
-        else:
-            self.description = None
+        schema = fp / 'schema.yaml'
+        if not schema.exists():
+            schema = fp / 'schema.json'
+        self.schema = schema if schema.is_file() else None
 
         ap = fp / 'assets'
         self.assets_path = ap if ap.is_dir() else None
 
-        schema = fp / 'schema.yaml'
-        if not schema.exists():
-            schema = fp / 'schema.json'
-        if schema.is_file():
-            self.schema = schema
-            self.schema_contents = load_file(schema)
-        else:
-            self.schema = None
-            self.schema_contents = None
+        self.examples_file = fp / 'examples.yaml'
+        self.tests_dir = fp / 'tests'
 
-        if self._annotated_path.is_dir():
-            annotated_path = self._annotated_path
-            self.annotated_path = annotated_path
-            annotated_schema = annotated_path / 'schema.yaml'
+        self.annotated_path = annotated_path / self.subdirs
+        if self.annotated_path.is_dir():
+            annotated_schema = self.annotated_path / 'schema.yaml'
             if not annotated_schema.exists():
                 annotated_schema = annotated_path / 'schema.json'
             self.annotated_schema = annotated_schema if annotated_schema.is_file() else None
             jsonld_context = annotated_path / 'context.jsonld'
             self.jsonld_context = jsonld_context if jsonld_context.is_file() else None
+
+        self._lazy_properties = {}
+
+    @property
+    def examples(self):
+        if 'examples' not in self._lazy_properties:
+            self._lazy_properties['examples'] = load_yaml(filename=self.examples_file) if self.examples_file.exists() else None
+        return self._lazy_properties['examples']
+
+    @property
+    def schema_contents(self):
+        if 'schema_contents' not in self._lazy_properties:
+            self._lazy_properties['schema_contents'] = load_file(self.schema) if self.schema else None
+        return self._lazy_properties['schema_contents']
+
+    @property
+    def description(self):
+        if 'description' not in self._lazy_properties:
+            desc_file = self.files_path / 'description.md'
+            self._lazy_properties['description'] = load_file(desc_file) if desc_file.is_file() else None
+        return self._lazy_properties['description']
 
     def __getattr__(self, item):
         return self.metadata.get(item)
@@ -141,9 +135,8 @@ def load_bblocks(registered_items_path: Path,
 
 
 def write_superbblocks_schemas(super_bblocks: dict[Path, BuildingBlock],
-                              items_dir: Path,
-                              annotated_path: Path | None = None) -> list[Path]:
-
+                               items_dir: Path,
+                               annotated_path: Path | None = None) -> list[Path]:
     def process_sbb(sbb_dir: Path, sbb: BuildingBlock, skip_dirs) -> dict:
         one_of = []
         for schema_fn in ('schema.yaml', 'schema.json'):
@@ -170,7 +163,6 @@ def write_superbblocks_schemas(super_bblocks: dict[Path, BuildingBlock],
     result = []
 
     for super_bblock_dir, super_bblock in super_bblocks.items():
-
         dump_yaml(process_sbb(super_bblock_dir, super_bblock, super_bblocks.keys()),
                   super_bblock_dir / 'schema.yaml')
         result.append(super_bblock_dir / 'schema.yaml')
