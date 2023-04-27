@@ -7,11 +7,11 @@ from argparse import ArgumentParser
 from pathlib import Path
 import traceback
 
-from jsf import JSF
 from ogc.na.util import load_yaml
 
 from ogc.bblocks.generate_docs import DocGenerator
-from ogc.bblocks.util import load_bblocks, write_superbblocks_schemas, annotate_schema, BuildingBlock
+from ogc.bblocks.util import load_bblocks, write_superbblocks_schemas, annotate_schema, BuildingBlock, \
+    generate_fake_json
 
 ANNOTATED_ITEM_CLASSES = ('schema', 'datatype')
 OGC_BBR_REF_ROOT = 'https://raw.githubusercontent.com/opengeospatial/bblocks/master/build/'
@@ -68,9 +68,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                         else:
                             jsonld_context_contents = None
 
-                        json_faker = JSF(load_yaml(content=bblock.schema_contents))
                         for i in range(FAKE_JSON_COUNT):
-                            fake_json = json_faker.generate()
+                            fake_json = generate_fake_json(bblock.schema_contents)
                             fake_json_fn = bblock.annotated_path / f"example{i + 1}.json"
                             with open(fake_json_fn, 'w') as f:
                                 print(f"  - {fake_json_fn}", file=sys.stderr)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 import os.path
@@ -212,3 +213,10 @@ def annotate_schema(schema_file: Path, items_path: Path, annotated_path: Path,
             result.append(annotated_schema)
             result.append(context_fn)
     return result
+
+
+def generate_fake_json(schema_contents: str) -> Any:
+    return json.loads(subprocess.run([
+        'node',
+        str(Path(__file__).parent / 'schema-faker')
+    ], input=schema_contents, capture_output=True, text=True).stdout)
