@@ -42,6 +42,7 @@ runs:
         clean: ${{ inputs.clean }}
         config_file: ${{ inputs.config_file }}
     - name: Generate Slate documentation
+      continue-on-error: true
       run: |
         GENDOCS_PATH="$(realpath "${{ inputs.generated_docs_path }}")"
         SOURCE_PATH="${GENDOCS_PATH}/slate/"
