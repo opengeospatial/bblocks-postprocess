@@ -15,7 +15,6 @@ from ogc.bblocks.util import load_bblocks, write_superbblocks_schemas, annotate_
 from ogc.bblocks.validate import validate_test_resources
 
 ANNOTATED_ITEM_CLASSES = ('schema', 'datatype')
-OGC_BBR_REF_ROOT = 'https://raw.githubusercontent.com/opengeospatial/bblocks/master/build/'
 FAKE_JSON_COUNT = 3
 
 
@@ -28,7 +27,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 templates_dir: str | Path = 'templates',
                 fail_on_error: bool = False,
                 id_prefix: str = '',
-                annotated_path: str | Path = 'annotated') -> list[BuildingBlock]:
+                annotated_path: str | Path = 'annotated',
+                ref_root: str | None = None) -> list[BuildingBlock]:
 
     doc_generator = DocGenerator(output_dir=generated_docs_path,
                                  templates_dir=templates_dir,
@@ -113,12 +113,11 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                                        annotated_path=annotated_path):
         if building_block.super_bblock:
             super_bblocks[building_block.files_path] = building_block
-
         # Annotate schema
         print(f"Annotating schema for {building_block.identifier}", file=sys.stderr)
         try:
             annotated = annotate_schema(building_block, annotated_path,
-                                        ref_root=OGC_BBR_REF_ROOT)
+                                        ref_root=ref_root)
             print(f"  - {annotated}", file=sys.stderr)
         except Exception as e:
             if fail_on_error:

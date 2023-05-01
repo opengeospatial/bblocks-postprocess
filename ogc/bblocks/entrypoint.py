@@ -8,9 +8,8 @@ from pathlib import Path
 
 from ogc.na.util import load_yaml
 
-from ogc.bblocks import util
 from ogc.bblocks.postprocess import postprocess
-from ogc.na import ingest_json, annotate_schema
+from ogc.na import ingest_json
 
 templates_dir = Path(__file__).parent / 'templates'
 uplift_context_file = Path(__file__).parent / 'register-context.yaml'
@@ -59,6 +58,12 @@ if __name__ == '__main__':
         '--clean',
         default='false',
         help='Delete output directories and files before generating the new ones',
+    )
+
+    parser.add_argument(
+        '--ref-root',
+        default='https://raw.githubusercontent.com/opengeospatial/bblocks/master/build/',
+        help='Value of $_ROOT_ for usage in $ref values inside JSON schemas'
     )
 
     args = parser.parse_args()
@@ -111,12 +116,13 @@ if __name__ == '__main__':
     postprocess(registered_items_path=items_dir,
                 output_file=args.register_file,
                 base_url=args.base_url,
-                metadata_schema='/metadata-schema.yaml',
+                metadata_schema=Path(__file__).parent / 'metadata-schema.yaml',
                 generated_docs_path=args.generated_docs_path,
                 templates_dir=templates_dir,
                 fail_on_error=fail_on_error,
                 id_prefix=id_prefix,
-                annotated_path=annotated_path)
+                annotated_path=annotated_path,
+                ref_root=args.ref_root)
 
     # 2. Uplift register.json
     print(f"Running semantic uplift of {register_file}", file=sys.stderr)
@@ -133,6 +139,6 @@ if __name__ == '__main__':
     subprocess.run([
         'rsync',
         '-rlt',
-        '/src/ogc/bblocks/slate-assets/',
+        str(Path(__file__).parent / 'slate-assets'),
         f"{args.generated_docs_path}/slate/",
     ])
