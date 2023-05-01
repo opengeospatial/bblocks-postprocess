@@ -48,5 +48,5 @@ runs:
         SOURCE_PATH="${GENDOCS_PATH}/slate/"
         BUILD_PATH="${GENDOCS_PATH}/slate-build/"
         docker run --rm -v "${SOURCE_PATH}:/srv/slate/source" \
-          -v "${BUILD_PATH}:/srv/slate/build" slatedocs/slate build
+          -v "${BUILD_PATH}:/srv/slate/build" slatedocs/slate:v2.13.1 build
       shell: bash

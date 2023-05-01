@@ -145,6 +145,6 @@ if __name__ == '__main__':
     subprocess.run([
         'rsync',
         '-rlt',
-        str(Path(__file__).parent / 'slate-assets'),
+        str(Path(__file__).parent / 'slate-assets') + '/',
         f"{args.generated_docs_path}/slate/",
     ])
