@@ -113,18 +113,17 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                                        annotated_path=annotated_path):
         if building_block.super_bblock:
             super_bblocks[building_block.files_path] = building_block
-        elif building_block.itemClass in ANNOTATED_ITEM_CLASSES:
-            # Annotate schema
-            schema_file = building_block.files_path / 'schema.yaml'
-            print(f"Annotating {schema_file}", file=sys.stderr)
-            try:
-                for annotated in annotate_schema(schema_file, registered_items_path, annotated_path,
-                                                 ref_root=OGC_BBR_REF_ROOT):
-                    print(f"  - {annotated}", file=sys.stderr)
-            except Exception as e:
-                if fail_on_error:
-                    raise
-                traceback.print_exception(e, file=sys.stderr)
+
+        # Annotate schema
+        print(f"Annotating schema for {building_block.identifier}", file=sys.stderr)
+        try:
+            annotated = annotate_schema(building_block, annotated_path,
+                                        ref_root=OGC_BBR_REF_ROOT)
+            print(f"  - {annotated}", file=sys.stderr)
+        except Exception as e:
+            if fail_on_error:
+                raise
+            traceback.print_exception(e, file=sys.stderr)
 
         all_bblocks.append(building_block)
 

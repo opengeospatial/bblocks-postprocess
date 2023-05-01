@@ -184,26 +184,34 @@ def write_jsonld_context(annotated_schema: Path) -> Path:
     return context_fn
 
 
-def annotate_schema(schema_file: Path, items_path: Path, annotated_path: Path,
+def annotate_schema(bblock: BuildingBlock, annotated_path: Path,
                     ref_root: str | None = None) -> list[Path]:
+    if not bblock.schema:
+        return []
+
+    annotator = SchemaAnnotator(
+        fn=bblock.schema,
+        follow_refs=False,
+        ref_root=ref_root,
+    )
+
+    # follow_refs=False => only one schema
+    annotated_schema = next(iter(annotator.schemas.values()), None)
+
+    if not annotated_schema:
+        return []
+
     result = []
-    if schema_file.is_file():
-        annotator = SchemaAnnotator(
-            fn=schema_file,
-            follow_refs=False,
-            ref_root=ref_root,
-        )
 
-        def process_fn(p: Path) -> Path:
-            return Path(*(d for d in p.parts if not d.startswith('_')))
-
-        for annotated_schema in dump_annotated_schemas(annotator,
-                                                       annotated_path,
-                                                       items_path,
-                                                       process_fn):
-            context_fn = write_jsonld_context(annotated_schema)
-            result.append(annotated_schema)
-            result.append(context_fn)
+    annotated_schema_fn = annotated_path / bblock.subdirs / 'schema.yaml'
+    dump_yaml(annotated_schema, annotated_schema_fn)
+    result.append(annotated_schema_fn)
+    annotated_schema_json_fn = annotated_schema_fn.with_suffix('.json')
+    with open(annotated_schema_json_fn) as f:
+        json.dump(annotated_schema, f)
+    result.append(annotated_schema_json_fn)
+    context_fn = write_jsonld_context(annotated_schema)
+    result.append(context_fn)
     return result
 
 
