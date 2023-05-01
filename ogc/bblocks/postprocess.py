@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os.path
+import re
 import sys
 from argparse import ArgumentParser
 from pathlib import Path
@@ -44,57 +45,17 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         if base_url:
             if bblock.schema:
                 rel_schema = os.path.relpath(bblock.schema, cwd)
-                schema_url = f"{base_url}{rel_schema}"
-                existing_schemas = bblock.metadata.setdefault('schema', [])
 
-                if bblock.annotated_schema:
+                if bblock.annotated_schema.is_file():
                     rel_annotated = os.path.relpath(bblock.annotated_schema, cwd)
-                    add_schema_url = f"{base_url}{rel_annotated}"
+                    schema_url = f"{base_url}{rel_annotated}"
 
-                    # Remove old, non-annotated schema if present
-                    if schema_url in existing_schemas:
-                        existing_schemas.remove(schema_url)
+                    bblock.metadata['schema'] = [
+                        schema_url,
+                        re.sub(r'\.yaml$', '.json', schema_url)
+                    ]
                 else:
-                    add_schema_url = schema_url
-
-                if add_schema_url not in existing_schemas:
-                    existing_schemas.append(add_schema_url)
-
-                # if bblock.itemClass in ('datatype', 'schema') and not bblock.super_bblock:
-                #     # generate fake JSON
-                #     print("Generating JSON examples", file=sys.stderr)
-                #     try:
-                #         if bblock.jsonld_context:
-                #             jsonld_context_contents = load_yaml(bblock.jsonld_context).get('@context')
-                #         else:
-                #             jsonld_context_contents = None
-                #
-                #         for i in range(FAKE_JSON_COUNT):
-                #             fake_json = generate_fake_json(bblock.schema_contents)
-                #             fake_json_fn = bblock.annotated_path / f"example{i + 1}.json"
-                #             with open(fake_json_fn, 'w') as f:
-                #                 print(f"  - {fake_json_fn}", file=sys.stderr)
-                #                 json.dump(fake_json, f, indent=2)
-                #
-                #             if jsonld_context_contents:
-                #                 if isinstance(fake_json, dict):
-                #                     fake_json = {
-                #                         '@context': jsonld_context_contents,
-                #                         **fake_json
-                #                     }
-                #                 elif isinstance(fake_json, list):
-                #                     fake_json = {
-                #                         '@context': jsonld_context_contents,
-                #                         '@graph': fake_json
-                #                     }
-                #                 fake_jsonld_fn = fake_json_fn.with_suffix('.jsonld')
-                #                 with open(fake_jsonld_fn, 'w') as f:
-                #                     print(f"  - {fake_jsonld_fn}", file=sys.stderr)
-                #                     json.dump(fake_json, f, indent=2)
-                #
-                #     except Exception as e:
-                #         print(f"Error generating fake JSON for {bblock.identifier}", file=sys.stderr)
-                #         traceback.print_exception(e, file=sys.stderr)
+                    bblock.metadata['schema'] = [f"{base_url}{rel_schema}"]
 
         doc_generator.generate_doc(bblock, base_url=base_url)
         validate_test_resources(bblock)
@@ -113,23 +74,24 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                                        annotated_path=annotated_path):
         if building_block.super_bblock:
             super_bblocks[building_block.files_path] = building_block
-        # Annotate schema
-        print(f"Annotating schema for {building_block.identifier}", file=sys.stderr)
-        try:
-            annotated = annotate_schema(building_block, annotated_path,
-                                        ref_root=ref_root)
-            print(f"  - {annotated}", file=sys.stderr)
-        except Exception as e:
-            if fail_on_error:
-                raise
-            traceback.print_exception(e, file=sys.stderr)
+        else:
+            # Annotate schema
+            print(f"Annotating schema for {building_block.identifier}", file=sys.stderr)
+            try:
+                for annotated in annotate_schema(building_block, annotated_path,
+                                                 ref_root=ref_root):
+                    print(f"  - {annotated}", file=sys.stderr)
+            except Exception as e:
+                if fail_on_error:
+                    raise
+                traceback.print_exception(e, file=sys.stderr)
 
         all_bblocks.append(building_block)
 
     # Create super bblock schemas
     print(f"Generating Super Building Block schemas", file=sys.stderr)
     for super_bblock_schema in write_superbblocks_schemas(super_bblocks, registered_items_path, annotated_path):
-        print(f"  - {super_bblock_schema}", file=sys.stderr)
+        print(f"  - {os.path.relpath(super_bblock_schema, '.')}", file=sys.stderr)
 
     output_bblocks = []
     for building_block in all_bblocks:

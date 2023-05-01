@@ -67,13 +67,8 @@ class BuildingBlock:
         self.tests_dir = fp / 'tests'
 
         self.annotated_path = annotated_path / self.subdirs
-        if self.annotated_path.is_dir():
-            annotated_schema = self.annotated_path / 'schema.yaml'
-            if not annotated_schema.exists():
-                annotated_schema = annotated_path / 'schema.json'
-            self.annotated_schema = annotated_schema if annotated_schema.is_file() else None
-            jsonld_context = annotated_path / 'context.jsonld'
-            self.jsonld_context = jsonld_context if jsonld_context.is_file() else None
+        self.annotated_schema = self.annotated_path / 'schema.yaml'
+        self.jsonld_context = annotated_path / 'context.jsonld'
 
         self._lazy_properties = {}
 
@@ -139,10 +134,14 @@ def write_superbblocks_schemas(super_bblocks: dict[Path, BuildingBlock],
                                annotated_path: Path | None = None) -> list[Path]:
     def process_sbb(sbb_dir: Path, sbb: BuildingBlock, skip_dirs) -> dict:
         one_of = []
+        parsed = set()
         for schema_fn in ('schema.yaml', 'schema.json'):
             for schema_file in sorted(sbb_dir.glob(f"**/{schema_fn}")):
-                if schema_file in skip_dirs:
-                    # Skip descendant super bblocks
+                # Skip schemas in superbblock directory, avoid double parsing
+                # (schema.yaml and schema.json) and in child superbblock directories
+                if schema_file.parent == sbb_dir \
+                        or schema_file.with_suffix('') in parsed \
+                        or schema_file.parents in skip_dirs:
                     continue
 
                 schema = load_yaml(schema_file)
@@ -151,6 +150,9 @@ def write_superbblocks_schemas(super_bblocks: dict[Path, BuildingBlock],
                     continue
                 imported_props = {k: v for k, v in schema.items() if k[0] != '$'}
                 one_of.append(imported_props)
+
+                parsed.add(schema_file.with_suffix(''))
+
         output_schema = {
             '$schema': 'https://json-schema.org/draft/2020-12/schema',
             'description': sbb.name,
@@ -163,14 +165,19 @@ def write_superbblocks_schemas(super_bblocks: dict[Path, BuildingBlock],
     result = []
 
     for super_bblock_dir, super_bblock in super_bblocks.items():
-        dump_yaml(process_sbb(super_bblock_dir, super_bblock, super_bblocks.keys()),
-                  super_bblock_dir / 'schema.yaml')
+        super_schema = process_sbb(super_bblock_dir, super_bblock, super_bblocks.keys())
+
+        dump_yaml(super_schema, super_bblock_dir / 'schema.yaml')
         result.append(super_bblock_dir / 'schema.yaml')
-        annotated_output_file = annotated_path / os.path.relpath(super_bblock.files_path, items_dir) / 'schema.yaml'
+
+        annotated_output_file = annotated_path / super_bblock.subdirs / 'schema.yaml'
         annotated_output_file.parent.mkdir(parents=True, exist_ok=True)
-        dump_yaml(process_sbb(annotated_output_file.parent, super_bblock, annotated_super_bblock_dirs),
-                  annotated_output_file)
+        super_schema_annotated = process_sbb(annotated_output_file.parent, super_bblock, annotated_super_bblock_dirs)
+        dump_yaml(super_schema_annotated, annotated_output_file)
         result.append(annotated_output_file)
+        with open(annotated_output_file.with_suffix('.json'), 'w') as f:
+            json.dump(super_schema_annotated, f)
+
         result.append(write_jsonld_context(annotated_output_file))
 
     return result
@@ -201,16 +208,19 @@ def annotate_schema(bblock: BuildingBlock, annotated_path: Path,
     if not annotated_schema:
         return []
 
+    annotated_schema = annotated_schema.schema
+
     result = []
 
     annotated_schema_fn = annotated_path / bblock.subdirs / 'schema.yaml'
+    annotated_schema_fn.parent.mkdir(parents=True, exist_ok=True)
     dump_yaml(annotated_schema, annotated_schema_fn)
     result.append(annotated_schema_fn)
     annotated_schema_json_fn = annotated_schema_fn.with_suffix('.json')
-    with open(annotated_schema_json_fn) as f:
-        json.dump(annotated_schema, f)
+    with open(annotated_schema_json_fn, 'w') as f:
+        json.dump(annotated_schema, f, indent=2)
     result.append(annotated_schema_json_fn)
-    context_fn = write_jsonld_context(annotated_schema)
+    context_fn = write_jsonld_context(annotated_schema_fn)
     result.append(context_fn)
     return result
 

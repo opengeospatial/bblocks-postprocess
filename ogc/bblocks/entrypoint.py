@@ -66,10 +66,17 @@ if __name__ == '__main__':
         help='Value of $_ROOT_ for usage in $ref values inside JSON schemas'
     )
 
+    parser.add_argument(
+        '--config-file',
+        default='bblocks-config.yaml',
+        help='bblocks-config.yml file, if any'
+    )
+
     args = parser.parse_args()
 
     fail_on_error = args.fail_on_error in ('true', 'on', 'yes')
     clean = args.clean in ('true', 'on', 'yes')
+    bb_config_file = Path(args.config_file) if args.config_file else None
 
     print(f"""Running with the following configuration:
 - register_file: {args.register_file}
@@ -80,13 +87,13 @@ if __name__ == '__main__':
 - annotated_path: {str(args.annotated_path)}
 - fail_on_error: {fail_on_error}
 - clean: {clean}
+- config_file: {bb_config_file}
     """, file=sys.stderr)
 
     register_file = Path(args.register_file)
     register_jsonld_fn = register_file.with_suffix('.jsonld') \
         if register_file.suffix != '.jsonld' else register_file.with_suffix(register_file.suffix + '.jsonld')
     register_ttl_fn = register_file.with_suffix('.ttl')
-    bb_config_file = Path(args.items_dir) / 'bblocks-config.yaml'
     items_dir = Path(args.items_dir)
 
     # Clean old output
@@ -105,11 +112,10 @@ if __name__ == '__main__':
     # Read local bblocks-config.yaml, if present
     id_prefix = 'r1.'
     annotated_path = Path(args.annotated_path)
-    if bb_config_file.is_file():
+    if bb_config_file and bb_config_file.is_file():
         bb_config = load_yaml(filename=bb_config_file)
         id_prefix = bb_config.get('identifier-prefix', id_prefix)
         subdirs = id_prefix.split('.')[1:]
-        annotated_path = annotated_path.joinpath(Path(*subdirs))
 
     # 1. Postprocess BBs
     print(f"Running postprocess...", file=sys.stderr)

@@ -23,6 +23,9 @@ inputs:
   clean:
     description: Whether to delete all output files and directories before generating new ones
     default: 'true'
+  config_file:
+    description: Building blocks submodule config file
+    default: 'bblocks-config.yaml'
 
 runs:
   using: docker
@@ -42,3 +45,5 @@ runs:
     - ${{ inputs.annotated_path }}
     - '--clean'
     - ${{ inputs.clean }}
+    - '--config-file'
+    - ${{ inputs.config_file }}

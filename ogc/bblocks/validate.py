@@ -23,8 +23,8 @@ def validate_test_resources(bblock: BuildingBlock):
     schema = None
     jsonld_context = None
     try:
-        schema = load_yaml(content=bblock.schema_contents) if bblock.schema else None
-        jsonld_context = load_yaml(filename=bblock.jsonld_context) if bblock.jsonld_context else None
+        schema = load_yaml(content=bblock.schema_contents) if bblock.schema.is_file() else None
+        jsonld_context = load_yaml(filename=bblock.jsonld_context) if bblock.jsonld_context.is_file() else None
     except Exception as e:
         json_error = str(e)
 

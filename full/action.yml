@@ -23,6 +23,9 @@ inputs:
   clean:
     description: Whether to delete all output files and directories before generating new ones
     default: 'true'
+  config_file:
+    description: Building blocks submodule config file
+    default: 'bblocks-config.yaml'
 
 runs:
   using: composite
@@ -37,6 +40,7 @@ runs:
         fail_on_error: ${{ inputs.fail_on_error }}
         annotated_path: ${{ inputs.annotated_path }}
         clean: ${{ inputs.clean }}
+        config_file: ${{ inputs.config_file }}
     - name: Generate Slate documentation
       run: |
         GENDOCS_PATH="$(realpath "${{ inputs.generated_docs_path }}")"

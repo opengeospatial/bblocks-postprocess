@@ -30,6 +30,7 @@ properties:
       - deprecated
       - superseded
       - invalid
+      - experimental
   # Note: maybe these dateTime's could be normalized as { operations: { operationType: 'dateTime' } }
   dateTimeAddition:
     description: Date and time when this Building Block was added to the Register.
@@ -109,6 +110,7 @@ properties:
       - mature
       - proposal
       - stable
+      - development
   schema:
     description: List of URLs for JSON schemas of this Building Block.
     type: array
