@@ -1,7 +1,7 @@
 FROM python:3.10-alpine
 
 WORKDIR /src
-COPY requirements.txt metadata-schema.yaml /
+COPY requirements.txt /
 
 RUN apk update && \
     apk add git rsync npm && \
