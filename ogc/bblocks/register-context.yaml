@@ -24,7 +24,7 @@ context:
       '@id': bblocks:status
       '@type': '@id'
       '@context':
-        '@base': http://example.com/ogc/def/bblocks/status/
+        '@base': http://www.opengis.net/def/status/
     dateTimeAddition:
       '@id': dct:created
       '@type': xsd:dateTime

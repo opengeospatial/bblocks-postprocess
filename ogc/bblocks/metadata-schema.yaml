@@ -25,12 +25,18 @@ properties:
   status:
     description: Status of this Building Block.
     enum:
-      - valid
-      - submitted
+      - accepted
       - deprecated
-      - superseded
-      - invalid
       - experimental
+      - invalid
+      - notAccepted
+      - reserved
+      - retired
+      - stable
+      - submitted
+      - superseded
+      - valid
+      - under-development
   # Note: maybe these dateTime's could be normalized as { operations: { operationType: 'dateTime' } }
   dateTimeAddition:
     description: Date and time when this Building Block was added to the Register.
