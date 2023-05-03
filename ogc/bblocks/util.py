@@ -5,11 +5,11 @@ import subprocess
 import sys
 from pathlib import Path
 import os.path
-from typing import Generator, Any
+from typing import Generator, Any, Sequence
 import jsonschema
 from ogc.na.annotate_schema import dump_annotated_schemas, SchemaAnnotator, ContextBuilder
 
-from ogc.na.util import load_yaml, dump_yaml
+from ogc.na.util import load_yaml, dump_yaml, is_url
 
 BBLOCK_METADATA_FILE = 'bblock.json'
 
@@ -192,23 +192,43 @@ def write_jsonld_context(annotated_schema: Path) -> Path:
 
 
 def annotate_schema(bblock: BuildingBlock, annotated_path: Path,
-                    ref_root: str | None = None) -> list[Path]:
-    if not bblock.schema:
-        return []
+                    ref_root: str | None = None,
+                    context: Path | None = None) -> list[Path]:
+    result = []
+    schema_fn = None
+    schema_url = None
+    metadata_schemas = bblock.metadata.get('schema')
+
+    if isinstance(metadata_schemas, Sequence):
+        # Take only first, if more than one
+        ref_schema = metadata_schemas if isinstance(metadata_schemas, str) else metadata_schemas[0]
+        if is_url(ref_schema, http_only=True):
+            schema_url = ref_schema
+        else:
+            schema_fn = ref_schema
+    elif bblock.schema:
+        schema_fn = bblock.schema
+
+    if not schema_fn and not schema_url:
+        return result
 
     annotator = SchemaAnnotator(
-        fn=bblock.schema,
+        url=schema_url,
+        fn=schema_fn,
         follow_refs=False,
         ref_root=ref_root,
+        context=context,
     )
 
     # follow_refs=False => only one schema
     annotated_schema = next(iter(annotator.schemas.values()), None)
 
     if not annotated_schema:
-        return []
+        return result
 
     annotated_schema = annotated_schema.schema
+    if schema_url and '$id' not in annotated_schema:
+        annotated_schema['$id'] = schema_url
 
     result = []
 

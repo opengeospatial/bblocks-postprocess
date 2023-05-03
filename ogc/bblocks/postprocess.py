@@ -44,18 +44,22 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         cwd = Path().resolve()
         if base_url:
             if bblock.schema:
+                # add detected schemas to those provided in bblock.json
                 rel_schema = os.path.relpath(bblock.schema, cwd)
+
+                schema_list = bblock.metadata.setdefault('schema', [])
+                if isinstance(schema_list, str):
+                    schema_list = [schema_list]
+                    bblock.metadata['schema'] = schema_list
 
                 if bblock.annotated_schema.is_file():
                     rel_annotated = os.path.relpath(bblock.annotated_schema, cwd)
                     schema_url = f"{base_url}{rel_annotated}"
 
-                    bblock.metadata['schema'] = [
-                        schema_url,
-                        re.sub(r'\.yaml$', '.json', schema_url)
-                    ]
+                    schema_list.append(schema_url)
+                    schema_list.append(re.sub(r'\.yaml$', '.json', schema_url))
                 else:
-                    bblock.metadata['schema'] = [f"{base_url}{rel_schema}"]
+                    schema_list.append(f"{base_url}{rel_schema}")
 
         doc_generator.generate_doc(bblock, base_url=base_url)
         validate_test_resources(bblock)
@@ -77,9 +81,14 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         else:
             # Annotate schema
             print(f"Annotating schema for {building_block.identifier}", file=sys.stderr)
+            default_jsonld_context_fn = building_block.files_path / 'context.jsonld'
+            if not default_jsonld_context_fn.is_file():
+                default_jsonld_context_fn = None
             try:
-                for annotated in annotate_schema(building_block, annotated_path,
-                                                 ref_root=ref_root):
+                for annotated in annotate_schema(building_block,
+                                                 annotated_path,
+                                                 ref_root=ref_root,
+                                                 context=default_jsonld_context_fn):
                     print(f"  - {annotated}", file=sys.stderr)
             except Exception as e:
                 if fail_on_error:

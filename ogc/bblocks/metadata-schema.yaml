@@ -118,11 +118,14 @@ properties:
       - stable
       - development
   schema:
-    description: List of URLs for JSON schemas of this Building Block.
-    type: array
-    items:
-      type: string
-      format: uri
+    description: URL (or array thereof) for JSON schemas of this Building Block.
+    oneOf:
+      - type: array
+        items:
+          type: string
+          format: uri
+      - type: string
+        format: uri
   ldContext:
     description: Link to JSON-LD document with @context for this Building Block.
     type: string
