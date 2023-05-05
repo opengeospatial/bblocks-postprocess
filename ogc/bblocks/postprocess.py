@@ -41,11 +41,14 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         base_url += '/'.join(id_prefix.split('.')[1:])
 
     def do_postprocess(bblock: BuildingBlock) -> bool:
-        cwd = Path().resolve()
         if base_url:
+
+            rel_files_path = os.path.relpath(bblock.files_path)
+            bblock.metadata['sourceFiles'] = f"{base_url}{rel_files_path}/"
+
             if bblock.schema:
                 # add detected schemas to those provided in bblock.json
-                rel_schema = os.path.relpath(bblock.schema, cwd)
+                rel_schema = os.path.relpath(bblock.schema)
 
                 schema_list = bblock.metadata.setdefault('schema', [])
                 if isinstance(schema_list, str):
@@ -53,7 +56,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                     bblock.metadata['schema'] = schema_list
 
                 if bblock.annotated_schema.is_file():
-                    rel_annotated = os.path.relpath(bblock.annotated_schema, cwd)
+                    rel_annotated = os.path.relpath(bblock.annotated_schema)
                     schema_url = f"{base_url}{rel_annotated}"
 
                     schema_list.append(schema_url)
