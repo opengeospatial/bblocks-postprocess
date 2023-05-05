@@ -4,4 +4,3 @@ Mako
 jsonschema
 ogc-na
 rdflib
-jsf @ git+https://github.com/avillar/jsf.git
