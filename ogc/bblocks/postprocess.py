@@ -35,10 +35,9 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                                  templates_dir=templates_dir,
                                  id_prefix=id_prefix)
 
-    if base_url and base_url[-1] not in ('/', '#'):
-        base_url += '/'
-    if id_prefix:
-        base_url += '/'.join(id_prefix.split('.')[1:])
+    if base_url:
+        if base_url[-1] != '/':
+            base_url += '/'
 
     def do_postprocess(bblock: BuildingBlock) -> bool:
         cwd = Path().resolve()
