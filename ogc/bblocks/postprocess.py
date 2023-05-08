@@ -40,12 +40,13 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
     def do_postprocess(bblock: BuildingBlock) -> bool:
         cwd = Path().resolve()
+        output_file_root = Path(output_file).resolve().parent
         if bblock.annotated_schema.is_file():
             if base_url:
                 rel_annotated = os.path.relpath(bblock.annotated_schema, cwd)
                 schema_url_yaml = f"{base_url}{rel_annotated}"
             else:
-                schema_url_yaml = './' + os.path.relpath(bblock.annotated_schema, Path(output_file).resolve().parent)
+                schema_url_yaml = './' + os.path.relpath(bblock.annotated_schema, output_file_root)
             schema_url_json = re.sub(r'\.yaml$', '.json', schema_url_yaml)
             bblock.metadata['schema'] = [
                 schema_url_yaml,
@@ -56,8 +57,14 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 rel_context = os.path.relpath(bblock.jsonld_context, cwd)
                 ld_context_url = f"{base_url}{rel_context}"
             else:
-                ld_context_url = './' + os.path.relpath(bblock.jsonld_context, Path(output_file).resolve().parent)
+                ld_context_url = './' + os.path.relpath(bblock.jsonld_context, output_file_root)
             bblock.metadata['ldContext'] = ld_context_url
+
+        rel_files_path = os.path.relpath(bblock.files_path)
+        if base_url:
+            bblock.metadata['sourceFiles'] = f"{base_url}{rel_files_path}/"
+        else:
+            bblock.metadata['sourceFiles'] = f"./{os.path.relpath(rel_files_path, output_file_root)}/"
 
         print(f"  > Generating documentation for {bblock.identifier}")
         doc_generator.generate_doc(bblock, base_url=base_url)
