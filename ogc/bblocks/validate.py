@@ -40,7 +40,7 @@ def validate_test_resources(bblock: BuildingBlock):
                     json_doc = json_doc['@graph']
 
                 if fn.suffix == '.json' and jsonld_context:
-                    graph = Graph().parse(json.dumps({
+                    graph = Graph().parse(data=json.dumps({
                         '@context': jsonld_context['@context'],
                         '@graph': json_doc,
                     }), format='json-ld')
