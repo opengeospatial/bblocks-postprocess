@@ -8,11 +8,10 @@ from argparse import ArgumentParser
 from pathlib import Path
 import traceback
 
-from ogc.na.util import load_yaml
+from ogc.na.util import is_url
 
 from ogc.bblocks.generate_docs import DocGenerator
-from ogc.bblocks.util import load_bblocks, write_superbblocks_schemas, annotate_schema, BuildingBlock, \
-    generate_fake_json
+from ogc.bblocks.util import load_bblocks, write_superbblocks_schemas, annotate_schema, BuildingBlock
 from ogc.bblocks.validate import validate_test_resources
 
 ANNOTATED_ITEM_CLASSES = ('schema', 'datatype')
@@ -41,26 +40,28 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
     def do_postprocess(bblock: BuildingBlock) -> bool:
         cwd = Path().resolve()
-        if base_url:
-            if bblock.schema:
-                # add detected schemas to those provided in bblock.json
-                rel_schema = os.path.relpath(bblock.schema, cwd)
+        if bblock.annotated_schema.is_file():
+            if base_url:
+                rel_annotated = os.path.relpath(bblock.annotated_schema, cwd)
+                schema_url_yaml = f"{base_url}{rel_annotated}"
+            else:
+                schema_url_yaml = './' + os.path.relpath(bblock.annotated_schema, Path(output_file).resolve().parent)
+            schema_url_json = re.sub(r'\.yaml$', '.json', schema_url_yaml)
+            bblock.metadata['schema'] = [
+                schema_url_yaml,
+                schema_url_json
+            ]
+        if bblock.jsonld_context.is_file():
+            if base_url:
+                rel_context = os.path.relpath(bblock.jsonld_context, cwd)
+                ld_context_url = f"{base_url}{rel_context}"
+            else:
+                ld_context_url = './' + os.path.relpath(bblock.jsonld_context, Path(output_file).resolve().parent)
+            bblock.metadata['ldContext'] = ld_context_url
 
-                schema_list = bblock.metadata.setdefault('schema', [])
-                if isinstance(schema_list, str):
-                    schema_list = [schema_list]
-                    bblock.metadata['schema'] = schema_list
-
-                if bblock.annotated_schema.is_file():
-                    rel_annotated = os.path.relpath(bblock.annotated_schema, cwd)
-                    schema_url = f"{base_url}{rel_annotated}"
-
-                    schema_list.append(schema_url)
-                    schema_list.append(re.sub(r'\.yaml$', '.json', schema_url))
-                else:
-                    schema_list.append(f"{base_url}{rel_schema}")
-
+        print(f"  > Generating documentation for {bblock.identifier}")
         doc_generator.generate_doc(bblock, base_url=base_url)
+        print(f"  > Running tests for {bblock.identifier}")
         validate_test_resources(bblock)
         return True
 
@@ -80,14 +81,19 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         else:
             # Annotate schema
             print(f"Annotating schema for {building_block.identifier}", file=sys.stderr)
-            default_jsonld_context_fn = building_block.files_path / 'context.jsonld'
-            if not default_jsonld_context_fn.is_file():
-                default_jsonld_context_fn = None
+
+            if building_block.ldContext:
+                default_jsonld_context = building_block.ldContext
+            else:
+                default_jsonld_context = building_block.files_path / 'context.jsonld'
+                if not default_jsonld_context.is_file():
+                    default_jsonld_context = None
+
             try:
                 for annotated in annotate_schema(building_block,
                                                  annotated_path,
                                                  ref_root=ref_root,
-                                                 context=default_jsonld_context_fn):
+                                                 context=default_jsonld_context):
                     print(f"  - {annotated}", file=sys.stderr)
             except Exception as e:
                 if fail_on_error:

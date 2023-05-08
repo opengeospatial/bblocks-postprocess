@@ -68,7 +68,7 @@ class BuildingBlock:
 
         self.annotated_path = annotated_path / self.subdirs
         self.annotated_schema = self.annotated_path / 'schema.yaml'
-        self.jsonld_context = annotated_path / 'context.jsonld'
+        self.jsonld_context = self.annotated_path / 'context.jsonld'
 
         self._lazy_properties = {}
 
@@ -193,7 +193,7 @@ def write_jsonld_context(annotated_schema: Path) -> Path:
 
 def annotate_schema(bblock: BuildingBlock, annotated_path: Path,
                     ref_root: str | None = None,
-                    context: Path | None = None) -> list[Path]:
+                    context: Path | dict | None = None) -> list[Path]:
     result = []
     schema_fn = None
     schema_url = None
