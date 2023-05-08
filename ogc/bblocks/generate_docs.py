@@ -72,8 +72,8 @@ class DocGenerator:
                                         root_dir=Path(),
                                         base_url=base_url))
                 if base_url and template.path.stem == 'index':
-                    doc_url = f"{base_url}{'/' if base_url[-1] not in ('/', '#') else ''}" \
-                              f"{self.output_dir.name}/{template.lang}/{bblock.subdirs}/{template.filename}"
+                    doc_url = f"{base_url}{'/' if base_url[-1] != '/' else ''}" \
+                              f"{self.output_dir}/{template.lang}/{bblock.subdirs}/{template.filename}"
                     existing = bblock.metadata.setdefault('documentation', [])
                     if doc_url not in existing:
                         existing.append(doc_url)
