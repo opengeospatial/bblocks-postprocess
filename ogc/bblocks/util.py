@@ -183,8 +183,10 @@ def write_superbblocks_schemas(super_bblocks: dict[Path, BuildingBlock],
     return result
 
 
-def write_jsonld_context(annotated_schema: Path) -> Path:
+def write_jsonld_context(annotated_schema: Path) -> Path | None:
     ctx_builder = ContextBuilder(fn=annotated_schema)
+    if not ctx_builder.context.get('@context'):
+        return None
     context_fn = annotated_schema.parent / 'context.jsonld'
     with open(context_fn, 'w') as f:
         json.dump(ctx_builder.context, f, indent=2)
@@ -241,7 +243,8 @@ def annotate_schema(bblock: BuildingBlock, annotated_path: Path,
         json.dump(annotated_schema, f, indent=2)
     result.append(annotated_schema_json_fn)
     context_fn = write_jsonld_context(annotated_schema_fn)
-    result.append(context_fn)
+    if context_fn:
+        result.append(context_fn)
     return result
 
 
