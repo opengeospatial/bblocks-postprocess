@@ -90,8 +90,14 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             print(f"Annotating schema for {building_block.identifier}", file=sys.stderr)
 
             if building_block.ldContext:
-                default_jsonld_context = building_block.ldContext
+                if is_url(building_block.ldContext):
+                    # Use URL directly
+                    default_jsonld_context = building_block.ldContext
+                else:
+                    # Use path relative to bblock.json
+                    default_jsonld_context = building_block.files_path / building_block.ldContext
             else:
+                # Try local context.jsonld
                 default_jsonld_context = building_block.files_path / 'context.jsonld'
                 if not default_jsonld_context.is_file():
                     default_jsonld_context = None
