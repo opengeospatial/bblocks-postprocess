@@ -1,10 +1,13 @@
 import json
+import shutil
 
 from ogc.na.util import validate as shacl_validate, load_yaml
 from rdflib import Graph
 
 from ogc.bblocks.util import BuildingBlock
 import jsonschema
+
+OUTPUT_SUBDIR = 'output'
 
 
 def validate_test_resources(bblock: BuildingBlock):
@@ -28,8 +31,13 @@ def validate_test_resources(bblock: BuildingBlock):
     except Exception as e:
         json_error = str(e)
 
-    for fn in bblock.tests_dir.iterdir():
+    output_dir = bblock.tests_dir.resolve() / OUTPUT_SUBDIR
+    shutil.rmtree(output_dir, ignore_errors=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for fn in bblock.tests_dir.resolve().iterdir():
         report = []
+        output_fn = output_dir / fn.name
         try:
             json_doc = None
             graph = None
@@ -40,12 +48,22 @@ def validate_test_resources(bblock: BuildingBlock):
                     json_doc = json_doc['@graph']
 
                 if fn.suffix == '.json' and jsonld_context:
-                    graph = Graph().parse(data=json.dumps({
-                        '@context': jsonld_context['@context'],
-                        '@graph': json_doc,
-                    }), format='json-ld')
+                    if isinstance(json_doc, dict):
+                        jsonld_uplifted = {'@context': jsonld_context['@context'], **json_doc}
+                    else:
+                        jsonld_uplifted = {
+                            '@context': jsonld_context['@context'],
+                            '@graph': json_doc,
+                        }
+                    jsonld_contents = json.dumps(jsonld_uplifted, indent=2)
+                    with open(output_fn.with_suffix('.jsonld'), 'w') as f:
+                        f.write(jsonld_contents)
+                    graph = Graph().parse(data=jsonld_contents, format='json-ld')
                 elif fn.suffix == '.jsonld':
                     graph = Graph().parse(fn)
+
+                if graph:
+                    graph.serialize(output_fn.with_suffix('.ttl'), format='ttl')
 
             elif fn.suffix == '.ttl':
                 graph = Graph().parse(fn)
@@ -74,7 +92,7 @@ def validate_test_resources(bblock: BuildingBlock):
         except Exception as e:
             report.append(str(e))
 
-        report_fn = fn.with_suffix('.validation.txt')
+        report_fn = output_fn.with_suffix('.validation.txt')
         with open(report_fn, 'w') as f:
             for line in report:
                 f.write(f"{line}\n")
