@@ -69,7 +69,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         print(f"  > Generating documentation for {bblock.identifier}")
         doc_generator.generate_doc(bblock, base_url=base_url)
         print(f"  > Running tests for {bblock.identifier}")
-        validate_test_resources(bblock)
+        bblock.metadata['validationPassed'] = validate_test_resources(bblock)
         return True
 
     if not isinstance(registered_items_path, Path):

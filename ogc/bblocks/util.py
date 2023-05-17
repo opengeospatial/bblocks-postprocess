@@ -58,7 +58,7 @@ class BuildingBlock:
         schema = fp / 'schema.yaml'
         if not schema.exists():
             schema = fp / 'schema.json'
-        self.schema = schema if schema.is_file() else None
+        self.schema = schema
 
         ap = fp / 'assets'
         self.assets_path = ap if ap.is_dir() else None
@@ -81,7 +81,9 @@ class BuildingBlock:
     @property
     def schema_contents(self):
         if 'schema_contents' not in self._lazy_properties:
-            self._lazy_properties['schema_contents'] = load_file(self.schema) if self.schema else None
+            if not self.schema.exists():
+                return None
+            self._lazy_properties['schema_contents'] = load_file(self.schema)
         return self._lazy_properties['schema_contents']
 
     @property
@@ -208,7 +210,7 @@ def annotate_schema(bblock: BuildingBlock, annotated_path: Path,
             schema_url = ref_schema
         else:
             schema_fn = ref_schema
-    elif bblock.schema:
+    elif bblock.schema.is_file():
         schema_fn = bblock.schema
 
     if not schema_fn and not schema_url:

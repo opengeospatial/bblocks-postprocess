@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import json
 import shutil
+from pathlib import Path
 
 from ogc.na.util import validate as shacl_validate, load_yaml
 from rdflib import Graph
@@ -10,9 +13,89 @@ import jsonschema
 OUTPUT_SUBDIR = 'output'
 
 
-def validate_test_resources(bblock: BuildingBlock):
-    if not bblock.tests_dir.is_dir():
-        return
+def _validate_resource(filename: Path,
+                       output_filename: Path,
+                       resource_contents: str | None = None,
+                       schema: dict | None = None,
+                       jsonld_context: dict | None = None,
+                       shacl_graph: Graph | None = None,
+                       json_error: str | None = None,
+                       shacl_error: str | None = None) -> bool:
+    report = []
+    try:
+        json_doc = None
+        graph = None
+
+        if filename.suffix in ('.json', '.jsonld'):
+            if resource_contents:
+                json_doc = load_yaml(content=resource_contents)
+            else:
+                json_doc = load_yaml(filename=filename)
+
+            if '@graph' in json_doc:
+                json_doc = json_doc['@graph']
+
+            if filename.suffix == '.json' and jsonld_context:
+                if isinstance(json_doc, dict):
+                    jsonld_uplifted = {'@context': jsonld_context['@context'], **json_doc}
+                else:
+                    jsonld_uplifted = {
+                        '@context': jsonld_context['@context'],
+                        '@graph': json_doc,
+                    }
+                jsonld_contents = json.dumps(jsonld_uplifted, indent=2)
+                with open(output_filename.with_suffix('.jsonld'), 'w') as f:
+                    f.write(jsonld_contents)
+                graph = Graph().parse(data=jsonld_contents, format='json-ld')
+            elif output_filename.suffix == '.jsonld':
+                graph = Graph().parse(filename)
+
+            if graph:
+                graph.serialize(output_filename.with_suffix('.ttl'), format='ttl')
+
+        elif filename.suffix == '.ttl':
+            if resource_contents:
+                graph = Graph().parse(data=resource_contents, format='ttl')
+            else:
+                graph = Graph().parse(filename)
+
+        else:
+            return True
+
+        if json_doc:
+            if json_error:
+                report.append(json_error)
+            elif schema:
+                try:
+                    jsonschema.validate(json_doc, schema)
+                except Exception as e:
+                    report.append('=== JSON Schema errors ===')
+                    report.append(str(e))
+
+        if graph:
+            if shacl_error:
+                report.append(shacl_error)
+            elif shacl_graph:
+                shacl_report = shacl_validate(graph, shacl_graph)
+                report.append("=== SHACL errors ===")
+                report.append(shacl_report.text)
+
+    except Exception as e:
+        report.append(str(e))
+
+    report_fn = output_filename.with_suffix('.validation.txt')
+    with open(report_fn, 'w') as f:
+        for line in report:
+            f.write(f"{line}\n")
+
+    return len(report) == 0
+
+
+def validate_test_resources(bblock: BuildingBlock) -> bool:
+    result = True
+
+    if not bblock.tests_dir.is_dir() and not bblock.examples:
+        return result
 
     shacl_graph = Graph()
     shacl_error = None
@@ -35,64 +118,34 @@ def validate_test_resources(bblock: BuildingBlock):
     shutil.rmtree(output_dir, ignore_errors=True)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Test resources
     for fn in bblock.tests_dir.resolve().iterdir():
-        report = []
         output_fn = output_dir / fn.name
-        try:
-            json_doc = None
-            graph = None
 
-            if fn.suffix in ('.json', '.jsonld'):
-                json_doc = load_yaml(filename=fn)
-                if '@graph' in json_doc:
-                    json_doc = json_doc['@graph']
+        result = result and _validate_resource(fn, output_fn,
+                                               schema=schema,
+                                               jsonld_context=jsonld_context,
+                                               shacl_graph=shacl_graph,
+                                               json_error=json_error,
+                                               shacl_error=shacl_error)
+    # Examples
+    if bblock.examples:
+        for example_id, example in enumerate(bblock.examples):
+            for snippet_id, snippet in enumerate(example.get('snippets', ())):
+                code, lang = snippet.get('code'), snippet.get('language')
+                if code and lang in ('json', 'jsonld', 'ttl'):
+                    fn = bblock.tests_dir / f"example_{example_id + 1}_{snippet_id + 1}.{snippet['language']}"
+                    output_fn = output_dir / fn.name
 
-                if fn.suffix == '.json' and jsonld_context:
-                    if isinstance(json_doc, dict):
-                        jsonld_uplifted = {'@context': jsonld_context['@context'], **json_doc}
-                    else:
-                        jsonld_uplifted = {
-                            '@context': jsonld_context['@context'],
-                            '@graph': json_doc,
-                        }
-                    jsonld_contents = json.dumps(jsonld_uplifted, indent=2)
-                    with open(output_fn.with_suffix('.jsonld'), 'w') as f:
-                        f.write(jsonld_contents)
-                    graph = Graph().parse(data=jsonld_contents, format='json-ld')
-                elif fn.suffix == '.jsonld':
-                    graph = Graph().parse(fn)
+                    with open(output_fn, 'w') as f:
+                        f.write(code)
 
-                if graph:
-                    graph.serialize(output_fn.with_suffix('.ttl'), format='ttl')
+                    result = result and _validate_resource(fn, output_fn,
+                                                           resource_contents=code,
+                                                           schema=schema,
+                                                           jsonld_context=jsonld_context,
+                                                           shacl_graph=shacl_graph,
+                                                           json_error=json_error,
+                                                           shacl_error=shacl_error)
 
-            elif fn.suffix == '.ttl':
-                graph = Graph().parse(fn)
-
-            else:
-                continue
-
-            if json_doc:
-                if json_error:
-                    report.append(json_error)
-                elif schema:
-                    try:
-                        jsonschema.validate(json_doc, schema)
-                    except Exception as e:
-                        report.append('=== JSON Schema ===')
-                        report.append(str(e))
-
-            if graph:
-                if shacl_error:
-                    report.append(shacl_error)
-                elif shacl_graph:
-                    shacl_report = shacl_validate(graph, shacl_graph)
-                    report.append("=== SHACL ===")
-                    report.append(shacl_report.text)
-
-        except Exception as e:
-            report.append(str(e))
-
-        report_fn = output_fn.with_suffix('.validation.txt')
-        with open(report_fn, 'w') as f:
-            for line in report:
-                f.write(f"{line}\n")
+    return result
