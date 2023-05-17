@@ -123,6 +123,7 @@ if __name__ == '__main__':
                 output_file=args.register_file,
                 base_url=args.base_url,
                 metadata_schema=Path(__file__).parent / 'metadata-schema.yaml',
+                examples_schema=Path(__file__).parent / 'examples-schema.yaml',
                 generated_docs_path=args.generated_docs_path,
                 templates_dir=templates_dir,
                 fail_on_error=fail_on_error,

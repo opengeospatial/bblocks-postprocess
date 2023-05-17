@@ -28,11 +28,16 @@ def get_bblock_identifier(metadata_file: Path, root_path: Path = Path(),
     return identifier, Path(*rel_parts)
 
 
+class BuildingBlockError(Exception):
+    pass
+
+
 class BuildingBlock:
 
     def __init__(self, identifier: str, metadata_file: Path,
                  rel_path: Path,
                  metadata_schema: Any | None = None,
+                 examples_schema: Any | None = None,
                  annotated_path: Path = Path()):
         self.identifier = identifier
         metadata_file = metadata_file.resolve()
@@ -42,9 +47,14 @@ class BuildingBlock:
             self.metadata = json.load(f)
 
             if metadata_schema:
-                jsonschema.validate(self.metadata, metadata_schema)
+                try:
+                    jsonschema.validate(self.metadata, metadata_schema)
+                except Exception as e:
+                    raise BuildingBlockError('Error validating building block metadata') from e
 
             self.metadata['itemIdentifier'] = identifier
+
+        self._lazy_properties = {}
 
         self.subdirs = rel_path
         if '.' in self.identifier:
@@ -64,13 +74,19 @@ class BuildingBlock:
         self.assets_path = ap if ap.is_dir() else None
 
         self.examples_file = fp / 'examples.yaml'
+        if examples_schema and self.examples_file.is_file():
+            examples = load_yaml(self.examples_file)
+            try:
+                jsonschema.validate(examples, examples_schema)
+            except Exception as e:
+                raise BuildingBlockError('Error validating building block examples') from e
+            self._lazy_properties['examples'] = examples
+
         self.tests_dir = fp / 'tests'
 
         self.annotated_path = annotated_path / self.subdirs
         self.annotated_schema = self.annotated_path / 'schema.yaml'
         self.jsonld_context = self.annotated_path / 'context.jsonld'
-
-        self._lazy_properties = {}
 
     @property
     def examples(self):
@@ -101,12 +117,12 @@ def load_bblocks(registered_items_path: Path,
                  annotated_path: Path = Path(),
                  filter_ids: str | list[str] | None = None,
                  metadata_schema_file: str | Path | None = None,
+                 examples_schema_file: str | Path | None = None,
                  fail_on_error: bool = False,
                  prefix: str = 'r1.') -> Generator[BuildingBlock, None, None]:
-    if metadata_schema_file:
-        metadata_schema = load_yaml(metadata_schema_file)
-    else:
-        metadata_schema = None
+
+    metadata_schema = load_yaml(metadata_schema_file) if metadata_schema_file else None
+    examples_schema = load_yaml(examples_schema_file) if examples_schema_file else None
 
     seen_ids = set()
     for metadata_file in sorted(registered_items_path.glob(f"**/{BBLOCK_METADATA_FILE}")):
@@ -118,6 +134,7 @@ def load_bblocks(registered_items_path: Path,
             try:
                 yield BuildingBlock(bblock_id, metadata_file,
                                     metadata_schema=metadata_schema,
+                                    examples_schema=examples_schema,
                                     rel_path=bblock_rel_path,
                                     annotated_path=annotated_path)
             except Exception as e:

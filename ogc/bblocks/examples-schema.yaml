@@ -1,0 +1,30 @@
+"$schema": https://json-schema.org/draft/2020-12/schema
+title: OGC Building Blocks Register metadata schema
+type: array
+items:
+  type: object
+  anyOf:
+    - required:
+        - content
+    - required:
+        - snippets
+      properties:
+        snippets:
+          minItems: 1
+  properties:
+    title:
+      type: string
+    content:
+      type: string
+    snippets:
+      type: array
+      items:
+        type: object
+        required:
+          - language
+          - code
+        properties:
+          language:
+            type: string
+          code:
+            type: string
