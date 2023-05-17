@@ -180,7 +180,9 @@ def write_superbblocks_schemas(super_bblocks: dict[Path, BuildingBlock],
         with open(annotated_output_file.with_suffix('.json'), 'w') as f:
             json.dump(super_schema_annotated, f)
 
-        result.append(write_jsonld_context(annotated_output_file))
+        jsonld_context = write_jsonld_context(annotated_output_file)
+        if jsonld_context:
+            result.append(jsonld_context)
 
     return result
 
