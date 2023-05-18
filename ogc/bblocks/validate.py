@@ -18,6 +18,7 @@ def _validate_resource(filename: Path,
                        resource_contents: str | None = None,
                        schema: dict | None = None,
                        jsonld_context: dict | None = None,
+                       jsonld_url: str | None = None,
                        shacl_graph: Graph | None = None,
                        json_error: str | None = None,
                        shacl_error: str | None = None) -> bool:
@@ -44,9 +45,13 @@ def _validate_resource(filename: Path,
                         '@graph': json_doc,
                     }
                 jsonld_contents = json.dumps(jsonld_uplifted, indent=2)
-                with open(output_filename.with_suffix('.jsonld'), 'w') as f:
-                    f.write(jsonld_contents)
                 graph = Graph().parse(data=jsonld_contents, format='json-ld')
+
+                if jsonld_url:
+                    jsonld_uplifted['@context'] = jsonld_url
+                with open(output_filename.with_suffix('.jsonld'), 'w') as f:
+                    json.dump(jsonld_uplifted, f, indent=2)
+
             elif output_filename.suffix == '.jsonld':
                 graph = Graph().parse(filename)
 
@@ -108,6 +113,7 @@ def validate_test_resources(bblock: BuildingBlock) -> bool:
     json_error = None
     schema = None
     jsonld_context = None
+    jsonld_url = bblock.metadata.get('ldContext')
     try:
         schema = load_yaml(content=bblock.schema_contents) if bblock.schema.is_file() else None
         jsonld_context = load_yaml(filename=bblock.jsonld_context) if bblock.jsonld_context.is_file() else None
@@ -125,6 +131,7 @@ def validate_test_resources(bblock: BuildingBlock) -> bool:
         result = _validate_resource(fn, output_fn,
                                     schema=schema,
                                     jsonld_context=jsonld_context,
+                                    jsonld_url=jsonld_url,
                                     shacl_graph=shacl_graph,
                                     json_error=json_error,
                                     shacl_error=shacl_error) and result
@@ -144,6 +151,7 @@ def validate_test_resources(bblock: BuildingBlock) -> bool:
                                                 resource_contents=code,
                                                 schema=schema,
                                                 jsonld_context=jsonld_context,
+                                                jsonld_url=jsonld_url,
                                                 shacl_graph=shacl_graph,
                                                 json_error=json_error,
                                                 shacl_error=shacl_error) and result
