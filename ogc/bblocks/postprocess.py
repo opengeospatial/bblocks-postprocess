@@ -131,7 +131,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
     # Create super bblock schemas
     # TODO: Do not build super bb's that have children with errors
     print(f"Generating Super Building Block schemas", file=sys.stderr)
-    for super_bblock_schema in write_superbblocks_schemas(super_bblocks, registered_items_path, annotated_path):
+    for super_bblock_schema in write_superbblocks_schemas(super_bblocks, annotated_path):
         print(f"  - {os.path.relpath(super_bblock_schema, '.')}", file=sys.stderr)
 
     output_bblocks = []

@@ -157,10 +157,24 @@ def load_bblocks(registered_items_path: Path,
 
 
 def write_superbblocks_schemas(super_bblocks: dict[Path, BuildingBlock],
-                               items_dir: Path,
                                annotated_path: Path | None = None) -> list[Path]:
+
+    def update_refs(schema, s, c):
+        for prop, val in schema.items():
+            if prop == '$ref':
+                if not is_url(val):
+                    # update
+                    ref = c / val
+                    schema[prop] = os.path.relpath(ref, s)
+            elif isinstance(val, dict):
+                update_refs(val, s, c)
+            elif isinstance(val, list):
+                for item in val:
+                    if isinstance(item, dict):
+                        update_refs(item, s, c)
+
     def process_sbb(sbb_dir: Path, sbb: BuildingBlock, skip_dirs) -> dict:
-        one_of = []
+        any_of = []
         parsed = set()
         for schema_fn in ('schema.yaml', 'schema.json'):
             for schema_file in sorted(sbb_dir.glob(f"**/{schema_fn}")):
@@ -172,11 +186,17 @@ def write_superbblocks_schemas(super_bblocks: dict[Path, BuildingBlock],
                     continue
 
                 schema = load_yaml(schema_file)
+                if not isinstance(schema, dict):
+                    continue
+
                 if 'schema' in schema:
                     # OpenAPI sub spec - skip
                     continue
-                imported_props = {k: v for k, v in schema.items() if k[0] != '$'}
-                one_of.append(imported_props)
+
+                # update relative $ref's
+                update_refs(schema, sbb_dir.resolve(), schema_file.parent.resolve())
+
+                any_of.append(schema)
 
                 parsed.add(schema_file.with_suffix(''))
 
@@ -184,8 +204,8 @@ def write_superbblocks_schemas(super_bblocks: dict[Path, BuildingBlock],
             '$schema': 'https://json-schema.org/draft/2020-12/schema',
             'description': sbb.name,
         }
-        if one_of:
-            output_schema['anyOf'] = one_of
+        if any_of:
+            output_schema['anyOf'] = any_of
         return output_schema
 
     annotated_super_bblock_dirs = set(annotated_path / b.subdirs for b in super_bblocks.values())
@@ -203,7 +223,7 @@ def write_superbblocks_schemas(super_bblocks: dict[Path, BuildingBlock],
         dump_yaml(super_schema_annotated, annotated_output_file)
         result.append(annotated_output_file)
         with open(annotated_output_file.with_suffix('.json'), 'w') as f:
-            json.dump(super_schema_annotated, f)
+            json.dump(super_schema_annotated, f, indent=2)
 
         jsonld_context = write_jsonld_context(annotated_output_file)
         if jsonld_context:
