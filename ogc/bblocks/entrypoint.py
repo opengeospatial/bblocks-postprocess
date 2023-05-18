@@ -112,10 +112,12 @@ if __name__ == '__main__':
     # Read local bblocks-config.yaml, if present
     id_prefix = 'r1.'
     annotated_path = Path(args.annotated_path)
+    schema_mapping_config = {}
     if bb_config_file and bb_config_file.is_file():
         bb_config = load_yaml(filename=bb_config_file)
         id_prefix = bb_config.get('identifier-prefix', id_prefix)
         subdirs = id_prefix.split('.')[1:]
+        schema_mapping_config = bb_config.get('schema-mapping', {})
 
     # 1. Postprocess BBs
     print(f"Running postprocess...", file=sys.stderr)
@@ -129,7 +131,8 @@ if __name__ == '__main__':
                 fail_on_error=fail_on_error,
                 id_prefix=id_prefix,
                 annotated_path=annotated_path,
-                ref_root=args.ref_root)
+                schema_default_base_url=schema_mapping_config.get('default'),
+                schema_identifier_url_mappings=schema_mapping_config.get('mappings'))
 
     # 2. Uplift register.json
     print(f"Running semantic uplift of {register_file}", file=sys.stderr)

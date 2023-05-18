@@ -31,7 +31,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 fail_on_error: bool = False,
                 id_prefix: str = '',
                 annotated_path: str | Path = 'annotated',
-                ref_root: str | None = None) -> list[BuildingBlock]:
+                schema_default_base_url: str | None = None,
+                schema_identifier_url_mappings: list[dict[str, str]] = None) -> list[BuildingBlock]:
 
     doc_generator = DocGenerator(output_dir=generated_docs_path,
                                  templates_dir=templates_dir,
@@ -108,7 +109,9 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
             try:
                 for annotated in annotate_schema(building_block,
-                                                 context=default_jsonld_context):
+                                                 context=default_jsonld_context,
+                                                 default_base_url=schema_default_base_url,
+                                                 identifier_url_mappings=schema_identifier_url_mappings):
                     print(f"  - {annotated}", file=sys.stderr)
             except Exception as e:
                 if fail_on_error:
