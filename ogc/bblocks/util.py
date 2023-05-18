@@ -16,7 +16,6 @@ from ogc.na.annotate_schema import dump_annotated_schemas, SchemaAnnotator, Cont
 from ogc.na.util import load_yaml, dump_yaml, is_url
 
 BBLOCK_METADATA_FILE = 'bblock.json'
-DEFAULT_BASE_URL_ANNOTATED = 'https://opengeospatial.github.io/bblocks/annotated-schemas/'
 
 
 def load_file(fn):
@@ -225,7 +224,7 @@ def write_jsonld_context(annotated_schema: Path) -> Path | None:
 
 def annotate_schema(bblock: BuildingBlock,
                     context: Path | dict | None = None,
-                    default_base_url: str = DEFAULT_BASE_URL_ANNOTATED,
+                    default_base_url: str | None = None,
                     identifier_url_mappings: list[dict[str, str]] | None = None) -> list[Path]:
     result = []
     schema_fn = None
@@ -246,6 +245,7 @@ def annotate_schema(bblock: BuildingBlock,
         return result
 
     ref_mapper = functools.partial(resolve_schema_reference,
+                                   from_identifier=bblock.identifier,
                                    default_base_url=default_base_url,
                                    identifier_url_mappings=identifier_url_mappings)
 
@@ -289,8 +289,10 @@ def generate_fake_json(schema_contents: str) -> Any:
 
 
 def resolve_schema_reference(ref: str,
-                             default_base_url: str = DEFAULT_BASE_URL_ANNOTATED,
+                             from_identifier: str | None = None,
+                             default_base_url: str | None = None,
                              identifier_url_mappings: list[dict[str, str]] | None = None) -> str:
+
     if not ref.startswith('bblocks://'):
         return ref
 
@@ -306,6 +308,16 @@ def resolve_schema_reference(ref: str,
                 target_id = target_id[len(prefix):]
                 base_url = mapping.get('base_url')
                 break
+
+    if not base_url:
+        if from_identifier:
+            # Compute local relative path
+            target_path = get_bblock_subdirs(target_id)
+            from_path = get_bblock_subdirs(from_identifier)
+            rel_path = os.path.relpath(target_path, from_path)
+            return f"{rel_path}/schema.yaml"
+        else:
+            return ref
 
     if base_url[-1] != '/':
         base_url += '/'
