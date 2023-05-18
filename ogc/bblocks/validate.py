@@ -122,12 +122,12 @@ def validate_test_resources(bblock: BuildingBlock) -> bool:
     for fn in bblock.tests_dir.resolve().iterdir():
         output_fn = output_dir / fn.name
 
-        result = result and _validate_resource(fn, output_fn,
-                                               schema=schema,
-                                               jsonld_context=jsonld_context,
-                                               shacl_graph=shacl_graph,
-                                               json_error=json_error,
-                                               shacl_error=shacl_error)
+        result = _validate_resource(fn, output_fn,
+                                    schema=schema,
+                                    jsonld_context=jsonld_context,
+                                    shacl_graph=shacl_graph,
+                                    json_error=json_error,
+                                    shacl_error=shacl_error) and result
     # Examples
     if bblock.examples:
         for example_id, example in enumerate(bblock.examples):
@@ -140,12 +140,12 @@ def validate_test_resources(bblock: BuildingBlock) -> bool:
                     with open(output_fn, 'w') as f:
                         f.write(code)
 
-                    result = result and _validate_resource(fn, output_fn,
-                                                           resource_contents=code,
-                                                           schema=schema,
-                                                           jsonld_context=jsonld_context,
-                                                           shacl_graph=shacl_graph,
-                                                           json_error=json_error,
-                                                           shacl_error=shacl_error)
+                    result = _validate_resource(fn, output_fn,
+                                                resource_contents=code,
+                                                schema=schema,
+                                                jsonld_context=jsonld_context,
+                                                shacl_graph=shacl_graph,
+                                                json_error=json_error,
+                                                shacl_error=shacl_error) and result
 
     return result
