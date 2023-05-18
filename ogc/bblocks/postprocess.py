@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import json
 import os.path
 import re
@@ -11,7 +12,8 @@ import traceback
 from ogc.na.util import is_url
 
 from ogc.bblocks.generate_docs import DocGenerator
-from ogc.bblocks.util import load_bblocks, write_superbblocks_schemas, annotate_schema, BuildingBlock
+from ogc.bblocks.util import load_bblocks, write_superbblocks_schemas, annotate_schema, BuildingBlock, \
+    write_jsonld_context
 from ogc.bblocks.validate import validate_test_resources
 
 ANNOTATED_ITEM_CLASSES = ('schema', 'datatype')
@@ -67,16 +69,16 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         else:
             bblock.metadata['sourceFiles'] = f"./{os.path.relpath(rel_files_path, output_file_root)}/"
 
-        print(f"  > Generating documentation for {bblock.identifier}")
+        print(f"  > Generating documentation for {bblock.identifier}", file=sys.stderr)
         doc_generator.generate_doc(bblock, base_url=base_url)
-        print(f"  > Running tests for {bblock.identifier}")
+        print(f"  > Running tests for {bblock.identifier}", file=sys.stderr)
         bblock.metadata['validationPassed'] = validate_test_resources(bblock)
         return True
 
     if not isinstance(registered_items_path, Path):
         registered_items_path = Path(registered_items_path)
 
-    all_bblocks = []
+    child_bblocks = []
     super_bblocks = {}
     for building_block in load_bblocks(registered_items_path,
                                        filter_ids=filter_ids,
@@ -106,8 +108,6 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
             try:
                 for annotated in annotate_schema(building_block,
-                                                 annotated_path,
-                                                 ref_root=ref_root,
                                                  context=default_jsonld_context):
                     print(f"  - {annotated}", file=sys.stderr)
             except Exception as e:
@@ -115,16 +115,25 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                     raise
                 traceback.print_exception(e, file=sys.stderr)
 
-        all_bblocks.append(building_block)
+            child_bblocks.append(building_block)
+
+    print(f"Writing JSON-LD contexts", file=sys.stderr)
+    # Create JSON-lD contexts
+    for building_block in child_bblocks:
+        if building_block.annotated_schema.is_file():
+            written_context = write_jsonld_context(building_block.annotated_schema)
+            if written_context:
+                print(f"  - {written_context}", file=sys.stderr)
 
     # Create super bblock schemas
+    # TODO: Do not build super bb's that have children with errors
     print(f"Generating Super Building Block schemas", file=sys.stderr)
     for super_bblock_schema in write_superbblocks_schemas(super_bblocks, registered_items_path, annotated_path):
         print(f"  - {os.path.relpath(super_bblock_schema, '.')}", file=sys.stderr)
 
     output_bblocks = []
-    for building_block in all_bblocks:
-        print(f"Processing building block {building_block.identifier}", file=sys.stderr)
+    for building_block in itertools.chain(child_bblocks, super_bblocks.values()):
+        print(f"Postprocessing building block {building_block.identifier}", file=sys.stderr)
         if do_postprocess(building_block):
             output_bblocks.append(building_block.metadata)
         else:

@@ -1,17 +1,22 @@
 from __future__ import annotations
 
+import functools
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
 import os.path
 from typing import Generator, Any, Sequence
+from urllib.parse import urljoin
+
 import jsonschema
 from ogc.na.annotate_schema import dump_annotated_schemas, SchemaAnnotator, ContextBuilder
 
 from ogc.na.util import load_yaml, dump_yaml, is_url
 
 BBLOCK_METADATA_FILE = 'bblock.json'
+DEFAULT_BASE_URL_ANNOTATED = 'https://opengeospatial.github.io/bblocks/annotated-schemas/'
 
 
 def load_file(fn):
@@ -26,6 +31,10 @@ def get_bblock_identifier(metadata_file: Path, root_path: Path = Path(),
     if identifier[-1] == '.':
         identifier = identifier[:-1]
     return identifier, Path(*rel_parts)
+
+
+def get_bblock_subdirs(identifier: str) -> Path:
+    return Path(*(identifier.split('.')[1:]))
 
 
 class BuildingBlockError(Exception):
@@ -58,7 +67,7 @@ class BuildingBlock:
 
         self.subdirs = rel_path
         if '.' in self.identifier:
-            self.subdirs = Path(*(identifier.split('.')[1:]))
+            self.subdirs = get_bblock_subdirs(identifier)
 
         self.super_bblock = self.metadata.get('superBBlock', False)
 
@@ -177,7 +186,7 @@ def write_superbblocks_schemas(super_bblocks: dict[Path, BuildingBlock],
             'description': sbb.name,
         }
         if one_of:
-            output_schema['oneOf'] = one_of
+            output_schema['anyOf'] = one_of
         return output_schema
 
     annotated_super_bblock_dirs = set(annotated_path / b.subdirs for b in super_bblocks.values())
@@ -214,9 +223,10 @@ def write_jsonld_context(annotated_schema: Path) -> Path | None:
     return context_fn
 
 
-def annotate_schema(bblock: BuildingBlock, annotated_path: Path,
-                    ref_root: str | None = None,
-                    context: Path | dict | None = None) -> list[Path]:
+def annotate_schema(bblock: BuildingBlock,
+                    context: Path | dict | None = None,
+                    default_base_url: str = DEFAULT_BASE_URL_ANNOTATED,
+                    identifier_url_mappings: list[dict[str, str]] | None = None) -> list[Path]:
     result = []
     schema_fn = None
     schema_url = None
@@ -235,11 +245,15 @@ def annotate_schema(bblock: BuildingBlock, annotated_path: Path,
     if not schema_fn and not schema_url:
         return result
 
+    ref_mapper = functools.partial(resolve_schema_reference,
+                                   default_base_url=default_base_url,
+                                   identifier_url_mappings=identifier_url_mappings)
+
     annotator = SchemaAnnotator(
         url=schema_url,
         fn=schema_fn,
         follow_refs=False,
-        ref_root=ref_root,
+        ref_mapper=ref_mapper,
         context=context,
     )
 
@@ -255,17 +269,15 @@ def annotate_schema(bblock: BuildingBlock, annotated_path: Path,
 
     result = []
 
-    annotated_schema_fn = annotated_path / bblock.subdirs / 'schema.yaml'
+    annotated_schema_fn = bblock.annotated_path / 'schema.yaml'
     annotated_schema_fn.parent.mkdir(parents=True, exist_ok=True)
     dump_yaml(annotated_schema, annotated_schema_fn)
     result.append(annotated_schema_fn)
     annotated_schema_json_fn = annotated_schema_fn.with_suffix('.json')
+    # TODO: Replace schema.yaml refs with schema.json
     with open(annotated_schema_json_fn, 'w') as f:
         json.dump(annotated_schema, f, indent=2)
     result.append(annotated_schema_json_fn)
-    context_fn = write_jsonld_context(annotated_schema_fn)
-    if context_fn:
-        result.append(context_fn)
     return result
 
 
@@ -274,3 +286,28 @@ def generate_fake_json(schema_contents: str) -> Any:
         'node',
         str(Path(__file__).parent / 'schema-faker')
     ], input=schema_contents, capture_output=True, text=True).stdout)
+
+
+def resolve_schema_reference(ref: str,
+                             default_base_url: str = DEFAULT_BASE_URL_ANNOTATED,
+                             identifier_url_mappings: list[dict[str, str]] | None = None) -> str:
+    if not ref.startswith('bblocks://'):
+        return ref
+
+    target_id = ref[len('bblocks://'):]
+
+    base_url = default_base_url
+    if identifier_url_mappings:
+        for mapping in identifier_url_mappings:
+            prefix = mapping['prefix']
+            if prefix[-1] != '.':
+                prefix += '.'
+            if target_id.startswith(prefix):
+                target_id = target_id[len(prefix):]
+                base_url = mapping.get('base_url')
+                break
+
+    if base_url[-1] != '/':
+        base_url += '/'
+    subdirs = get_bblock_subdirs(target_id)
+    return f"{base_url}{subdirs}/schema.yaml"

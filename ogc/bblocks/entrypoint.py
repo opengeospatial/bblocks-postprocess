@@ -149,3 +149,5 @@ if __name__ == '__main__':
         str(Path(__file__).parent / 'slate-assets') + '/',
         f"{args.generated_docs_path}/slate/",
     ])
+
+    print(f"Finished Building Blocks postprocessing", file=sys.stderr)
