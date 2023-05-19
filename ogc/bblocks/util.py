@@ -301,13 +301,6 @@ def annotate_schema(bblock: BuildingBlock,
     return result
 
 
-def generate_fake_json(schema_contents: str) -> Any:
-    return json.loads(subprocess.run([
-        'node',
-        str(Path(__file__).parent / 'schema-faker')
-    ], input=schema_contents, capture_output=True, text=True).stdout)
-
-
 def resolve_schema_reference(ref: str,
                              from_identifier: str | None = None,
                              default_base_url: str | None = None,

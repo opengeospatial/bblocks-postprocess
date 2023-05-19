@@ -17,7 +17,6 @@ from ogc.bblocks.util import load_bblocks, write_superbblocks_schemas, annotate_
 from ogc.bblocks.validate import validate_test_resources
 
 ANNOTATED_ITEM_CLASSES = ('schema', 'datatype')
-FAKE_JSON_COUNT = 3
 
 
 def postprocess(registered_items_path: str | Path = 'registereditems',
