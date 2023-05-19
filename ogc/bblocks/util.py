@@ -127,7 +127,7 @@ def load_bblocks(registered_items_path: Path,
                  metadata_schema_file: str | Path | None = None,
                  examples_schema_file: str | Path | None = None,
                  fail_on_error: bool = False,
-                 prefix: str = 'r1.') -> Generator[BuildingBlock, None, None]:
+                 prefix: str = 'ogc.') -> Generator[BuildingBlock, None, None]:
 
     metadata_schema = load_yaml(metadata_schema_file) if metadata_schema_file else None
     examples_schema = load_yaml(examples_schema_file) if examples_schema_file else None

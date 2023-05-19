@@ -110,7 +110,7 @@ if __name__ == '__main__':
                 shutil.rmtree(old_dir, ignore_errors=True)
 
     # Read local bblocks-config.yaml, if present
-    id_prefix = 'r1.'
+    id_prefix = 'ogc.'
     annotated_path = Path(args.annotated_path)
     schema_mapping_config = {}
     if bb_config_file and bb_config_file.is_file():

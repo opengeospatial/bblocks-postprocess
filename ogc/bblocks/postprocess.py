@@ -209,7 +209,7 @@ def _main():
     parser.add_argument(
         '-p',
         '--identifier-prefix',
-        default='r1.',
+        default='ogc.',
         help='Building blocks identifier prefix',
     )
 
