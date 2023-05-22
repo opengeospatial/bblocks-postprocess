@@ -222,10 +222,10 @@ def write_superbblocks_schemas(super_bblocks: dict[Path, BuildingBlock],
     result = []
 
     for super_bblock_dir, super_bblock in super_bblocks.items():
-        super_schema = process_sbb(super_bblock_dir, super_bblock, super_bblocks.keys())
-
-        dump_yaml(super_schema, super_bblock_dir / 'schema.yaml')
-        result.append(super_bblock_dir / 'schema.yaml')
+        # Should we generate the schema in the source directory? Let's not for now...
+        # super_schema = process_sbb(super_bblock_dir, super_bblock, super_bblocks.keys())
+        # dump_yaml(super_schema, super_bblock_dir / 'schema.yaml')
+        # result.append(super_bblock_dir / 'schema.yaml')
 
         annotated_output_file = annotated_path / super_bblock.subdirs / 'schema.yaml'
         annotated_output_file.parent.mkdir(parents=True, exist_ok=True)
