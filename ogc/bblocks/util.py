@@ -2,17 +2,15 @@ from __future__ import annotations
 
 import functools
 import json
-import re
-import subprocess
-import sys
-from pathlib import Path
 import os.path
-from typing import Generator, Any, Sequence
-from urllib.parse import urljoin
+import re
+import sys
+from collections import deque
+from pathlib import Path
+from typing import Generator, Any, Sequence, Callable
 
 import jsonschema
-from ogc.na.annotate_schema import dump_annotated_schemas, SchemaAnnotator, ContextBuilder
-
+from ogc.na.annotate_schema import SchemaAnnotator, ContextBuilder
 from ogc.na.util import load_yaml, dump_yaml, is_url
 
 BBLOCK_METADATA_FILE = 'bblock.json'
@@ -252,6 +250,24 @@ def write_jsonld_context(annotated_schema: Path) -> Path | None:
     return context_fn
 
 
+def update_refs(schema: Any, updater: Callable[[str], str]):
+    pending = deque()
+    pending.append(schema)
+
+    while pending:
+        sub_schema = pending.popleft()
+        if isinstance(sub_schema, dict):
+            for k in list(sub_schema.keys()):
+                if k == '$ref':
+                    sub_schema[k] = updater(sub_schema[k])
+                else:
+                    pending.append(sub_schema[k])
+        elif isinstance(sub_schema, Sequence) and not isinstance(sub_schema, str):
+            pending.extend(sub_schema)
+
+    return schema
+
+
 def annotate_schema(bblock: BuildingBlock,
                     context: Path | dict | None = None,
                     default_base_url: str | None = None,
@@ -299,12 +315,15 @@ def annotate_schema(bblock: BuildingBlock,
 
     result = []
 
+    # YAML
     annotated_schema_fn = bblock.annotated_path / 'schema.yaml'
     annotated_schema_fn.parent.mkdir(parents=True, exist_ok=True)
     dump_yaml(annotated_schema, annotated_schema_fn)
     result.append(annotated_schema_fn)
+
+    # JSON
+    update_refs(annotated_schema, lambda s: re.sub(r'\.yaml$', '.json', s))
     annotated_schema_json_fn = annotated_schema_fn.with_suffix('.json')
-    # TODO: Replace schema.yaml refs with schema.json
     with open(annotated_schema_json_fn, 'w') as f:
         json.dump(annotated_schema, f, indent=2)
     result.append(annotated_schema_json_fn)
