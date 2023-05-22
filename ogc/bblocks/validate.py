@@ -17,6 +17,7 @@ def _validate_resource(filename: Path,
                        output_filename: Path,
                        resource_contents: str | None = None,
                        schema: dict | None = None,
+                       schema_url: str | None = None,
                        jsonld_context: dict | None = None,
                        jsonld_url: str | None = None,
                        shacl_graph: Graph | None = None,
@@ -32,6 +33,9 @@ def _validate_resource(filename: Path,
                 json_doc = load_yaml(content=resource_contents)
             else:
                 json_doc = load_yaml(filename=filename)
+
+            if schema_url:
+                json_doc['$schema'] = schema_url
 
             if '@graph' in json_doc:
                 json_doc = json_doc['@graph']
@@ -114,6 +118,9 @@ def validate_test_resources(bblock: BuildingBlock) -> bool:
     schema = None
     jsonld_context = None
     jsonld_url = bblock.metadata.get('ldContext')
+
+    schema_url = next((u for u in bblock.metadata.get('schema', []) if u.endswith('.json')), None)
+
     try:
         schema = load_yaml(content=bblock.schema_contents) if bblock.schema.is_file() else None
         jsonld_context = load_yaml(filename=bblock.jsonld_context) if bblock.jsonld_context.is_file() else None
@@ -149,6 +156,7 @@ def validate_test_resources(bblock: BuildingBlock) -> bool:
 
                     result = _validate_resource(fn, output_fn,
                                                 resource_contents=code,
+                                                schema_url=schema_url,
                                                 schema=schema,
                                                 jsonld_context=jsonld_context,
                                                 jsonld_url=jsonld_url,
