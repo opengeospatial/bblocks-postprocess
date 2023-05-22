@@ -31,7 +31,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 id_prefix: str = '',
                 annotated_path: str | Path = 'annotated',
                 schema_default_base_url: str | None = None,
-                schema_identifier_url_mappings: list[dict[str, str]] = None) -> list[BuildingBlock]:
+                schema_identifier_url_mappings: list[dict[str, str]] = None,
+                test_outputs_path: str | Path = 'build/tests') -> list[BuildingBlock]:
 
     doc_generator = DocGenerator(output_dir=generated_docs_path,
                                  templates_dir=templates_dir,
@@ -72,7 +73,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         print(f"  > Generating documentation for {bblock.identifier}", file=sys.stderr)
         doc_generator.generate_doc(bblock, base_url=base_url)
         print(f"  > Running tests for {bblock.identifier}", file=sys.stderr)
-        bblock.metadata['validationPassed'] = validate_test_resources(bblock)
+        bblock.metadata['validationPassed'] = validate_test_resources(bblock, outputs_path=test_outputs_path)
         return True
 
     if not isinstance(registered_items_path, Path):

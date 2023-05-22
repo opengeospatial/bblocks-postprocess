@@ -26,6 +26,9 @@ inputs:
   config_file:
     description: Building blocks submodule config file
     default: 'bblocks-config.yaml'
+  test_outputs_path:
+    description: Directory for test output resources
+    default: build/tests
 
 runs:
   using: docker
@@ -47,3 +50,5 @@ runs:
     - ${{ inputs.clean }}
     - '--config-file'
     - ${{ inputs.config_file }}
+    - '--test-outputs'
+    - ${{ inputs.test_outputs_path }}

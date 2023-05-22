@@ -72,6 +72,12 @@ if __name__ == '__main__':
         help='bblocks-config.yml file, if any'
     )
 
+    parser.add_argument(
+        '--test-outputs-path',
+        default='build/tests',
+        help='Directory for test output resources',
+    )
+
     args = parser.parse_args()
 
     fail_on_error = args.fail_on_error in ('true', 'on', 'yes')
@@ -88,6 +94,7 @@ if __name__ == '__main__':
 - fail_on_error: {fail_on_error}
 - clean: {clean}
 - config_file: {bb_config_file}
+- test_outputs_path: {args.test_outputs_path}
     """, file=sys.stderr)
 
     register_file = Path(args.register_file)
@@ -132,7 +139,8 @@ if __name__ == '__main__':
                 id_prefix=id_prefix,
                 annotated_path=annotated_path,
                 schema_default_base_url=schema_mapping_config.get('default'),
-                schema_identifier_url_mappings=schema_mapping_config.get('mappings'))
+                schema_identifier_url_mappings=schema_mapping_config.get('mappings'),
+                test_outputs_path=args.test_outputs_path)
 
     # 2. Uplift register.json
     print(f"Running semantic uplift of {register_file}", file=sys.stderr)

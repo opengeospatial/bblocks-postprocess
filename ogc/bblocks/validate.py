@@ -100,7 +100,7 @@ def _validate_resource(filename: Path,
     return len(report) == 0
 
 
-def validate_test_resources(bblock: BuildingBlock) -> bool:
+def validate_test_resources(bblock: BuildingBlock, outputs_path: str | Path = None) -> bool:
     result = True
 
     if not bblock.tests_dir.is_dir() and not bblock.examples:
@@ -127,7 +127,10 @@ def validate_test_resources(bblock: BuildingBlock) -> bool:
     except Exception as e:
         json_error = str(e)
 
-    output_dir = bblock.tests_dir.resolve() / OUTPUT_SUBDIR
+    if outputs_path:
+        output_dir = Path(outputs_path) / bblock.subdirs
+    else:
+        output_dir = bblock.tests_dir.resolve() / OUTPUT_SUBDIR
     shutil.rmtree(output_dir, ignore_errors=True)
     output_dir.mkdir(parents=True, exist_ok=True)
 

@@ -26,6 +26,9 @@ inputs:
   config_file:
     description: Building blocks submodule config file
     default: 'bblocks-config.yaml'
+  test_outputs_path:
+    description: Directory for test output resources
+    default: build/tests
 
 runs:
   using: composite
@@ -41,6 +44,7 @@ runs:
         annotated_path: ${{ inputs.annotated_path }}
         clean: ${{ inputs.clean }}
         config_file: ${{ inputs.config_file }}
+        test_outputs_path: ${{ inputs.test_outputs_path }}
     - name: Generate Slate documentation
       continue-on-error: true
       run: |
