@@ -124,15 +124,25 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
     # Create JSON-lD contexts
     for building_block in child_bblocks:
         if building_block.annotated_schema.is_file():
-            written_context = write_jsonld_context(building_block.annotated_schema)
-            if written_context:
-                print(f"  - {written_context}", file=sys.stderr)
+            try:
+                written_context = write_jsonld_context(building_block.annotated_schema)
+                if written_context:
+                    print(f"  - {written_context}", file=sys.stderr)
+            except Exception as e:
+                if fail_on_error:
+                    raise e
+                print(f"[Error] Writing context for {building_block.identifier}: {type(e).__name__}: {e}")
 
     # Create super bblock schemas
     # TODO: Do not build super bb's that have children with errors
     print(f"Generating Super Building Block schemas", file=sys.stderr)
-    for super_bblock_schema in write_superbblocks_schemas(super_bblocks, annotated_path):
-        print(f"  - {os.path.relpath(super_bblock_schema, '.')}", file=sys.stderr)
+    try:
+        for super_bblock_schema in write_superbblocks_schemas(super_bblocks, annotated_path):
+            print(f"  - {os.path.relpath(super_bblock_schema, '.')}", file=sys.stderr)
+    except Exception as e:
+        if fail_on_error:
+            raise e
+        print(f"[Error] Writing Super BB schemas: {type(e).__name__}: {e}")
 
     output_bblocks = []
     for building_block in itertools.chain(child_bblocks, super_bblocks.values()):
