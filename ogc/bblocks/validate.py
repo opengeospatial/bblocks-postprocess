@@ -135,16 +135,17 @@ def validate_test_resources(bblock: BuildingBlock, outputs_path: str | Path = No
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Test resources
-    for fn in bblock.tests_dir.resolve().iterdir():
-        output_fn = output_dir / fn.name
+    if bblock.tests_dir.is_dir():
+        for fn in bblock.tests_dir.resolve().iterdir():
+            output_fn = output_dir / fn.name
 
-        result = _validate_resource(fn, output_fn,
-                                    schema=schema,
-                                    jsonld_context=jsonld_context,
-                                    jsonld_url=jsonld_url,
-                                    shacl_graph=shacl_graph,
-                                    json_error=json_error,
-                                    shacl_error=shacl_error) and result
+            result = _validate_resource(fn, output_fn,
+                                        schema=schema,
+                                        jsonld_context=jsonld_context,
+                                        jsonld_url=jsonld_url,
+                                        shacl_graph=shacl_graph,
+                                        json_error=json_error,
+                                        shacl_error=shacl_error) and result
     # Examples
     if bblock.examples:
         for example_id, example in enumerate(bblock.examples):
