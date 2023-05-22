@@ -120,6 +120,16 @@ class BuildingBlock:
     def __getattr__(self, item):
         return self.metadata.get(item)
 
+    @property
+    def annotated_schema_contents(self):
+        # We try to read it each time until we succeed, since it could
+        # be created later during the postprocessing
+        if 'annotated_schema_contents' not in self._lazy_properties:
+            if not self.annotated_schema.is_file():
+                return None
+            self._lazy_properties['annotated_schema_contents'] = load_file(self.annotated_schema)
+        return self._lazy_properties['annotated_schema_contents']
+
 
 def load_bblocks(registered_items_path: Path,
                  annotated_path: Path = Path(),

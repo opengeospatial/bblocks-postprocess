@@ -30,13 +30,13 @@ ${snippet['code']}
     % endfor
   % endfor
 % endif
-% if bblock.schema:
+% if bblock.metadata.get('schema'):
 ${'##'} Schema
 
-[schema.yaml](${bblock_rel}/schema.yaml)
+[schema.yaml](${bblock.metadata['schema'][0]})
 
 ```yaml
-${bblock.schema_contents}
+${bblock.annotated_schema_contents or bblock.schema_contents}
 ```
 % endif
 % if bblock.sources:
