@@ -167,20 +167,6 @@ def load_bblocks(registered_items_path: Path,
 def write_superbblocks_schemas(super_bblocks: dict[Path, BuildingBlock],
                                annotated_path: Path | None = None) -> list[Path]:
 
-    def update_refs(schema, s, c):
-        for prop, val in schema.items():
-            if prop == '$ref':
-                if not is_url(val):
-                    # update
-                    ref = c / val
-                    schema[prop] = os.path.relpath(ref, s)
-            elif isinstance(val, dict):
-                update_refs(val, s, c)
-            elif isinstance(val, list):
-                for item in val:
-                    if isinstance(item, dict):
-                        update_refs(item, s, c)
-
     def process_sbb(sbb_dir: Path, sbb: BuildingBlock, skip_dirs) -> dict:
         any_of = []
         parsed = set()
@@ -201,8 +187,22 @@ def write_superbblocks_schemas(super_bblocks: dict[Path, BuildingBlock],
                     # OpenAPI sub spec - skip
                     continue
 
+                schema_file = schema_file.resolve()
+                parent_dir = schema_file.parent.resolve()
+                sbb_dir = sbb_dir.resolve()
+
+                def ref_updater(ref):
+                    if not is_url(ref):
+                        # update
+                        if ref[0] == '#':
+                            ref = schema_file / ref
+                        else:
+                            ref = parent_dir / ref
+                        return os.path.relpath(ref, sbb_dir)
+                    return ref
+
                 # update relative $ref's
-                update_refs(schema, sbb_dir.resolve(), schema_file.parent.resolve())
+                update_refs(schema, ref_updater)
 
                 any_of.append(schema)
 
