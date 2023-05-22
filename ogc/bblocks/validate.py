@@ -3,12 +3,17 @@ from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
+from typing import Any
+from urllib.parse import urlsplit
+from urllib.request import urlopen
 
+import jsonschema
+import requests
+from jsonschema.validators import validator_for
 from ogc.na.util import validate as shacl_validate, load_yaml
 from rdflib import Graph
 
 from ogc.bblocks.util import BuildingBlock
-import jsonschema
 
 OUTPUT_SUBDIR = 'output'
 
@@ -16,7 +21,7 @@ OUTPUT_SUBDIR = 'output'
 def _validate_resource(filename: Path,
                        output_filename: Path,
                        resource_contents: str | None = None,
-                       schema: dict | None = None,
+                       schema_validator: jsonschema.Validator | None = None,
                        schema_url: str | None = None,
                        jsonld_context: dict | None = None,
                        jsonld_url: str | None = None,
@@ -33,9 +38,6 @@ def _validate_resource(filename: Path,
                 json_doc = load_yaml(content=resource_contents)
             else:
                 json_doc = load_yaml(filename=filename)
-
-            if schema_url:
-                json_doc['$schema'] = schema_url
 
             if '@graph' in json_doc:
                 json_doc = json_doc['@graph']
@@ -74,12 +76,23 @@ def _validate_resource(filename: Path,
         if json_doc:
             if json_error:
                 report.append(json_error)
-            elif schema:
+            elif schema_validator:
                 try:
-                    jsonschema.validate(json_doc, schema)
+                    validate_json(json_doc, schema_validator)
                 except Exception as e:
+                    if not isinstance(e, jsonschema.exceptions.ValidationError):
+                        import traceback
+                        traceback.print_exception(e)
                     report.append('=== JSON Schema errors ===')
-                    report.append(str(e))
+                    report.append(f"{type(e).__name__}: {e}")
+
+            if schema_url:
+                json_doc = {'$schema': schema_url, **json_doc}
+
+            if resource_contents:
+                # This is an example, write it to disk
+                with open(output_filename, 'w') as f:
+                    json.dump(json_doc, f, indent=2)
 
         if graph:
             if shacl_error:
@@ -90,7 +103,7 @@ def _validate_resource(filename: Path,
                 report.append(shacl_report.text)
 
     except Exception as e:
-        report.append(str(e))
+        report.append(f"{type(e).__name__}: {e}")
 
     report_fn = output_filename.with_suffix('.validation.txt')
     with open(report_fn, 'w') as f:
@@ -115,17 +128,19 @@ def validate_test_resources(bblock: BuildingBlock, outputs_path: str | Path = No
         shacl_error = str(e)
 
     json_error = None
-    schema = None
+    schema_validator = None
     jsonld_context = None
     jsonld_url = bblock.metadata.get('ldContext')
 
     schema_url = next((u for u in bblock.metadata.get('schema', []) if u.endswith('.json')), None)
 
     try:
-        schema = load_yaml(content=bblock.schema_contents) if bblock.schema.is_file() else None
-        jsonld_context = load_yaml(filename=bblock.jsonld_context) if bblock.jsonld_context.is_file() else None
+        if bblock.annotated_schema:
+            schema_validator = get_json_validator(bblock)
+        if bblock.jsonld_context.is_file():
+            jsonld_context = load_yaml(filename=bblock.jsonld_context)
     except Exception as e:
-        json_error = str(e)
+        json_error = f"{type(e).__name__}: {e}"
 
     if outputs_path:
         output_dir = Path(outputs_path) / bblock.subdirs
@@ -140,7 +155,7 @@ def validate_test_resources(bblock: BuildingBlock, outputs_path: str | Path = No
             output_fn = output_dir / fn.name
 
             result = _validate_resource(fn, output_fn,
-                                        schema=schema,
+                                        schema_validator=schema_validator,
                                         jsonld_context=jsonld_context,
                                         jsonld_url=jsonld_url,
                                         shacl_graph=shacl_graph,
@@ -161,7 +176,7 @@ def validate_test_resources(bblock: BuildingBlock, outputs_path: str | Path = No
                     result = _validate_resource(fn, output_fn,
                                                 resource_contents=code,
                                                 schema_url=schema_url,
-                                                schema=schema,
+                                                schema_validator=schema_validator,
                                                 jsonld_context=jsonld_context,
                                                 jsonld_url=jsonld_url,
                                                 shacl_graph=shacl_graph,
@@ -169,3 +184,40 @@ def validate_test_resources(bblock: BuildingBlock, outputs_path: str | Path = No
                                                 shacl_error=shacl_error) and result
 
     return result
+
+
+class RefResolver(jsonschema.validators.RefResolver):
+
+    def resolve_remote(self, uri):
+        scheme = urlsplit(uri).scheme
+
+        if scheme in self.handlers:
+            result = self.handlers[scheme](uri)
+        elif scheme in ["http", "https"]:
+            result = load_yaml(content=requests.get(uri).content)
+        else:
+            # Otherwise, pass off to urllib and assume utf-8
+            with urlopen(uri) as url:
+                result = load_yaml(content=url.read().decode("utf-8"))
+
+        if self.cache_remote:
+            self.store[uri] = result
+        return result
+        pass
+
+
+def get_json_validator(bblock: BuildingBlock) -> jsonschema.Validator:
+    schema = load_yaml(content=bblock.annotated_schema_contents)
+    resolver = RefResolver(
+        base_uri=bblock.annotated_schema.resolve().as_uri(),
+        referrer=True,
+    )
+    validator_cls = validator_for(schema)
+    validator_cls.check_schema(schema)
+    return validator_cls(schema, resolver=resolver)
+
+
+def validate_json(instance: Any, validator: jsonschema.Validator):
+    error = jsonschema.exceptions.best_match(validator.iter_errors(instance))
+    if error is not None:
+        raise error

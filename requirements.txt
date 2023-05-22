@@ -4,3 +4,4 @@ Mako
 jsonschema
 ogc-na
 rdflib
+requests
