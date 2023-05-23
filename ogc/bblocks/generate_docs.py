@@ -53,6 +53,9 @@ class DocGenerator:
             self.output_dir.joinpath(template.lang).mkdir(parents=True, exist_ok=True)
 
     def generate_doc(self, bblock: BuildingBlock, base_url: str = None):
+        existing_docs = bblock.metadata.setdefault('documentation', [])
+        if base_url[-1] != '/':
+            base_url += '/'
         for template in self.templates:
             tpl_out = self.output_dir / template.lang / bblock.subdirs / template.filename
             tpl_out.parent.mkdir(parents=True, exist_ok=True)
@@ -72,11 +75,12 @@ class DocGenerator:
                                         root_dir=Path(),
                                         base_url=base_url))
                 if base_url and template.path.stem == 'index':
-                    doc_url = f"{base_url}{'/' if base_url[-1] != '/' else ''}" \
-                              f"{self.output_dir}/{template.lang}/{bblock.subdirs}/{template.filename}"
-                    existing = bblock.metadata.setdefault('documentation', [])
-                    if doc_url not in existing:
-                        existing.append(doc_url)
+                    doc_url = f"{base_url}{self.output_dir}/{template.lang}/{bblock.subdirs}/{template.filename}"
+                    if doc_url not in existing_docs:
+                        existing_docs.append(doc_url)
+
+        slate_build_url = f"{base_url}{self.output_dir}/slate-build/{bblock.subdirs}/"
+        existing_docs.append(slate_build_url)
 
 
 def generate_docs(regs: str | Path | Sequence[str | Path],
