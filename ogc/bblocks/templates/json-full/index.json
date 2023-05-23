@@ -1,0 +1,13 @@
+<%
+import json
+from pathlib import Path
+
+output = {**bblock.metadata}
+if bblock.description:
+    output['description'] = bblock.description
+if bblock.examples:
+    output['examples'] = bblock.examples
+if bblock.annotated_schema:
+    output['annotated_schema'] = bblock.annotated_schema_contents
+%>
+${json.dumps(output)}
