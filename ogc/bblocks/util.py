@@ -14,6 +14,7 @@ from ogc.na.annotate_schema import SchemaAnnotator, ContextBuilder
 from ogc.na.util import load_yaml, dump_yaml, is_url
 
 BBLOCK_METADATA_FILE = 'bblock.json'
+BBLOCKS_REF_ANNOTATION = 'x-bblocks-ref'
 
 
 def load_file(fn):
@@ -72,7 +73,7 @@ class BuildingBlock:
         self.files_path = fp
 
         schema = fp / 'schema.yaml'
-        if not schema.exists():
+        if not schema.is_file():
             schema = fp / 'schema.json'
         self.schema = schema
 
@@ -331,9 +332,12 @@ def annotate_schema(bblock: BuildingBlock,
 
 
 def resolve_schema_reference(ref: str,
+                             schema: Any,
                              from_identifier: str | None = None,
                              default_base_url: str | None = None,
                              identifier_url_mappings: list[dict[str, str]] | None = None) -> str:
+
+    ref = schema.pop(BBLOCKS_REF_ANNOTATION, ref)
 
     if not ref.startswith('bblocks://'):
         return ref
