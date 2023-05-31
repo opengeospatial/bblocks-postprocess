@@ -158,3 +158,6 @@ properties:
   superBBlock:
     description: Whether this is a Super Building Block, aggregating the schema of its descendants
     type: boolean
+  group:
+    description: An identifier to group Building Blocks together
+    type: string

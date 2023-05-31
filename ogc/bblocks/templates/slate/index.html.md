@@ -2,12 +2,22 @@
 title: ${bblock.name} (${bblock.itemClass.capitalize()})
 % if bblock.examples:
 <%
+  known_langs = {
+    'json': 'JSON',
+    'turtle': 'RDF/Turtle',
+    'plaintext': 'Plain text',
+    'txt': 'Plain text',
+    'yaml': 'YAML',
+    'java': 'Java',
+    'python': 'Python',
+    'javascript': 'Javascript',
+  }
   langs = {snippet['language']: True for example in bblock.examples for snippet in example.get('snippets', [])}
 %>
   % if len(langs) > 1:
 language_tabs:
     % for lang in langs:
-  - ${lang}
+  - ${lang}${(': ' + known_langs[lang]) if lang in known_langs else ''}
     % endfor
   % endif
 % endif
@@ -24,8 +34,9 @@ code_clipboard: true
 meta:
   - name: ${bblock.name} (${bblock.itemClass.capitalize()})
 ---
+<% import re %>
 
-${'#'} Overview
+${'#'} ${bblock.name}
 
 ${bblock.abstract}
 
@@ -54,16 +65,33 @@ ${snippet['code']}
   % endfor
 % endif
 % if bblock.schema:
-${'#'} Schema
 
-[schema.yaml](${bblock_rel}/schema.yaml)
-###
-### ```yaml
-###${bblock.schema_contents}
-### ```
+${'#'} JSON Schema
+
+```yaml--schema
+${bblock.annotated_schema_contents}
+```
+
+Links to the schema:
+
+* YAML version: <a href="${bblock.metadata['schema']['application/yaml']}" target="_blank">schema.yaml</a>
+* JSON version: <a href="${bblock.metadata['schema']['application/json']}" target="_blank">schema.json</a>
+
+% endif
+% if bblock.ldContext:
+
+${'#'} JSON-LD Context
+
+```json--ldContext
+${bblock.jsonld_context_contents}
+```
+
+You can find the full JSON-LD context here:
+<a href="${bblock.ldContext}" target="_blank">${re.sub(r'.*/', '', bblock.ldContext)}</a>
+
 % endif
 % if bblock.sources:
-${'#'} Sources
+${'#'} References
 
   % for source in bblock.sources:
     % if source.get('link'):

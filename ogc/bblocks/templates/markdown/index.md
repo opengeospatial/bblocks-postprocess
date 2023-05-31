@@ -33,11 +33,15 @@ ${snippet['code']}
 % if bblock.metadata.get('schema'):
 ${'##'} Schema
 
-[schema.yaml](${bblock.metadata['schema'][0]})
-
 ```yaml
-${bblock.annotated_schema_contents or bblock.schema_contents}
+${bblock.annotated_schema_contents}
 ```
+
+Links to the schema:
+
+* YAML version: [schema.yaml](${bblock.metadata['schema']['application/json']})
+* JSON version: [schema.json](${bblock.metadata['schema']['application/yaml']})
+
 % endif
 % if bblock.sources:
 ${'##'} Sources

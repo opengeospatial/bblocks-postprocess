@@ -52,10 +52,10 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             else:
                 schema_url_yaml = './' + os.path.relpath(bblock.annotated_schema, output_file_root)
             schema_url_json = re.sub(r'\.yaml$', '.json', schema_url_yaml)
-            bblock.metadata['schema'] = [
-                schema_url_yaml,
-                schema_url_json
-            ]
+            bblock.metadata['schema'] = {
+                'application/yaml': schema_url_yaml,
+                'application/json': schema_url_json,
+            }
         if bblock.jsonld_context.is_file():
             if base_url:
                 rel_context = os.path.relpath(bblock.jsonld_context, cwd)

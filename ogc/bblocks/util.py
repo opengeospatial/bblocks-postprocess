@@ -129,6 +129,16 @@ class BuildingBlock:
             self._lazy_properties['annotated_schema_contents'] = load_file(self.annotated_schema)
         return self._lazy_properties['annotated_schema_contents']
 
+    @property
+    def jsonld_context_contents(self):
+        # We try to read it each time until we succeed, since it could
+        # be created later during the postprocessing
+        if 'jsonld_context_contents' not in self._lazy_properties:
+            if not self.jsonld_context.is_file():
+                return None
+            self._lazy_properties['jsonld_context_contents'] = load_file(self.jsonld_context)
+        return self._lazy_properties['jsonld_context_contents']
+
 
 def load_bblocks(registered_items_path: Path,
                  annotated_path: Path = Path(),
