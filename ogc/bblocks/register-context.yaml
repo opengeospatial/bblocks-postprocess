@@ -2,12 +2,11 @@ transform:
   # Add @type from itemClass with initial capital letter
   - '[ .[] | ."@type" = ("bblocks:" + (.itemClass[:1]|ascii_upcase) + .itemClass[1:]) ]'
 
-# TODO: replace placeholder http://example.com/ogc/def/bblocks namespace
 # TODO: add dateTimeSupersession, dateTimeRetirement, dateTimeInvalidation, predecessor, successor
 context:
   '$':
-    bblocks: http://example.com/ogc/def/bblocks/
-    '@base': http://example.com/ogc/def/bblocks/
+    bblocks: https://opengis.net/def/bblocks/
+    '@base': https://opengis.net/def/bblocks/
     rdfs: http://www.w3.org/2000/01/rdf-schema#
     skos: http://www.w3.org/2004/02/skos/core#
     dct: http://purl.org/dc/terms/
@@ -19,7 +18,7 @@ context:
       '@id': bblocks:inRegister
       '@type': '@id'
       '@context':
-        '@base': http://example.com/ogc/def/bblocks/
+        '@base': http://opengis.net/def/bblocks/
     status:
       '@id': bblocks:status
       '@type': '@id'
@@ -36,12 +35,12 @@ context:
       '@id': bblocks:maturity
       '@type': '@id'
       '@context':
-        '@base': http://example.com/ogc/def/bblocks/maturity/
+        '@base': http://opengis.net/def/bblocks/maturity/
     scope:
       '@id': bblocks:scope
       '@type': '@id'
       '@context':
-        '@base': http://example.com/ogc/def/bblocks/scope/
+        '@base': http://opengis.net/def/bblocks/scope/
     sources:
       '@id': dct:source
       '@context':
