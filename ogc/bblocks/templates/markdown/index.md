@@ -1,6 +1,6 @@
 # ${bblock.name} (${bblock.itemClass.capitalize()})
 
-*Version ${bblock.version}*
+`${bblock.identifier}` *v${bblock.version}*
 
 ${bblock.abstract}
 
@@ -41,6 +41,18 @@ Links to the schema:
 
 * YAML version: [schema.yaml](${bblock.metadata['schema']['application/json']})
 * JSON version: [schema.json](${bblock.metadata['schema']['application/yaml']})
+
+% endif
+% if bblock.ldContext:
+
+${'#'} JSON-LD Context
+
+```jsonld
+${bblock.jsonld_context_contents}
+```
+
+You can find the full JSON-LD context here:
+[${re.sub(r'.*/', '', bblock.ldContext)}](${bblock.ldContext})
 
 % endif
 % if bblock.sources:

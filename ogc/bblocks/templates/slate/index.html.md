@@ -36,7 +36,7 @@ meta:
 ---
 <% import re %>
 
-${'#'} ${bblock.name}
+${'#'} ${bblock.name} `${bblock.identifier}`
 
 ${bblock.abstract}
 
@@ -74,8 +74,8 @@ ${bblock.annotated_schema_contents}
 
 Links to the schema:
 
-* YAML version: <a href="${bblock.metadata['schema']['application/yaml']}" target="_blank">schema.yaml</a>
-* JSON version: <a href="${bblock.metadata['schema']['application/json']}" target="_blank">schema.json</a>
+* YAML version: <a href="${bblock.metadata['schema']['application/yaml']}" target="_blank">bblock.metadata['schema']['application/yaml']</a>
+* JSON version: <a href="${bblock.metadata['schema']['application/json']}" target="_blank">${bblock.metadata['schema']['application/json']</a>
 
 % endif
 % if bblock.ldContext:
@@ -87,7 +87,7 @@ ${bblock.jsonld_context_contents}
 ```
 
 You can find the full JSON-LD context here:
-<a href="${bblock.ldContext}" target="_blank">${re.sub(r'.*/', '', bblock.ldContext)}</a>
+<a href="${bblock.ldContext}" target="_blank">${bblock.ldContext}</a>
 
 % endif
 % if bblock.sources:
