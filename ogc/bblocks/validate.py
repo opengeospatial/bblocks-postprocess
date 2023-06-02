@@ -113,11 +113,13 @@ def _validate_resource(filename: Path,
     return len(report) == 0
 
 
-def validate_test_resources(bblock: BuildingBlock, outputs_path: str | Path = None) -> bool:
+def validate_test_resources(bblock: BuildingBlock,
+                            outputs_path: str | Path | None = None) -> tuple[bool, int]:
     result = True
+    test_count = 0
 
     if not bblock.tests_dir.is_dir() and not bblock.examples:
-        return result
+        return result, test_count
 
     shacl_graph = Graph()
     shacl_error = None
@@ -161,6 +163,8 @@ def validate_test_resources(bblock: BuildingBlock, outputs_path: str | Path = No
                                         shacl_graph=shacl_graph,
                                         json_error=json_error,
                                         shacl_error=shacl_error) and result
+            test_count += 1
+
     # Examples
     if bblock.examples:
         for example_id, example in enumerate(bblock.examples):
@@ -182,8 +186,9 @@ def validate_test_resources(bblock: BuildingBlock, outputs_path: str | Path = No
                                                 shacl_graph=shacl_graph,
                                                 json_error=json_error,
                                                 shacl_error=shacl_error) and result
+                    test_count += 1
 
-    return result
+    return result, test_count
 
 
 class RefResolver(jsonschema.validators.RefResolver):

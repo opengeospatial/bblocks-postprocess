@@ -32,18 +32,28 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 annotated_path: str | Path = 'annotated',
                 schema_default_base_url: str | None = None,
                 schema_identifier_url_mappings: list[dict[str, str]] = None,
-                test_outputs_path: str | Path = 'build/tests') -> list[BuildingBlock]:
+                test_outputs_path: str | Path = 'build/tests',
+                github_base_url: str | None = None) -> list[BuildingBlock]:
 
-    doc_generator = DocGenerator(output_dir=generated_docs_path,
+    cwd = Path().resolve()
+
+    if base_url and base_url[-1] != '/':
+        base_url += '/'
+
+    test_outputs_base_url = None
+    if github_base_url:
+        if github_base_url[-1] != '/':
+            github_base_url += '/'
+        test_outputs_base_url = f"{github_base_url}{os.path.relpath(Path(test_outputs_path).resolve(), cwd)}/"
+
+    print(test_outputs_base_url)
+
+    doc_generator = DocGenerator(base_url=base_url,
+                                 output_dir=generated_docs_path,
                                  templates_dir=templates_dir,
                                  id_prefix=id_prefix)
 
-    if base_url:
-        if base_url[-1] != '/':
-            base_url += '/'
-
     def do_postprocess(bblock: BuildingBlock) -> bool:
-        cwd = Path().resolve()
         output_file_root = Path(output_file).resolve().parent
         if bblock.annotated_schema.is_file():
             if base_url:
@@ -70,10 +80,15 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         else:
             bblock.metadata['sourceFiles'] = f"./{os.path.relpath(rel_files_path, output_file_root)}/"
 
-        print(f"  > Generating documentation for {bblock.identifier}", file=sys.stderr)
-        doc_generator.generate_doc(bblock, base_url=base_url)
         print(f"  > Running tests for {bblock.identifier}", file=sys.stderr)
-        bblock.metadata['validationPassed'] = validate_test_resources(bblock, outputs_path=test_outputs_path)
+        validation_passed, test_count = validate_test_resources(bblock,
+                                                                outputs_path=test_outputs_path)
+        bblock.metadata['validationPassed'] = validation_passed
+        if test_count and test_outputs_base_url:
+            bblock.metadata['testOutputs'] = f"{test_outputs_base_url}{bblock.subdirs}/"
+
+        print(f"  > Generating documentation for {bblock.identifier}", file=sys.stderr)
+        doc_generator.generate_doc(bblock)
         return True
 
     if not isinstance(registered_items_path, Path):

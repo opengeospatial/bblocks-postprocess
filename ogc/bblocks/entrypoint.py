@@ -78,6 +78,11 @@ if __name__ == '__main__':
         help='Directory for test output resources',
     )
 
+    parser.add_argument(
+        '--github-base-url',
+        help='Base URL for linking to GitHub content',
+    )
+
     args = parser.parse_args()
 
     fail_on_error = args.fail_on_error in ('true', 'on', 'yes')
@@ -95,6 +100,7 @@ if __name__ == '__main__':
 - clean: {clean}
 - config_file: {bb_config_file}
 - test_outputs_path: {args.test_outputs_path}
+- github_base_url: ${args.github_base_url}
     """, file=sys.stderr)
 
     register_file = Path(args.register_file)
@@ -140,7 +146,8 @@ if __name__ == '__main__':
                 annotated_path=annotated_path,
                 schema_default_base_url=schema_mapping_config.get('default'),
                 schema_identifier_url_mappings=schema_mapping_config.get('mappings'),
-                test_outputs_path=args.test_outputs_path)
+                test_outputs_path=args.test_outputs_path,
+                github_base_url=args.github_base_url)
 
     # 2. Uplift register.json
     print(f"Running semantic uplift of {register_file}", file=sys.stderr)

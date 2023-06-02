@@ -29,6 +29,9 @@ inputs:
   test_outputs_path:
     description: Directory for test output resources
     default: build/tests
+  github_base_url:
+    description: Base URL for linking to GitHub content
+    default: https://github.com/${{github.repository}}/blob/${{github.ref_name}}/
 
 runs:
   using: composite
@@ -45,6 +48,7 @@ runs:
         clean: ${{ inputs.clean }}
         config_file: ${{ inputs.config_file }}
         test_outputs_path: ${{ inputs.test_outputs_path }}
+        github_base_url: ${{ inputs.github_base_url }}
     - name: Generate Slate documentation
       continue-on-error: true
       run: |

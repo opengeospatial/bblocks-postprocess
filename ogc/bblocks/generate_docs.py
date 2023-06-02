@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import json
 import sys
 from os.path import relpath
 from pathlib import Path
@@ -45,28 +44,30 @@ def find_templates(root: Path) -> list[DocTemplate]:
 
 class DocGenerator:
 
-    def __init__(self, output_dir: str | Path = 'generateddocs',
+    def __init__(self,
+                 base_url: str | None = None,
+                 output_dir: str | Path = 'generateddocs',
                  templates_dir: str | Path = 'templates',
                  id_prefix: str = ''):
+        self.base_url = base_url
         self.output_dir = output_dir if isinstance(output_dir, Path) else Path(output_dir)
         self.templates_dir = templates_dir if isinstance(templates_dir, Path) else Path(templates_dir)
         self.id_prefix = id_prefix or ''
 
         self.templates = find_templates(self.templates_dir)
+
         for template in self.templates:
             self.output_dir.joinpath(template.dir_name).mkdir(parents=True, exist_ok=True)
 
-    def generate_doc(self, bblock: BuildingBlock, base_url: str = None):
+    def generate_doc(self, bblock: BuildingBlock):
         all_docs = {}
-        if base_url[-1] != '/':
-            base_url += '/'
         for template in self.templates:
             tpl_out = self.output_dir / template.dir_name / bblock.subdirs / template.template_file.name
             tpl_out.parent.mkdir(parents=True, exist_ok=True)
             bblock_rel = relpath(bblock.files_path, tpl_out.parent)
             assets_rel = relpath(bblock.assets_path, tpl_out.parent) if bblock.assets_path else None
-            if base_url:
-                tpl_out_url = urljoin(base_url, relpath(tpl_out))
+            if self.base_url:
+                tpl_out_url = urljoin(self.base_url, relpath(tpl_out))
                 bblock_rel = urljoin(tpl_out_url, bblock_rel)
                 if assets_rel:
                     assets_rel = urljoin(tpl_out_url, assets_rel)
@@ -77,15 +78,15 @@ class DocGenerator:
                                         outfile=tpl_out,
                                         assets_rel=assets_rel,
                                         root_dir=Path(),
-                                        base_url=base_url))
+                                        base_url=self.base_url))
                 if template.id and template.mediatype:
-                    doc_url = f"{base_url}{self.output_dir}/{template.dir_name}/{bblock.subdirs}/{template.template_file}"
+                    doc_url = f"{self.base_url}{self.output_dir}/{template.dir_name}/{bblock.subdirs}/{template.template_file}"
                     all_docs[template.id] = {
                         'mediatype': template.mediatype,
                         'url': doc_url,
                     }
 
-        slate_build_url = f"{base_url}{self.output_dir}/slate-build/{bblock.subdirs}/"
+        slate_build_url = f"{self.base_url}{self.output_dir}/slate-build/{bblock.subdirs}/"
         all_docs['slate'] = {
             'mediatype': 'text/html',
             'url': slate_build_url,

@@ -42,6 +42,26 @@ ${bblock.abstract}
 
 [Maturity](https://github.com/cportele/ogcapi-building-blocks#building-block-maturity): ${bblock.maturity.capitalize()}
 
+% if bblock.validationPassed:
+<aside class="success">
+This building block is \
+% if bblock.testOutputs:
+<strong><a href="${bblock.testOutputs}" target="_blank">valid</a></strong>
+% else:
+<strong>valid</strong>
+% endif
+</aside>
+% else:
+<aside class="warning">
+Validation for this building block has \
+% if bblock.testOutputs:
+<strong><a href="${bblock.testOutputs}" target="_blank">failed</a></strong>
+% else:
+<strong>failed</strong>
+% endif
+</aside>
+% endif
+
 % if bblock.description:
 ${'#'} Description
 
@@ -74,8 +94,8 @@ ${bblock.annotated_schema_contents}
 
 Links to the schema:
 
-* YAML version: <a href="${bblock.metadata['schema']['application/yaml']}" target="_blank">bblock.metadata['schema']['application/yaml']</a>
-* JSON version: <a href="${bblock.metadata['schema']['application/json']}" target="_blank">${bblock.metadata['schema']['application/json']</a>
+* YAML version: <a href="${bblock.metadata['schema']['application/yaml']}" target="_blank">${bblock.metadata['schema']['application/yaml']}</a>
+* JSON version: <a href="${bblock.metadata['schema']['application/json']}" target="_blank">${bblock.metadata['schema']['application/json']}</a>
 
 % endif
 % if bblock.ldContext:

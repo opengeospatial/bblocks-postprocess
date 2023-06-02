@@ -1,3 +1,4 @@
+<% import re %>
 # ${bblock.name} (${bblock.itemClass.capitalize()})
 
 `${bblock.identifier}` *v${bblock.version}*
