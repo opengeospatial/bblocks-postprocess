@@ -5,6 +5,7 @@ title: ${bblock.name} (${bblock.itemClass.capitalize()})
   known_langs = {
     'json': 'JSON',
     'turtle': 'RDF/Turtle',
+    'ttl': 'RDF/Turtle',
     'plaintext': 'Plain text',
     'txt': 'Plain text',
     'yaml': 'YAML',
