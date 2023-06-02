@@ -1,6 +1,14 @@
 transform:
   # Add @type from itemClass with initial capital letter
-  - '[ .[] | ."@type" = ("bblocks:" + (.itemClass[:1]|ascii_upcase) + .itemClass[1:]) ]'
+  - '[ .[] | ."@type" = [("bblocks:" + (.itemClass[:1]|ascii_upcase) + .itemClass[1:]), "skos:Concept"] ]'
+  # Add ConceptScheme
+  - |
+    {
+      "@id": "https://opengis.net/def/bblocks",
+      "@type": "skos:ConceptScheme",
+      "skos:prefLabel": "OGC Building Blocks Register",
+      "hasConcepts": .
+    }
 
 # TODO: add dateTimeSupersession, dateTimeRetirement, dateTimeInvalidation, predecessor, successor
 context:
@@ -13,12 +21,12 @@ context:
     xsd: http://www.w3.org/2001/XMLSchema#
     itemIdentifier: '@id'
     name: rdfs:label
-    abstract: dct:description
-    register:
-      '@id': bblocks:inRegister
-      '@type': '@id'
-      '@context':
-        '@base': http://opengis.net/def/bblocks/
+    abstract: dct:abstract
+    # register:
+    #  '@id': bblocks:inRegister
+    #  '@type': '@id'
+    #  '@context':
+    #    '@base': http://opengis.net/def/bblocks/
     status:
       '@id': bblocks:status
       '@type': '@id'
@@ -45,18 +53,22 @@ context:
       '@id': dct:source
       '@context':
         title: rdfs:label
-        link:
-          '@id': rdfs:seeAlso
-          '@type': '@id'
-    link:
-      '@id': rdfs:seeAlso
-      '@type': '@id'
+        link: '@id'
     schema:
       '@id': bblocks:hasSchema
       '@type': '@id'
+      '@container': '@index'
+      '@index': dct:format
     ldContext:
       '@id': bblocks:hasJsonLdContext
       '@type': '@id'
     documentation:
-      '@id': rdfs:seeAlso
+      '@id': dct:description
       '@type': '@id'
+      '@container': '@index'
+      '@index': dct:identifier
+      '@context':
+        mediatype: dct:format
+        url: rdfs:isDefinedBy
+    hasConcepts:
+      '@reverse': skos:inScheme
