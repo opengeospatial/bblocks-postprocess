@@ -77,7 +77,6 @@ class DocGenerator:
                                         tplfile=template.template_file,
                                         outfile=tpl_out,
                                         assets_rel=assets_rel,
-                                        root_dir=Path(),
                                         base_url=self.base_url))
                 if template.id and template.mediatype:
                     doc_url = f"{self.base_url}{self.output_dir}/{template.dir_name}/{bblock.subdirs}/{template.template_file}"

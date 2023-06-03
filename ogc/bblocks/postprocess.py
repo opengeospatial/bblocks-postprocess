@@ -33,9 +33,10 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 schema_default_base_url: str | None = None,
                 schema_identifier_url_mappings: list[dict[str, str]] = None,
                 test_outputs_path: str | Path = 'build/tests',
-                github_base_url: str | None = None) -> list[BuildingBlock]:
+                github_base_url: str | None = None,
+                url_root_dir: Path = Path()) -> list[BuildingBlock]:
 
-    cwd = Path().resolve()
+    url_root_dir = url_root_dir.resolve()
 
     if base_url and base_url[-1] != '/':
         base_url += '/'
@@ -44,7 +45,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
     if github_base_url:
         if github_base_url[-1] != '/':
             github_base_url += '/'
-        test_outputs_base_url = f"{github_base_url}{os.path.relpath(Path(test_outputs_path).resolve(), cwd)}/"
+        test_outputs_base_url = f"{github_base_url}{os.path.relpath(Path(test_outputs_path).resolve(), url_root_dir)}/"
 
     print(test_outputs_base_url)
 
@@ -57,7 +58,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         output_file_root = Path(output_file).resolve().parent
         if bblock.annotated_schema.is_file():
             if base_url:
-                rel_annotated = os.path.relpath(bblock.annotated_schema, cwd)
+                rel_annotated = os.path.relpath(bblock.annotated_schema, url_root_dir)
                 schema_url_yaml = f"{base_url}{rel_annotated}"
             else:
                 schema_url_yaml = './' + os.path.relpath(bblock.annotated_schema, output_file_root)
@@ -68,7 +69,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             }
         if bblock.jsonld_context.is_file():
             if base_url:
-                rel_context = os.path.relpath(bblock.jsonld_context, cwd)
+                rel_context = os.path.relpath(bblock.jsonld_context, url_root_dir)
                 ld_context_url = f"{base_url}{rel_context}"
             else:
                 ld_context_url = './' + os.path.relpath(bblock.jsonld_context, output_file_root)

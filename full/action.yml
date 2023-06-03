@@ -38,6 +38,8 @@ runs:
   steps:
     - name: Run OGC BBR postprocess
       uses: opengeospatial/bblocks-postprocess/postprocess@v1
+      env:
+        GH_PAGES_URL: https://${{ github.event.repository.owner.login }}.github.io/${{github.event.repository.name}}/
       with:
         register_file: ${{ inputs.register_file }}
         items_dir: ${{ inputs.items_dir }}

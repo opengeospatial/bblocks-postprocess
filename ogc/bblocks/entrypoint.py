@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -89,25 +90,42 @@ if __name__ == '__main__':
     clean = args.clean in ('true', 'on', 'yes')
     bb_config_file = Path(args.config_file) if args.config_file else None
 
-    print(f"""Running with the following configuration:
-- register_file: {args.register_file}
-- items_dir: {args.items_dir}
-- generated_docs_path: {args.generated_docs_path}
-- base_url: {args.base_url}
-- templates_dir: {str(templates_dir)}
-- annotated_path: {str(args.annotated_path)}
-- fail_on_error: {fail_on_error}
-- clean: {clean}
-- config_file: {bb_config_file}
-- test_outputs_path: {args.test_outputs_path}
-- github_base_url: ${args.github_base_url}
-    """, file=sys.stderr)
-
     register_file = Path(args.register_file)
     register_jsonld_fn = register_file.with_suffix('.jsonld') \
         if register_file.suffix != '.jsonld' else register_file.with_suffix(register_file.suffix + '.jsonld')
     register_ttl_fn = register_file.with_suffix('.ttl')
+
+    # Read local bblocks-config.yaml, if present
+    id_prefix = 'ogc.'
+    annotated_path = Path(args.annotated_path)
+    schema_mapping_config = {}
+    gh_pages_enabled = False
+    if bb_config_file and bb_config_file.is_file():
+        bb_config = load_yaml(filename=bb_config_file)
+        id_prefix = bb_config.get('identifier-prefix', id_prefix)
+        subdirs = id_prefix.split('.')[1:]
+        schema_mapping_config = bb_config.get('schema-mapping', {})
+        gh_pages_enabled = bool(bb_config.get('gh-pages-enabled', False))
+
+    if gh_pages_enabled and os.environ.get('GH_PAGES_URL'):
+        base_url = os.environ['GH_PAGES_URL']
+    else:
+        base_url = args.base_url
+
     items_dir = Path(args.items_dir)
+    print(f"""Running with the following configuration:
+    - register_file: {args.register_file}
+    - items_dir: {args.items_dir}
+    - generated_docs_path: {args.generated_docs_path}
+    - base_url: {base_url}
+    - templates_dir: {str(templates_dir)}
+    - annotated_path: {str(args.annotated_path)}
+    - fail_on_error: {fail_on_error}
+    - clean: {clean}
+    - config_file: {bb_config_file}
+    - test_outputs_path: {args.test_outputs_path}
+    - github_base_url: ${args.github_base_url}
+        """, file=sys.stderr)
 
     # Clean old output
     if clean:
@@ -122,21 +140,11 @@ if __name__ == '__main__':
                 print(f"Deleting {old_dir} recursively", file=sys.stderr)
                 shutil.rmtree(old_dir, ignore_errors=True)
 
-    # Read local bblocks-config.yaml, if present
-    id_prefix = 'ogc.'
-    annotated_path = Path(args.annotated_path)
-    schema_mapping_config = {}
-    if bb_config_file and bb_config_file.is_file():
-        bb_config = load_yaml(filename=bb_config_file)
-        id_prefix = bb_config.get('identifier-prefix', id_prefix)
-        subdirs = id_prefix.split('.')[1:]
-        schema_mapping_config = bb_config.get('schema-mapping', {})
-
     # 1. Postprocess BBs
     print(f"Running postprocess...", file=sys.stderr)
     postprocess(registered_items_path=items_dir,
                 output_file=args.register_file,
-                base_url=args.base_url,
+                base_url=base_url,
                 metadata_schema=Path(__file__).parent / 'metadata-schema.yaml',
                 examples_schema=Path(__file__).parent / 'examples-schema.yaml',
                 generated_docs_path=args.generated_docs_path,
