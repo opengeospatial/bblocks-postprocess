@@ -104,9 +104,10 @@ if __name__ == '__main__':
     """, file=sys.stderr)
 
     register_file = Path(args.register_file)
-    register_jsonld_fn = register_file.with_suffix('.jsonld') \
-        if register_file.suffix != '.jsonld' else register_file.with_suffix(register_file.suffix + '.jsonld')
-    register_ttl_fn = register_file.with_suffix('.ttl')
+    register_jsonld_fn = register_file.with_name('bblocks.jsonld')
+    if register_file.suffix == '.jsonld':
+        register_jsonld_fn = register_jsonld_fn.with_suffix('.jsonld.jsonld')
+    register_ttl_fn = register_jsonld_fn.with_suffix('.ttl')
     items_dir = Path(args.items_dir)
 
     # Clean old output

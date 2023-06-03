@@ -80,7 +80,8 @@ class DocGenerator:
                                         root_dir=Path(),
                                         base_url=self.base_url))
                 if template.id and template.mediatype:
-                    doc_url = f"{self.base_url}{self.output_dir}/{template.dir_name}/{bblock.subdirs}/{template.template_file}"
+                    doc_url = f"{self.base_url}{self.output_dir}/" \
+                              f"{template.dir_name}/{bblock.subdirs}/{template.template_file.name}"
                     all_docs[template.id] = {
                         'mediatype': template.mediatype,
                         'url': doc_url,
