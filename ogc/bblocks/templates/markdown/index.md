@@ -67,7 +67,7 @@ ${'##'} Sources
     % endif
   % endfor
 % endif
-* % if git_repo:
+% if git_repo:
 
 ${'#'} For developers
 
