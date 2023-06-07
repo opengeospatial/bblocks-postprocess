@@ -389,3 +389,10 @@ def get_git_repo_url(url: str) -> str:
         groups = m.groups()
         return f"https://github.com/{groups[0]}/{groups[1]}"
     return url
+
+
+def get_git_submodules(repo_path=Path()) -> list[list[str, str]]:
+    # Workaround to avoid git errors when using git.Repo.submodules directly
+    from git.objects.submodule.util import SubmoduleConfigParser, sm_name
+    parser = SubmoduleConfigParser(repo_path / '.gitmodules', read_only=True)
+    return [[parser.get(sms, "path"), parser.get(sms, "url")] for sms in parser.sections()]
