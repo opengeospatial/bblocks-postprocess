@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import os.path
 import sys
 from os.path import relpath
 from pathlib import Path
@@ -12,8 +13,11 @@ from mako.template import Template as MakoTemplate
 from mako.lookup import TemplateLookup
 from mako import exceptions
 
+from ogc.bblocks import util
 from ogc.bblocks.util import load_bblocks, BuildingBlock
 from ogc.na.util import load_yaml
+
+import git
 
 
 class DocTemplate:
@@ -59,8 +63,28 @@ class DocGenerator:
         for template in self.templates:
             self.output_dir.joinpath(template.dir_name).mkdir(parents=True, exist_ok=True)
 
+        try:
+            git_repo = git.Repo()
+            self.git_repos = {None: util.get_git_repo_url(git_repo.remotes[0].url)}
+            for submodule in git_repo.submodules:
+                self.git_repos[Path(submodule.path).resolve()] = util.get_git_repo_url(submodule.url)
+        except:
+            self.git_repos = None
+
     def generate_doc(self, bblock: BuildingBlock):
         all_docs = {}
+
+        git_repo = None
+        git_path = None
+        if self.git_repos:
+            git_repo = self.git_repos[None]
+            git_path = os.path.relpath(bblock.files_path)
+            for repo_path, repo_url in self.git_repos.items():
+                if repo_path and repo_path in bblock.files_path.parents:
+                    git_repo = repo_url
+                    git_path = os.path.relpath(bblock.files_path, repo_path)
+                    break
+
         for template in self.templates:
             tpl_out = self.output_dir / template.dir_name / bblock.subdirs / template.template_file.name
             tpl_out.parent.mkdir(parents=True, exist_ok=True)
@@ -78,7 +102,9 @@ class DocGenerator:
                                         outfile=tpl_out,
                                         assets_rel=assets_rel,
                                         root_dir=Path(),
-                                        base_url=self.base_url))
+                                        base_url=self.base_url,
+                                        git_repo=git_repo,
+                                        git_path=git_path))
                 if template.id and template.mediatype:
                     doc_url = f"{self.base_url}{self.output_dir}/" \
                               f"{template.dir_name}/{bblock.subdirs}/{template.template_file.name}"

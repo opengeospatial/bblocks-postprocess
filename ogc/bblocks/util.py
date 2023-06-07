@@ -379,3 +379,13 @@ def resolve_schema_reference(ref: str,
         base_url += '/'
     subdirs = get_bblock_subdirs(target_id)
     return f"{base_url}{subdirs}/schema.yaml"
+
+
+def get_git_repo_url(url: str) -> str:
+    if not url:
+        return url
+    m = re.match(r'^(?:git@|https?://(?:www)?)github.com[:/](.+)/(.+).git$', url)
+    if m:
+        groups = m.groups()
+        return f"https://github.com/{groups[0]}/{groups[1]}"
+    return url

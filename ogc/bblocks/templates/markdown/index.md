@@ -67,3 +67,13 @@ ${'##'} Sources
     % endif
   % endfor
 % endif
+* % if git_repo:
+
+${'#'} For developers
+
+The source code for this Building Block can be found in the following repository:
+
+* URL: [${git_repo}](${git_repo})
+* Path: `${git_path}`
+
+% endif

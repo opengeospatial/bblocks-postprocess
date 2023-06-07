@@ -35,7 +35,7 @@ code_clipboard: true
 meta:
   - name: ${bblock.name} (${bblock.itemClass.capitalize()})
 ---
-<% import re %>
+<% import re, os %>
 
 ${'#'} ${bblock.name} `${bblock.identifier}`
 
@@ -121,4 +121,14 @@ ${'#'} References
 * ${source['title']}
     % endif
   % endfor
+
+% endif
+% if git_repo:
+${'#'} For developers
+
+The source code for this Building Block can be found in the following repository:
+
+* URL: <a href="${git_repo}" target="_blank">${git_repo}</a>
+* Path: `${git_path}`
+
 % endif
