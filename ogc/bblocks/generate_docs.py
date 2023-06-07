@@ -68,7 +68,8 @@ class DocGenerator:
             self.git_repos = {None: util.get_git_repo_url(git_repo.remotes[0].url)}
             for submodule in git_repo.submodules:
                 self.git_repos[Path(submodule.path).resolve()] = util.get_git_repo_url(submodule.url)
-        except:
+        except Exception as e:
+            print(f"Error obtaining git information: {e}", file=sys.stderr)
             self.git_repos = None
 
     def generate_doc(self, bblock: BuildingBlock):
