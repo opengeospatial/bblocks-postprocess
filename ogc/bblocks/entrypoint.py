@@ -100,7 +100,7 @@ if __name__ == '__main__':
 - clean: {clean}
 - config_file: {bb_config_file}
 - test_outputs_path: {args.test_outputs_path}
-- github_base_url: ${args.github_base_url}
+- github_base_url: {args.github_base_url}
     """, file=sys.stderr)
 
     register_file = Path(args.register_file)
