@@ -7,7 +7,8 @@ RUN apk update && \
     apk add git rsync && \
     python -m venv /venv && \
     /venv/bin/python -m pip install --upgrade pip && \
-    /venv/bin/python -m pip install -r /requirements.txt
+    /venv/bin/python -m pip install -r /requirements.txt && \
+    git config --global --add safe.directory '*'
 
 ENV PYTHONPATH /src/
 ENV PYTHONUNBUFFERED 1
