@@ -38,18 +38,22 @@ properties:
     description: Date and time when this Building Block was added to the Register.
     type: string
     format: date-time
+    pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[\+-]\d{2}:\d{2})?$'
   dateTimeSupersession:
     description: Date and time when this Building Block was superseded in the Register.
     type: string
     format: date-time
+    pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[\+-]\d{2}:\d{2})?$'
   dateTimeRetirement:
     description: Date and time when this Building Block was retired from the Register.
     type: string
     format: date-time
+    pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[\+-]\d{2}:\d{2})?$'
   dateTimeInvalidation:
     description: Date and time when this Building Block was invalidated in the Register.
     type: string
     format: date-time
+    pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[\+-]\d{2}:\d{2})?$'
   itemClass:
     description: Type of Building Block.
     enum:
@@ -68,6 +72,7 @@ properties:
     description: Latest modification date for this Building Block.
     type: string
     format: date
+    pattern: '^\d{4}-\d{2}-\d{2}$'
   sources:
     description: Sources or references for the Building Block definition.
     type: array
@@ -91,7 +96,7 @@ properties:
     description: List of tags attached to this Building Block.
     type: array
     items:
-      format: string
+      type: string
   concept:
     description: Link to a conceptual model class for this Building Block, most of the time in the OGC Rainbow.
     type: array
