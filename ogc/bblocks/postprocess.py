@@ -84,6 +84,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         validation_passed, test_count = validate_test_resources(bblock,
                                                                 outputs_path=test_outputs_path)
         bblock.metadata['validationPassed'] = validation_passed
+        if not validation_passed:
+            bblock.metadata['status'] = 'invalid'
         if test_count and test_outputs_base_url:
             bblock.metadata['testOutputs'] = f"{test_outputs_base_url}{bblock.subdirs}/"
 
