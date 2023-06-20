@@ -22,9 +22,15 @@ items:
         type: object
         required:
           - language
-          - code
         properties:
           language:
             type: string
           code:
             type: string
+          ref:
+            type: string
+        oneOf:
+          - required:
+            - code
+          - required:
+            - ref

@@ -81,13 +81,7 @@ class BuildingBlock:
         self.assets_path = ap if ap.is_dir() else None
 
         self.examples_file = fp / 'examples.yaml'
-        if examples_schema and self.examples_file.is_file():
-            examples = load_yaml(self.examples_file)
-            try:
-                jsonschema.validate(examples, examples_schema)
-            except Exception as e:
-                raise BuildingBlockError('Error validating building block examples') from e
-            self._lazy_properties['examples'] = examples
+        self.examples = self._load_examples(examples_schema)
 
         self.tests_dir = fp / 'tests'
 
@@ -95,11 +89,22 @@ class BuildingBlock:
         self.annotated_schema = self.annotated_path / 'schema.yaml'
         self.jsonld_context = self.annotated_path / 'context.jsonld'
 
-    @property
-    def examples(self):
-        if 'examples' not in self._lazy_properties:
-            self._lazy_properties['examples'] = load_yaml(filename=self.examples_file) if self.examples_file.exists() else None
-        return self._lazy_properties['examples']
+    def _load_examples(self, examples_schema: Any | None = None):
+        examples = None
+        if self.examples_file.is_file():
+            examples = load_yaml(self.examples_file)
+            if examples_schema:
+                try:
+                    jsonschema.validate(examples, examples_schema)
+                except Exception as e:
+                    raise BuildingBlockError('Error validating building block examples') from e
+
+            for example in examples:
+                for snippet in example.get('snippets', ()):
+                    if 'ref' in snippet:
+                        # Load snippet code from "ref"
+                        snippet['code'] = load_file(self.files_path / snippet['ref'])
+        return examples
 
     @property
     def schema_contents(self):
