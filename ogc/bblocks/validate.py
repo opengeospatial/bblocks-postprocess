@@ -208,14 +208,13 @@ class RefResolver(jsonschema.validators.RefResolver):
         if self.cache_remote:
             self.store[uri] = result
         return result
-        pass
 
 
 def get_json_validator(bblock: BuildingBlock) -> jsonschema.Validator:
     schema = load_yaml(content=bblock.annotated_schema_contents)
     resolver = RefResolver(
         base_uri=bblock.annotated_schema.resolve().as_uri(),
-        referrer=True,
+        referrer=schema,
     )
     validator_cls = validator_for(schema)
     validator_cls.check_schema(schema)
