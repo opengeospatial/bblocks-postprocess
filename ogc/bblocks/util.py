@@ -190,12 +190,14 @@ class BuildingBlockRegister:
             for bblock in self.bblocks.values():
                 found_deps = self.find_dependencies(bblock)
                 deps = bblock.metadata.get('dependsOn')
-                if isinstance(deps, list):
-                    deps.extend(found_deps)
-                elif found_deps:
+                if isinstance(deps, str):
+                    found_deps.add(deps)
+                elif isinstance(deps, list):
+                    found_deps.update(deps)
+                if found_deps:
                     bblock.metadata['dependsOn'] = found_deps
 
-    def find_dependencies(self, bblock: BuildingBlock) -> list[str]:
+    def find_dependencies(self, bblock: BuildingBlock) -> set[str]:
         if not bblock.schema.is_file():
             return []
         bblock_schema = load_yaml(filename=bblock.schema)
@@ -224,7 +226,7 @@ class BuildingBlockRegister:
 
         walk_schema(bblock_schema)
 
-        return list(deps)
+        return deps
 
 
 def write_superbblocks_schemas(super_bblocks: dict[Path, BuildingBlock],
