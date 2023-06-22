@@ -274,7 +274,7 @@ def update_refs(schema: Any, updater: Callable[[str], str]):
         sub_schema = pending.popleft()
         if isinstance(sub_schema, dict):
             for k in list(sub_schema.keys()):
-                if k == '$ref':
+                if k == '$ref' and isinstance(sub_schema[k], str):
                     sub_schema[k] = updater(sub_schema[k])
                 else:
                     pending.append(sub_schema[k])
