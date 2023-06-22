@@ -195,7 +195,7 @@ class BuildingBlockRegister:
                 elif isinstance(deps, list):
                     found_deps.update(deps)
                 if found_deps:
-                    bblock.metadata['dependsOn'] = found_deps
+                    bblock.metadata['dependsOn'] = list(found_deps)
 
     def find_dependencies(self, bblock: BuildingBlock) -> set[str]:
         if not bblock.schema.is_file():
