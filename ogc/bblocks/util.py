@@ -207,7 +207,7 @@ class BuildingBlockRegister:
         def walk_schema(schema):
             if isinstance(schema, dict):
                 ref = schema.get(BBLOCKS_REF_ANNOTATION, schema.get('$ref'))
-                if ref:
+                if isinstance(ref, str):
                     if ref.startswith('bblocks://'):
                         # Get id directly from bblocks:// URI
                         deps.add(ref[len('bblocks://'):])
@@ -218,7 +218,7 @@ class BuildingBlockRegister:
                             deps.add(ref_bblock.identifier)
 
                 for prop, val in schema.items():
-                    if prop not in (BBLOCKS_REF_ANNOTATION, '$ref'):
+                    if prop not in (BBLOCKS_REF_ANNOTATION, '$ref') or not isinstance(val, str):
                         walk_schema(val)
             elif isinstance(schema, list):
                 for item in schema:
