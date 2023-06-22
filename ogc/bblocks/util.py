@@ -145,30 +145,39 @@ class BuildingBlock:
         return self._lazy_properties['jsonld_context_contents']
 
 
-def load_bblocks(registered_items_path: Path,
+class BuildingBlockRegister:
+
+    def __init__(self,
+                 registered_items_path: Path,
                  annotated_path: Path = Path(),
-                 filter_ids: str | list[str] | None = None,
                  metadata_schema_file: str | Path | None = None,
                  examples_schema_file: str | Path | None = None,
                  fail_on_error: bool = False,
-                 prefix: str = 'ogc.') -> Generator[BuildingBlock, None, None]:
+                 prefix: str = 'ogc.',
+                 find_dependencies=True):
 
-    metadata_schema = load_yaml(metadata_schema_file) if metadata_schema_file else None
-    examples_schema = load_yaml(examples_schema_file) if examples_schema_file else None
+        self.registered_items_path = registered_items_path
+        self.annotated_path = annotated_path
+        self.prefix = prefix
+        self.bblocks: dict[str, BuildingBlock] = {}
 
-    seen_ids = set()
-    for metadata_file in sorted(registered_items_path.glob(f"**/{BBLOCK_METADATA_FILE}")):
-        bblock_id, bblock_rel_path = get_bblock_identifier(metadata_file, registered_items_path, prefix)
-        if bblock_id in seen_ids:
-            raise ValueError(f"Found duplicate bblock id: {bblock_id}")
-        seen_ids.add(bblock_id)
-        if not filter_ids or bblock_id in filter_ids:
+        self.bblock_paths: dict[Path, BuildingBlock] = {}
+
+        metadata_schema = load_yaml(metadata_schema_file) if metadata_schema_file else None
+        examples_schema = load_yaml(examples_schema_file) if examples_schema_file else None
+
+        for metadata_file in sorted(registered_items_path.glob(f"**/{BBLOCK_METADATA_FILE}")):
+            bblock_id, bblock_rel_path = get_bblock_identifier(metadata_file, registered_items_path, prefix)
+            if bblock_id in self.bblocks:
+                raise ValueError(f"Found duplicate bblock id: {bblock_id}")
             try:
-                yield BuildingBlock(bblock_id, metadata_file,
-                                    metadata_schema=metadata_schema,
-                                    examples_schema=examples_schema,
-                                    rel_path=bblock_rel_path,
-                                    annotated_path=annotated_path)
+                bblock = BuildingBlock(bblock_id, metadata_file,
+                                       metadata_schema=metadata_schema,
+                                       examples_schema=examples_schema,
+                                       rel_path=bblock_rel_path,
+                                       annotated_path=annotated_path)
+                self.bblocks[bblock_id] = bblock
+                self.bblock_paths[bblock.files_path] = bblock
             except Exception as e:
                 if fail_on_error:
                     raise
@@ -176,8 +185,46 @@ def load_bblocks(registered_items_path: Path,
                 import traceback
                 traceback.print_exception(e, file=sys.stderr)
                 print('=========', file=sys.stderr)
-        else:
-            print(f"Skipping building block {bblock_id} (not in filter_ids)", file=sys.stderr)
+
+        if find_dependencies:
+            for bblock in self.bblocks.values():
+                found_deps = self.find_dependencies(bblock)
+                deps = bblock.metadata.get('dependsOn')
+                if isinstance(deps, list):
+                    deps.extend(found_deps)
+                elif found_deps:
+                    bblock.metadata['dependsOn'] = found_deps
+
+    def find_dependencies(self, bblock: BuildingBlock) -> list[str]:
+        if not bblock.schema.is_file():
+            return []
+        bblock_schema = load_yaml(filename=bblock.schema)
+
+        deps = set()
+
+        def walk_schema(schema):
+            if isinstance(schema, dict):
+                ref = schema.get(BBLOCKS_REF_ANNOTATION, schema.get('$ref'))
+                if ref:
+                    if ref.startswith('bblocks://'):
+                        # Get id directly from bblocks:// URI
+                        deps.add(ref[len('bblocks://'):])
+                    else:
+                        ref_parent_path = bblock.files_path.joinpath(ref).resolve().parent
+                        ref_bblock = self.bblock_paths.get(ref_parent_path)
+                        if ref_bblock:
+                            deps.add(ref_bblock.identifier)
+
+                for prop, val in schema.items():
+                    if prop not in (BBLOCKS_REF_ANNOTATION, '$ref'):
+                        walk_schema(val)
+            elif isinstance(schema, list):
+                for item in schema:
+                    walk_schema(item)
+
+        walk_schema(bblock_schema)
+
+        return list(deps)
 
 
 def write_superbblocks_schemas(super_bblocks: dict[Path, BuildingBlock],

@@ -12,8 +12,8 @@ import traceback
 from ogc.na.util import is_url
 
 from ogc.bblocks.generate_docs import DocGenerator
-from ogc.bblocks.util import load_bblocks, write_superbblocks_schemas, annotate_schema, BuildingBlock, \
-    write_jsonld_context
+from ogc.bblocks.util import write_superbblocks_schemas, annotate_schema, BuildingBlock, \
+    write_jsonld_context, BuildingBlockRegister
 from ogc.bblocks.validate import validate_test_resources
 
 ANNOTATED_ITEM_CLASSES = ('schema', 'datatype')
@@ -98,13 +98,15 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
     child_bblocks = []
     super_bblocks = {}
-    for building_block in load_bblocks(registered_items_path,
-                                       filter_ids=filter_ids,
-                                       metadata_schema_file=metadata_schema,
-                                       examples_schema_file=examples_schema,
-                                       fail_on_error=fail_on_error,
-                                       prefix=id_prefix,
-                                       annotated_path=annotated_path):
+    bbr = BuildingBlockRegister(registered_items_path,
+                                metadata_schema_file=metadata_schema,
+                                examples_schema_file=examples_schema,
+                                fail_on_error=fail_on_error,
+                                prefix=id_prefix,
+                                annotated_path=annotated_path)
+    for building_block in bbr.bblocks.values():
+        if filter_ids and building_block.identifier not in filter_ids:
+            pass
         if building_block.super_bblock:
             super_bblocks[building_block.files_path] = building_block
         else:

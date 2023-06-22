@@ -14,7 +14,7 @@ from mako.lookup import TemplateLookup
 from mako import exceptions
 
 from ogc.bblocks import util
-from ogc.bblocks.util import load_bblocks, BuildingBlock
+from ogc.bblocks.util import BuildingBlock, BuildingBlockRegister
 from ogc.na.util import load_yaml
 
 import git
@@ -132,8 +132,9 @@ def generate_docs(regs: str | Path | Sequence[str | Path],
                   templates_dir: str | Path = 'templates'):
     doc_generator = DocGenerator(output_dir, templates_dir)
 
-    for bblock in load_bblocks(regs, filter_ids=filter_ids):
-        doc_generator.generate_doc(bblock)
+    for bblock in BuildingBlockRegister(regs).bblocks.values():
+        if not filter_ids or bblock.identifier in filter_ids:
+            doc_generator.generate_doc(bblock)
 
 
 def _main():
