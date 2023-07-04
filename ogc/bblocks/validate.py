@@ -15,8 +15,37 @@ from ogc.na.util import validate as shacl_validate, load_yaml
 from rdflib import Graph
 
 from ogc.bblocks.util import BuildingBlock
+import traceback
 
 OUTPUT_SUBDIR = 'output'
+
+
+class ValidationReport:
+
+    def __init__(self):
+        self._errors = False
+        self._sections: dict[str, list[str]] = {}
+
+    def add_info(self, section, text):
+        self._sections.setdefault(section, []).append(text)
+
+    def add_error(self, section, text):
+        self._errors = True
+        self.add_info(section, text)
+
+    def write(self, basename: Path):
+        status = 'failed' if self._errors else 'passed'
+        report_fn = basename.with_suffix(f'.validation_{status}.txt')
+        with open(report_fn, 'w') as f:
+            for section, lines in self._sections.items():
+                f.write(f"=== {section} ===\n")
+                for line in lines:
+                    f.write(f"{line}\n")
+                f.write(f"=== End {section} ===\n\n")
+
+    @property
+    def has_errors(self) -> bool:
+        return self._errors
 
 
 def _validate_resource(filename: Path,
@@ -29,8 +58,9 @@ def _validate_resource(filename: Path,
                        shacl_graph: Graph | None = None,
                        json_error: str | None = None,
                        shacl_error: str | None = None,
-                       base_uri: str | None = None) -> bool:
-    report = []
+                       base_uri: str | None = None,
+                       shacl_files: list[Path] | None = None) -> ValidationReport:
+    report = ValidationReport()
     try:
         json_doc = None
         graph = None
@@ -38,13 +68,17 @@ def _validate_resource(filename: Path,
         if filename.suffix in ('.json', '.jsonld'):
             if resource_contents:
                 json_doc = load_yaml(content=resource_contents)
+                report.add_info('Files', f'Using {filename.name} from examples')
             else:
                 json_doc = load_yaml(filename=filename)
+                report.add_info('Files', f'Using {filename.name}')
 
             if '@graph' in json_doc:
                 json_doc = json_doc['@graph']
+                report.add_info('Files', f'"@graph" found, unwrapping')
 
             if filename.suffix == '.json' and jsonld_context:
+                report.add_info('Files', 'JSON-LD context is present - uplifting')
                 if isinstance(json_doc, dict):
                     jsonld_uplifted = {'@context': jsonld_context['@context'], **json_doc}
                 else:
@@ -57,36 +91,40 @@ def _validate_resource(filename: Path,
 
                 if jsonld_url:
                     jsonld_uplifted['@context'] = jsonld_url
-                with open(output_filename.with_suffix('.jsonld'), 'w') as f:
+                jsonld_fn = output_filename.with_suffix('.jsonld')
+                with open(jsonld_fn, 'w') as f:
                     json.dump(jsonld_uplifted, f, indent=2)
+                    report.add_info('Files', f'Output JSON-LD {jsonld_fn.name} created')
 
             elif output_filename.suffix == '.jsonld':
                 graph = Graph().parse(filename)
 
             if graph:
-                graph.serialize(output_filename.with_suffix('.ttl'), format='ttl')
+                ttl_fn = output_filename.with_suffix('.ttl')
+                graph.serialize(ttl_fn, format='ttl')
+                report.add_info('Files', f'Output Turtle {ttl_fn.name} created')
 
         elif filename.suffix == '.ttl':
             if resource_contents:
+                report.add_info('Files', f'Using {filename.name} from examples')
                 graph = Graph().parse(data=resource_contents, format='ttl')
             else:
                 graph = Graph().parse(filename)
+                report.add_info('Files', f'Using {filename.name}')
 
         else:
-            return True
+            return report
 
         if json_doc:
             if json_error:
-                report.append(json_error)
+                report.add_error('JSON Schema', json_error)
             elif schema_validator:
                 try:
                     validate_json(json_doc, schema_validator)
                 except Exception as e:
                     if not isinstance(e, jsonschema.exceptions.ValidationError):
-                        import traceback
                         traceback.print_exception(e)
-                    report.append('=== JSON Schema errors ===')
-                    report.append(f"{type(e).__name__}: {e}")
+                    report.add_error('JSON Schema', f"{type(e).__name__}: {e}")
 
             if schema_url:
                 json_doc = {'$schema': schema_url, **json_doc}
@@ -98,21 +136,24 @@ def _validate_resource(filename: Path,
 
         if graph:
             if shacl_error:
-                report.append(shacl_error)
+                report.add_error('SHACL', shacl_error)
             elif shacl_graph:
+                report.add_info(
+                    'SHACL',
+                    'Using SHACL files for validation:\n - ' + '\n - '.join([f.name for f in shacl_files])
+                )
                 shacl_report = shacl_validate(graph, shacl_graph)
-                report.append("=== SHACL errors ===")
-                report.append(shacl_report.text)
+                if shacl_report.result:
+                    report.add_info('SHACL', shacl_report.text)
+                else:
+                    report.add_error('SHACL', shacl_report.text)
 
     except Exception as e:
-        report.append(f"{type(e).__name__}: {e}")
+        report.add_error('Unknown errors', ','.join(traceback.format_exception(e)))
 
-    report_fn = output_filename.with_suffix('.validation.txt')
-    with open(report_fn, 'w') as f:
-        for line in report:
-            f.write(f"{line}\n")
+    report.write(output_filename)
 
-    return len(report) == 0
+    return report
 
 
 def validate_test_resources(bblock: BuildingBlock,
@@ -125,9 +166,10 @@ def validate_test_resources(bblock: BuildingBlock,
 
     shacl_graph = Graph()
     shacl_error = None
+    shacl_files = list(bblock.tests_dir.glob('*.shacl'))
     try:
-        for shacl_file in bblock.tests_dir.glob('*.shacl'):
-            shacl_graph.parse(shacl_file)
+        for shacl_file in shacl_files:
+            shacl_graph.parse(shacl_file, format='turtle')
     except Exception as e:
         shacl_error = str(e)
 
@@ -158,13 +200,15 @@ def validate_test_resources(bblock: BuildingBlock,
         for fn in bblock.tests_dir.resolve().iterdir():
             output_fn = output_dir / fn.name
 
-            result = _validate_resource(fn, output_fn,
-                                        schema_validator=schema_validator,
-                                        jsonld_context=jsonld_context,
-                                        jsonld_url=jsonld_url,
-                                        shacl_graph=shacl_graph,
-                                        json_error=json_error,
-                                        shacl_error=shacl_error) and result
+            result = not _validate_resource(
+                fn, output_fn,
+                schema_validator=schema_validator,
+                jsonld_context=jsonld_context,
+                jsonld_url=jsonld_url,
+                shacl_graph=shacl_graph,
+                json_error=json_error,
+                shacl_error=shacl_error,
+                shacl_files=shacl_files).has_errors and result
             test_count += 1
 
     # Examples
@@ -180,16 +224,18 @@ def validate_test_resources(bblock: BuildingBlock,
                     with open(output_fn, 'w') as f:
                         f.write(code)
 
-                    result = _validate_resource(fn, output_fn,
-                                                resource_contents=code,
-                                                schema_url=schema_url,
-                                                schema_validator=schema_validator,
-                                                jsonld_context=jsonld_context,
-                                                jsonld_url=jsonld_url,
-                                                shacl_graph=shacl_graph,
-                                                json_error=json_error,
-                                                shacl_error=shacl_error,
-                                                base_uri=snippet.get('base-uri', example_base_uri)) and result
+                    result = not _validate_resource(
+                        fn, output_fn,
+                        resource_contents=code,
+                        schema_url=schema_url,
+                        schema_validator=schema_validator,
+                        jsonld_context=jsonld_context,
+                        jsonld_url=jsonld_url,
+                        shacl_graph=shacl_graph,
+                        json_error=json_error,
+                        shacl_error=shacl_error,
+                        base_uri=snippet.get('base-uri', example_base_uri),
+                        shacl_files=shacl_files).has_errors and result
                     test_count += 1
 
     return result, test_count
