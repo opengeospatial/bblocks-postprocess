@@ -16,6 +16,8 @@ items:
       type: string
     content:
       type: string
+    base-uri:
+      type: string
     snippets:
       type: array
       items:
@@ -28,6 +30,8 @@ items:
           code:
             type: string
           ref:
+            type: string
+          base-uri:
             type: string
         oneOf:
           - required:

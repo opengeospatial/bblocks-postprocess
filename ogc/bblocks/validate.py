@@ -28,7 +28,8 @@ def _validate_resource(filename: Path,
                        jsonld_url: str | None = None,
                        shacl_graph: Graph | None = None,
                        json_error: str | None = None,
-                       shacl_error: str | None = None) -> bool:
+                       shacl_error: str | None = None,
+                       base_uri: str | None = None) -> bool:
     report = []
     try:
         json_doc = None
@@ -51,8 +52,8 @@ def _validate_resource(filename: Path,
                         '@context': jsonld_context['@context'],
                         '@graph': json_doc,
                     }
-                jsonld_expanded = json.dumps(pyld.jsonld.expand(jsonld_uplifted))
-                graph = Graph().parse(data=jsonld_expanded, format='json-ld')
+                jsonld_expanded = json.dumps(pyld.jsonld.expand(jsonld_uplifted, {'base': base_uri}))
+                graph = Graph().parse(data=jsonld_expanded, format='json-ld', base=base_uri)
 
                 if jsonld_url:
                     jsonld_uplifted['@context'] = jsonld_url
@@ -169,6 +170,7 @@ def validate_test_resources(bblock: BuildingBlock,
     # Examples
     if bblock.examples:
         for example_id, example in enumerate(bblock.examples):
+            example_base_uri = example.get('base-uri')
             for snippet_id, snippet in enumerate(example.get('snippets', ())):
                 code, lang = snippet.get('code'), snippet.get('language')
                 if code and lang in ('json', 'jsonld', 'ttl'):
@@ -186,7 +188,8 @@ def validate_test_resources(bblock: BuildingBlock,
                                                 jsonld_url=jsonld_url,
                                                 shacl_graph=shacl_graph,
                                                 json_error=json_error,
-                                                shacl_error=shacl_error) and result
+                                                shacl_error=shacl_error,
+                                                base_uri=snippet.get('base-uri', example_base_uri)) and result
                     test_count += 1
 
     return result, test_count
