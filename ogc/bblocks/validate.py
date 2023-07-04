@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 from urllib.request import urlopen
 
 import jsonschema
+import pyld.jsonld
 import requests
 from jsonschema.validators import validator_for
 from ogc.na.util import validate as shacl_validate, load_yaml
@@ -50,8 +51,8 @@ def _validate_resource(filename: Path,
                         '@context': jsonld_context['@context'],
                         '@graph': json_doc,
                     }
-                jsonld_contents = json.dumps(jsonld_uplifted, indent=2)
-                graph = Graph().parse(data=jsonld_contents, format='json-ld')
+                jsonld_expanded = json.dumps(pyld.jsonld.expand(jsonld_uplifted))
+                graph = Graph().parse(data=jsonld_expanded, format='json-ld')
 
                 if jsonld_url:
                     jsonld_uplifted['@context'] = jsonld_url
