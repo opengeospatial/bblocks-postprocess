@@ -106,7 +106,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                                 annotated_path=annotated_path)
     for building_block in bbr.bblocks.values():
         if filter_ids and building_block.identifier not in filter_ids:
-            pass
+            continue
         if building_block.super_bblock:
             super_bblocks[building_block.files_path] = building_block
         else:

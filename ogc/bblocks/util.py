@@ -7,7 +7,7 @@ import re
 import sys
 from collections import deque
 from pathlib import Path
-from typing import Generator, Any, Sequence, Callable
+from typing import Any, Sequence, Callable
 
 import jsonschema
 from ogc.na.annotate_schema import SchemaAnnotator, ContextBuilder
@@ -199,7 +199,7 @@ class BuildingBlockRegister:
 
     def find_dependencies(self, bblock: BuildingBlock) -> set[str]:
         if not bblock.schema.is_file():
-            return []
+            return set()
         bblock_schema = load_yaml(filename=bblock.schema)
 
         deps = set()
@@ -306,7 +306,7 @@ def write_superbblocks_schemas(super_bblocks: dict[Path, BuildingBlock],
 
 
 def write_jsonld_context(annotated_schema: Path) -> Path | None:
-    ctx_builder = ContextBuilder(fn=annotated_schema)
+    ctx_builder = ContextBuilder(annotated_schema)
     if not ctx_builder.context.get('@context'):
         return None
     context_fn = annotated_schema.parent / 'context.jsonld'
@@ -361,15 +361,11 @@ def annotate_schema(bblock: BuildingBlock,
                                    identifier_url_mappings=identifier_url_mappings)
 
     annotator = SchemaAnnotator(
-        url=schema_url,
-        fn=schema_fn,
-        follow_refs=False,
         ref_mapper=ref_mapper,
-        context=context,
     )
 
     # follow_refs=False => only one schema
-    annotated_schema = next(iter(annotator.schemas.values()), None)
+    annotated_schema = annotator.process_schema(schema_url or schema_fn, context)
 
     if not annotated_schema:
         return result
@@ -447,6 +443,6 @@ def get_git_repo_url(url: str) -> str:
 
 def get_git_submodules(repo_path=Path()) -> list[list[str, str]]:
     # Workaround to avoid git errors when using git.Repo.submodules directly
-    from git.objects.submodule.util import SubmoduleConfigParser, sm_name
+    from git.objects.submodule.util import SubmoduleConfigParser
     parser = SubmoduleConfigParser(repo_path / '.gitmodules', read_only=True)
     return [[parser.get(sms, "path"), parser.get(sms, "url")] for sms in parser.sections()]
