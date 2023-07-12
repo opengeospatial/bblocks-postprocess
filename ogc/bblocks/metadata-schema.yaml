@@ -57,11 +57,13 @@ properties:
   itemClass:
     description: Type of Building Block.
     enum:
-      - parameter
-      - schema
-      - path
-      - api
-      - datatype
+      - schema # Full JSON Schema object / feature type
+      - datatype # Simple JSON Schema data type
+      - path # OpenAPI path
+      - parameter # OpenAPI parameter
+      - header # OpenAPI header
+      - cookie # OpenAPI cookie
+      - api # Partial or full OpenAPI Spec
   register:
     description: Register to which this Building Block belongs.
     type: string
