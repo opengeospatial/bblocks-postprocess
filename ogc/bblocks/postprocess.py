@@ -46,8 +46,6 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             github_base_url += '/'
         test_outputs_base_url = f"{github_base_url}{os.path.relpath(Path(test_outputs_path).resolve(), cwd)}/"
 
-    print(test_outputs_base_url)
-
     doc_generator = DocGenerator(base_url=base_url,
                                  output_dir=generated_docs_path,
                                  templates_dir=templates_dir,
