@@ -2,7 +2,7 @@ asciidoc
 pyyaml
 Mako
 jsonschema
-ogc-na>=0.3
+ogc-na>=0.3.2
 rdflib
 requests
 pyld

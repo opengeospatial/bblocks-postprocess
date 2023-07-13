@@ -69,7 +69,9 @@ class DocGenerator:
             self.git_repos = {None: util.get_git_repo_url(git_repo.remotes[0].url)}
             for submodule_path, submodule_url in util.get_git_submodules():
                 self.git_repos[Path(submodule_path).resolve()] = util.get_git_repo_url(submodule_url)
-            print("Found git repos:", self.git_repos, file=sys.stderr)
+            print("Found git repos:\n -",
+                  '\n - '.join(f"{os.path.relpath(k) if k else 'Default'}: {v}" for k, v in self.git_repos.items()),
+                  file=sys.stderr)
         except Exception as e:
             print(f"Error obtaining git information", file=sys.stderr)
             import traceback
