@@ -140,7 +140,7 @@ def _validate_resource(filename: Path,
             elif shacl_graph:
                 report.add_info(
                     'SHACL',
-                    'Using SHACL files for validation:\n - ' + '\n - '.join([f.name for f in shacl_files])
+                    'Using SHACL files for validation:\n - ' + '\n - '.join([f.name for f in shacl_files if f.is_file()])
                 )
                 shacl_report = shacl_validate(graph, shacl_graph)
                 if shacl_report.result:
@@ -166,12 +166,12 @@ def validate_test_resources(bblock: BuildingBlock,
 
     shacl_graph = Graph()
     shacl_error = None
-    shacl_files = list(bblock.tests_dir.glob('*.shacl'))
-    try:
-        for shacl_file in shacl_files:
-            shacl_graph.parse(shacl_file, format='turtle')
-    except Exception as e:
-        shacl_error = str(e)
+
+    if bblock.shacl_rules.is_file():
+        try:
+            shacl_graph.parse(bblock.shacl_rules, format='turtle')
+        except Exception as e:
+            shacl_error = str(e)
 
     json_error = None
     schema_validator = None
@@ -208,7 +208,7 @@ def validate_test_resources(bblock: BuildingBlock,
                 shacl_graph=shacl_graph,
                 json_error=json_error,
                 shacl_error=shacl_error,
-                shacl_files=shacl_files).has_errors and result
+                shacl_files=[bblock.shacl_rules]).has_errors and result
             test_count += 1
 
     # Examples
@@ -235,7 +235,7 @@ def validate_test_resources(bblock: BuildingBlock,
                         json_error=json_error,
                         shacl_error=shacl_error,
                         base_uri=snippet.get('base-uri', example_base_uri),
-                        shacl_files=shacl_files).has_errors and result
+                        shacl_files=[bblock.shacl_rules]).has_errors and result
                     test_count += 1
 
     return result, test_count

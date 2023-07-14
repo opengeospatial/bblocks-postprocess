@@ -88,6 +88,7 @@ class BuildingBlock:
         self.annotated_path = annotated_path / self.subdirs
         self.annotated_schema = self.annotated_path / 'schema.yaml'
         self.jsonld_context = self.annotated_path / 'context.jsonld'
+        self.shacl_rules = fp / 'rules.shacl'
 
     def _load_examples(self, examples_schema: Any | None = None):
         examples = None
@@ -143,7 +144,6 @@ class BuildingBlock:
                 return None
             self._lazy_properties['jsonld_context_contents'] = load_file(self.jsonld_context)
         return self._lazy_properties['jsonld_context_contents']
-
 
 class BuildingBlockRegister:
 
