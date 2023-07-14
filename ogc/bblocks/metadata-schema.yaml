@@ -164,3 +164,8 @@ properties:
   group:
     description: An identifier to group Building Blocks together
     type: string
+  shaclRules:
+    description: List of SHACL files to use for RDF validation. Can be URLs or file paths.
+    type: array
+    items:
+      type: string

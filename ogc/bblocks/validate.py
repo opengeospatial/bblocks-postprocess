@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
 from typing import Any
@@ -11,7 +12,7 @@ import jsonschema
 import pyld.jsonld
 import requests
 from jsonschema.validators import validator_for
-from ogc.na.util import validate as shacl_validate, load_yaml
+from ogc.na.util import validate as shacl_validate, load_yaml, is_url
 from rdflib import Graph
 
 from ogc.bblocks.util import BuildingBlock
@@ -59,7 +60,7 @@ def _validate_resource(filename: Path,
                        json_error: str | None = None,
                        shacl_error: str | None = None,
                        base_uri: str | None = None,
-                       shacl_files: list[Path] | None = None) -> ValidationReport:
+                       shacl_files: list[Path | str] | None = None) -> ValidationReport:
     report = ValidationReport()
     try:
         json_doc = None
@@ -138,10 +139,11 @@ def _validate_resource(filename: Path,
             if shacl_error:
                 report.add_error('SHACL', shacl_error)
             elif shacl_graph:
-                report.add_info(
-                    'SHACL',
-                    'Using SHACL files for validation:\n - ' + '\n - '.join([f.name for f in shacl_files if f.is_file()])
-                )
+                if shacl_files:
+                    report.add_info(
+                        'SHACL',
+                        'Using SHACL files for validation:\n - ' + '\n - '.join(str(f) for f in shacl_files)
+                    )
                 shacl_report = shacl_validate(graph, shacl_graph)
                 if shacl_report.result:
                     report.add_info('SHACL', shacl_report.text)
@@ -157,6 +159,7 @@ def _validate_resource(filename: Path,
 
 
 def validate_test_resources(bblock: BuildingBlock,
+                            registered_items_path: Path,
                             outputs_path: str | Path | None = None) -> tuple[bool, int]:
     result = True
     test_count = 0
@@ -167,9 +170,17 @@ def validate_test_resources(bblock: BuildingBlock,
     shacl_graph = Graph()
     shacl_error = None
 
-    if bblock.shacl_rules.is_file():
+    shacl_files = []
+    if bblock.shaclRules:
         try:
-            shacl_graph.parse(bblock.shacl_rules, format='turtle')
+            for shacl_file in bblock.shaclRules:
+                if isinstance(shacl_file, Path) or (isinstance(shacl_file, str) and not is_url(shacl_file)):
+                    # assume file
+                    shacl_file = bblock.files_path / shacl_file
+                    shacl_files.append(os.path.relpath(shacl_file, registered_items_path))
+                else:
+                    shacl_files.append(shacl_file)
+                shacl_graph.parse(shacl_file, format='turtle')
         except Exception as e:
             shacl_error = str(e)
 
@@ -208,7 +219,7 @@ def validate_test_resources(bblock: BuildingBlock,
                 shacl_graph=shacl_graph,
                 json_error=json_error,
                 shacl_error=shacl_error,
-                shacl_files=[bblock.shacl_rules]).has_errors and result
+                shacl_files=shacl_files).has_errors and result
             test_count += 1
 
     # Examples
@@ -235,7 +246,7 @@ def validate_test_resources(bblock: BuildingBlock,
                         json_error=json_error,
                         shacl_error=shacl_error,
                         base_uri=snippet.get('base-uri', example_base_uri),
-                        shacl_files=[bblock.shacl_rules]).has_errors and result
+                        shacl_files=shacl_files).has_errors and result
                     test_count += 1
 
     return result, test_count

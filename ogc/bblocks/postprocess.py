@@ -80,6 +80,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
         print(f"  > Running tests for {bblock.identifier}", file=sys.stderr)
         validation_passed, test_count = validate_test_resources(bblock,
+                                                                registered_items_path=registered_items_path,
                                                                 outputs_path=test_outputs_path)
         bblock.metadata['validationPassed'] = validation_passed
         if not validation_passed:

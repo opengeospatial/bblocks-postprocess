@@ -88,7 +88,11 @@ class BuildingBlock:
         self.annotated_path = annotated_path / self.subdirs
         self.annotated_schema = self.annotated_path / 'schema.yaml'
         self.jsonld_context = self.annotated_path / 'context.jsonld'
-        self.shacl_rules = fp / 'rules.shacl'
+
+        shacl_rules = self.metadata.setdefault('shaclRules', [])
+        default_shacl_rules = fp / 'rules.shacl'
+        if default_shacl_rules.is_file():
+            shacl_rules.append('rules.shacl')
 
     def _load_examples(self, examples_schema: Any | None = None):
         examples = None
