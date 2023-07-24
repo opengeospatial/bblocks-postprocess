@@ -171,8 +171,8 @@ def _validate_resource(filename: Path,
                         report.add_info('SHACL', shacl_report.text)
                     else:
                         report.add_error('SHACL', shacl_report.text)
-                except None as e:
-                    query_error = f"\nfor SPARQL query {e.args(0)}" if e.args else ''
+                except ParseBaseException as e:
+                    query_error = f"\nfor SPARQL query {e.args[0]}" if e.args else ''
                     report.add_error('SHACL', f"Error parsing SHACL validator: {e}{query_error}")
 
     try:
