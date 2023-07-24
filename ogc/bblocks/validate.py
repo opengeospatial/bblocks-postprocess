@@ -13,7 +13,10 @@ import pyld.jsonld
 import requests
 from jsonschema.validators import validator_for
 from ogc.na.util import validate as shacl_validate, load_yaml, is_url
+from pyld.jsonld import JsonLdError
+from pyparsing import ParseBaseException
 from rdflib import Graph
+from yaml import MarkedYAMLError
 
 from ogc.bblocks.util import BuildingBlock
 import traceback
@@ -32,7 +35,7 @@ class ValidationReport:
 
     def add_error(self, section, text):
         self._errors = True
-        self.add_info(section, text)
+        self.add_info(section, f"\n** Validation error **\n{text}")
 
     def write(self, basename: Path):
         status = 'failed' if self._errors else 'passed'
@@ -61,44 +64,58 @@ def _validate_resource(filename: Path,
                        shacl_error: str | None = None,
                        base_uri: str | None = None,
                        shacl_files: list[Path | str] | None = None) -> ValidationReport:
+
     report = ValidationReport()
-    try:
+
+    def validate_inner():
         json_doc = None
         graph = None
 
         if filename.suffix in ('.json', '.jsonld'):
-            if resource_contents:
-                json_doc = load_yaml(content=resource_contents)
-                report.add_info('Files', f'Using {filename.name} from examples')
-            else:
-                json_doc = load_yaml(filename=filename)
-                report.add_info('Files', f'Using {filename.name}')
+            try:
+                if resource_contents:
+                    json_doc = load_yaml(content=resource_contents)
+                    report.add_info('Files', f'Using {filename.name} from examples')
+                else:
+                    json_doc = load_yaml(filename=filename)
+                    report.add_info('Files', f'Using {filename.name}')
+            except MarkedYAMLError as e:
+                report.add_error('JSON Schema', f"Error parsing JSON example: {str(e)} "
+                                                f"on or near line {e.context_mark.line + 1} "
+                                                f"column {e.context_mark.column + 1}")
+                return
 
             if '@graph' in json_doc:
                 json_doc = json_doc['@graph']
                 report.add_info('Files', f'"@graph" found, unwrapping')
 
-            if filename.suffix == '.json' and jsonld_context:
-                report.add_info('Files', 'JSON-LD context is present - uplifting')
-                if isinstance(json_doc, dict):
-                    jsonld_uplifted = {'@context': jsonld_context['@context'], **json_doc}
-                else:
-                    jsonld_uplifted = {
-                        '@context': jsonld_context['@context'],
-                        '@graph': json_doc,
-                    }
-                jsonld_expanded = json.dumps(pyld.jsonld.expand(jsonld_uplifted, {'base': base_uri}))
-                graph = Graph().parse(data=jsonld_expanded, format='json-ld', base=base_uri)
+            try:
+                if filename.suffix == '.json' and jsonld_context:
+                    report.add_info('Files', 'JSON-LD context is present - uplifting')
+                    if isinstance(json_doc, dict):
+                        jsonld_uplifted = {'@context': jsonld_context['@context'], **json_doc}
+                    else:
+                        jsonld_uplifted = {
+                            '@context': jsonld_context['@context'],
+                            '@graph': json_doc,
+                        }
+                    jsonld_expanded = json.dumps(pyld.jsonld.expand(jsonld_uplifted, {'base': base_uri}))
+                    graph = Graph().parse(data=jsonld_expanded, format='json-ld', base=base_uri)
 
-                if jsonld_url:
-                    jsonld_uplifted['@context'] = jsonld_url
-                jsonld_fn = output_filename.with_suffix('.jsonld')
-                with open(jsonld_fn, 'w') as f:
-                    json.dump(jsonld_uplifted, f, indent=2)
-                    report.add_info('Files', f'Output JSON-LD {jsonld_fn.name} created')
+                    if jsonld_url:
+                        jsonld_uplifted['@context'] = jsonld_url
+                    jsonld_fn = output_filename.with_suffix('.jsonld')
+                    with open(jsonld_fn, 'w') as f:
+                        json.dump(jsonld_uplifted, f, indent=2)
+                        report.add_info('Files', f'Output JSON-LD {jsonld_fn.name} created')
 
-            elif output_filename.suffix == '.jsonld':
-                graph = Graph().parse(filename)
+                elif output_filename.suffix == '.jsonld':
+                    jsonld_expanded = json.dumps(pyld.jsonld.expand(json_doc, {'base': base_uri}))
+                    graph = Graph().parse(data=jsonld_expanded, format='json-ld', base=base_uri)
+
+            except JsonLdError as e:
+                report.add_error('JSON-LD', str(e))
+                return
 
             if graph:
                 ttl_fn = output_filename.with_suffix('.ttl')
@@ -106,15 +123,19 @@ def _validate_resource(filename: Path,
                 report.add_info('Files', f'Output Turtle {ttl_fn.name} created')
 
         elif filename.suffix == '.ttl':
-            if resource_contents:
-                report.add_info('Files', f'Using {filename.name} from examples')
-                graph = Graph().parse(data=resource_contents, format='ttl')
-            else:
-                graph = Graph().parse(filename)
-                report.add_info('Files', f'Using {filename.name}')
+            try:
+                if resource_contents:
+                    report.add_info('Files', f'Using {filename.name} from examples')
+                    graph = Graph().parse(data=resource_contents, format='ttl')
+                else:
+                    graph = Graph().parse(filename)
+                    report.add_info('Files', f'Using {filename.name}')
+            except (ValueError, SyntaxError) as e:
+                report.add_error('Turtle', str(e))
+                return
 
         else:
-            return report
+            return
 
         if json_doc:
             if json_error:
@@ -144,12 +165,18 @@ def _validate_resource(filename: Path,
                         'SHACL',
                         'Using SHACL files for validation:\n - ' + '\n - '.join(str(f) for f in shacl_files)
                     )
-                shacl_report = shacl_validate(graph, shacl_graph)
-                if shacl_report.result:
-                    report.add_info('SHACL', shacl_report.text)
-                else:
-                    report.add_error('SHACL', shacl_report.text)
+                try:
+                    shacl_report = shacl_validate(graph, shacl_graph)
+                    if shacl_report.result:
+                        report.add_info('SHACL', shacl_report.text)
+                    else:
+                        report.add_error('SHACL', shacl_report.text)
+                except None as e:
+                    query_error = f"\nfor SPARQL query {e.args(0)}" if e.args else ''
+                    report.add_error('SHACL', f"Error parsing SHACL validator: {e}{query_error}")
 
+    try:
+        validate_inner()
     except Exception as e:
         report.add_error('Unknown errors', ','.join(traceback.format_exception(e)))
 
