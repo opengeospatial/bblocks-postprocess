@@ -92,18 +92,35 @@ def _validate_resource(filename: Path,
             try:
                 if filename.suffix == '.json' and jsonld_context:
                     report.add_info('Files', 'JSON-LD context is present - uplifting')
+                    new_context = jsonld_context['@context']
                     if isinstance(json_doc, dict):
-                        jsonld_uplifted = {'@context': jsonld_context['@context'], **json_doc}
+                        if '@context' in json_doc:
+                            existing_context = json_doc['@context']
+                            if isinstance(existing_context, list):
+                                new_context = [
+                                    jsonld_context['@context'],
+                                    *existing_context,
+                                ]
+                            else:
+                                new_context = [
+                                    jsonld_context['@context'],
+                                    existing_context,
+                                ]
+                        jsonld_uplifted = json_doc.copy()
+                        jsonld_uplifted['@context'] = new_context
                     else:
                         jsonld_uplifted = {
-                            '@context': jsonld_context['@context'],
+                            '@context': new_context,
                             '@graph': json_doc,
                         }
                     jsonld_expanded = json.dumps(pyld.jsonld.expand(jsonld_uplifted, {'base': base_uri}))
                     graph = Graph().parse(data=jsonld_expanded, format='json-ld', base=base_uri)
 
                     if jsonld_url:
-                        jsonld_uplifted['@context'] = jsonld_url
+                        if isinstance(jsonld_uplifted['@context'], list):
+                            jsonld_uplifted['@context'][0] = jsonld_url
+                        else:
+                            jsonld_uplifted['@context'] = jsonld_url
                     jsonld_fn = output_filename.with_suffix('.jsonld')
                     with open(jsonld_fn, 'w') as f:
                         json.dump(jsonld_uplifted, f, indent=2)
@@ -116,11 +133,6 @@ def _validate_resource(filename: Path,
             except JsonLdError as e:
                 report.add_error('JSON-LD', str(e))
                 return
-
-            if graph:
-                ttl_fn = output_filename.with_suffix('.ttl')
-                graph.serialize(ttl_fn, format='ttl')
-                report.add_info('Files', f'Output Turtle {ttl_fn.name} created')
 
         elif filename.suffix == '.ttl':
             try:
@@ -136,6 +148,11 @@ def _validate_resource(filename: Path,
 
         else:
             return
+
+        if graph is not None and (resource_contents or filename.suffix != '.ttl'):
+            ttl_fn = output_filename.with_suffix('.ttl')
+            graph.serialize(ttl_fn, format='ttl')
+            report.add_info('Files', f'Output Turtle {ttl_fn.name} created')
 
         if json_doc:
             if json_error:
