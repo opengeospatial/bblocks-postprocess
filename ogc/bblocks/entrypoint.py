@@ -115,7 +115,7 @@ if __name__ == '__main__':
             print(f"Deleting {old_file}", file=sys.stderr)
             old_file.unlink(missing_ok=True)
         cwd = Path().resolve()
-        for old_dir in args.generated_docs_path, args.annotated_path:
+        for old_dir in args.generated_docs_path, args.annotated_path, args.test_outputs_path:
             # Only delete if not current path and not ancestor
             old_dir = Path(old_dir).resolve()
             if old_dir != cwd and old_dir not in cwd.parents:
