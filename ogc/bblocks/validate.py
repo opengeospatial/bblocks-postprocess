@@ -172,7 +172,13 @@ def _validate_resource(filename: Path,
                     else:
                         report.add_error('SHACL', shacl_report.text)
                 except ParseBaseException as e:
-                    query_error = f"\nfor SPARQL query {e.args[0]}" if e.args else ''
+                    if e.args:
+                        query_lines = e.args[0].splitlines()
+                        max_line_digits = len(str(len(query_lines)))
+                        query_error = '\nfor SPARQL query\n' + '\n'.join(f"{str(i+1).rjust(max_line_digits)}: {line}"
+                                                for i, line in enumerate(query_lines))
+                    else:
+                        query_error = ''
                     report.add_error('SHACL', f"Error parsing SHACL validator: {e}{query_error}")
 
     try:
