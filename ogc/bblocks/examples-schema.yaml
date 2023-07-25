@@ -45,11 +45,21 @@ items:
               A reference to a filename (relative to the examples.yaml file) with the contents of
               this snippet, as an alternative to inlining them in the 'code' property.
             type: string
+            format: uri-reference
           base-uri:
             description: |
               Base URI that will be used when semantically uplifting this snippet. Overrides
               that of the example, if any.
             type: string
+          schema-ref:
+            description: |
+              A reference to a JSON schema or subschema that will be used to validate this snippet.
+              A full URL or a filename (relative to the building block's 'schema.yaml'), with or
+              without a fragment, can be provided. If only a fragment is provided, it will be
+              looked up inside the default 'schema.yaml'. If none provided, the default schema for
+              the building block will be employed.
+            type: string
+            format: uri-reference
           doc-uplift-formats:
             description: |
               Uplifted snippet format, or array thereof, that will be added to the output documentation.

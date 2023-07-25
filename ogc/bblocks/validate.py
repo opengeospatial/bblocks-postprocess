@@ -12,6 +12,7 @@ import jsonschema
 import pyld.jsonld
 import requests
 from jsonschema.validators import validator_for
+from ogc.na.annotate_schema import SchemaResolver
 from ogc.na.util import validate as shacl_validate, load_yaml, is_url
 from pyld.jsonld import JsonLdError
 from pyparsing import ParseBaseException
@@ -69,7 +70,8 @@ def _validate_resource(filename: Path,
                        json_error: str | None = None,
                        shacl_error: str | None = None,
                        base_uri: str | None = None,
-                       shacl_files: list[Path | str] | None = None) -> ValidationReport:
+                       shacl_files: list[Path | str] | None = None,
+                       schema_ref: str | None = None) -> ValidationReport:
 
     report = ValidationReport()
 
@@ -167,11 +169,14 @@ def _validate_resource(filename: Path,
                 report.add_info('Files', f'*Empty* output Turtle {ttl_fn.name} created')
 
         if json_doc:
+            if schema_ref:
+                report.add_info('JSON Schema', f'Using the following JSON Schema: {schema_ref}')
             if json_error:
                 report.add_error('JSON Schema', json_error)
             elif schema_validator:
                 try:
                     validate_json(json_doc, schema_validator)
+                    report.add_info('JSON Schema', 'Validation passed')
                 except Exception as e:
                     if not isinstance(e, jsonschema.exceptions.ValidationError):
                         traceback.print_exception(e)
@@ -255,7 +260,8 @@ def validate_test_resources(bblock: BuildingBlock,
 
     try:
         if bblock.annotated_schema:
-            schema_validator = get_json_validator(bblock)
+            schema_validator = get_json_validator(bblock.annotated_schema_contents,
+                                                  bblock.annotated_schema.resolve().as_uri())
         if bblock.jsonld_context.is_file():
             jsonld_context = load_yaml(filename=bblock.jsonld_context)
     except Exception as e:
@@ -294,6 +300,27 @@ def validate_test_resources(bblock: BuildingBlock,
             for snippet_id, snippet in enumerate(snippets):
                 code, lang = snippet.get('code'), snippet.get('language')
                 add_snippets_formats = snippet.get('doc-uplift-formats', DEFAULT_UPLIFT_FORMATS)
+
+                if 'schema-ref' not in snippet:
+                    snippet_schema_validator = schema_validator
+                else:
+                    schema_ref = snippet['schema-ref']
+                    if schema_ref.startswith('#/'):
+                        schema_ref = f"{bblock.schema}{schema_ref}"
+                        schema_uri = bblock.schema.with_name('snippet-schema.yaml').as_uri()
+                    elif not is_url(schema_ref):
+                        if '#' in schema_ref:
+                            path, fragment = schema_ref.split('#', 1)
+                            schema_ref = f"{bblock.schema.parent.joinpath(path)}#{fragment}"
+                            schema_uri = f"{bblock.schema.parent.joinpath(path).as_uri()}#{fragment}"
+                        else:
+                            schema_uri = bblock.schema.parent.joinpath(schema_ref).as_uri()
+                    else:
+                        schema_uri = bblock.schema.as_uri()
+                    snippet_schema = {'$ref': schema_ref}
+                    snippet_schema_validator = get_json_validator(snippet_schema,
+                                                                  schema_uri)
+
                 if isinstance(add_snippets_formats, str):
                     add_snippets_formats = [add_snippets_formats]
                 elif not add_snippets_formats:
@@ -309,14 +336,15 @@ def validate_test_resources(bblock: BuildingBlock,
                         fn, output_fn,
                         resource_contents=code,
                         schema_url=schema_url,
-                        schema_validator=schema_validator,
+                        schema_validator=snippet_schema_validator,
                         jsonld_context=jsonld_context,
                         jsonld_url=jsonld_url,
                         shacl_graph=shacl_graph,
                         json_error=json_error,
                         shacl_error=shacl_error,
                         base_uri=snippet.get('base-uri', example_base_uri),
-                        shacl_files=shacl_files)
+                        shacl_files=shacl_files,
+                        schema_ref=snippet.get('schema-ref'))
                     result = result and not example_result.has_errors
                     for file_format, file_contents in example_result.uplifted_files.items():
                         if file_format not in snippet_langs and file_format in add_snippets_formats:
@@ -353,10 +381,13 @@ class RefResolver(jsonschema.validators.RefResolver):
         return result
 
 
-def get_json_validator(bblock: BuildingBlock) -> jsonschema.Validator:
-    schema = load_yaml(content=bblock.annotated_schema_contents)
+def get_json_validator(contents, base_uri) -> jsonschema.Validator:
+    if isinstance(contents, dict):
+        schema = contents
+    else:
+        schema = load_yaml(content=contents)
     resolver = RefResolver(
-        base_uri=bblock.annotated_schema.resolve().as_uri(),
+        base_uri=base_uri,
         referrer=schema,
     )
     validator_cls = validator_for(schema)
