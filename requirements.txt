@@ -1,8 +1,10 @@
 asciidoc
-pyyaml
-Mako
+pyyaml~=6.0
+Mako~=1.2.4
 jsonschema==4.17.3
 ogc-na>=0.3.2
-rdflib
-requests
-pyld
+rdflib~=6.3.2
+requests~=2.31.0
+pyld~=2.0.3
+
+pyparsing~=3.0.9

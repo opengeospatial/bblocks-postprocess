@@ -12,6 +12,7 @@ title: ${bblock.name} (${bblock.itemClass.capitalize()})
     'java': 'Java',
     'python': 'Python',
     'javascript': 'Javascript',
+    'jsonld': 'JSON-LD',
   }
   langs = {snippet['language']: True for example in bblock.examples for snippet in example.get('snippets', [])}
 %>

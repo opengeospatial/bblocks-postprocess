@@ -33,6 +33,15 @@ items:
             type: string
           base-uri:
             type: string
+          doc-uplift-formats:
+            oneOf:
+              - type: string
+                enum: [jsonld, ttl]
+              - type: array
+                items:
+                  type: string
+                  enum: [jsonld, ttl]
+              - type: 'null'
         oneOf:
           - required:
             - code

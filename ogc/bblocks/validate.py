@@ -22,6 +22,11 @@ from ogc.bblocks.util import BuildingBlock
 import traceback
 
 OUTPUT_SUBDIR = 'output'
+FORMAT_ALIASES = {
+    'turtle': 'ttl',
+    'json-ld': 'jsonld',
+}
+DEFAULT_UPLIFT_FORMATS = ['jsonld', 'ttl']
 
 
 class ValidationReport:
@@ -29,6 +34,7 @@ class ValidationReport:
     def __init__(self):
         self._errors = False
         self._sections: dict[str, list[str]] = {}
+        self.uplifted_files: dict[str, str] = {}
 
     def add_info(self, section, text):
         self._sections.setdefault(section, []).append(text)
@@ -122,8 +128,10 @@ def _validate_resource(filename: Path,
                         else:
                             jsonld_uplifted['@context'] = jsonld_url
                     jsonld_fn = output_filename.with_suffix('.jsonld')
+                    jsonld_contents = json.dumps(jsonld_uplifted, indent=2)
                     with open(jsonld_fn, 'w') as f:
-                        json.dump(jsonld_uplifted, f, indent=2)
+                        f.write(jsonld_contents)
+                        report.uplifted_files['jsonld'] = jsonld_contents
                         report.add_info('Files', f'Output JSON-LD {jsonld_fn.name} created')
 
                 elif output_filename.suffix == '.jsonld':
@@ -152,7 +160,8 @@ def _validate_resource(filename: Path,
         if graph is not None and (resource_contents or filename.suffix != '.ttl'):
             ttl_fn = output_filename.with_suffix('.ttl')
             graph.serialize(ttl_fn, format='ttl')
-            if not graph:
+            report.uplifted_files['ttl'] = graph.serialize(format='ttl')
+            if graph:
                 report.add_info('Files', f'Output Turtle {ttl_fn.name} created')
             else:
                 report.add_info('Files', f'*Empty* output Turtle {ttl_fn.name} created')
@@ -195,16 +204,16 @@ def _validate_resource(filename: Path,
                     if e.args:
                         query_lines = e.args[0].splitlines()
                         max_line_digits = len(str(len(query_lines)))
-                        query_error = '\nfor SPARQL query\n' + '\n'.join(f"{str(i+1).rjust(max_line_digits)}: {line}"
-                                                for i, line in enumerate(query_lines))
+                        query_error = '\nfor SPARQL query\n' + '\n'.join(f"{str(i + 1).rjust(max_line_digits)}: {line}"
+                                                                         for i, line in enumerate(query_lines))
                     else:
                         query_error = ''
                     report.add_error('SHACL', f"Error parsing SHACL validator: {e}{query_error}")
 
     try:
         validate_inner()
-    except Exception as e:
-        report.add_error('Unknown errors', ','.join(traceback.format_exception(e)))
+    except Exception as unknown_exc:
+        report.add_error('Unknown errors', ','.join(traceback.format_exception(unknown_exc)))
 
     report.write(output_filename)
 
@@ -279,8 +288,16 @@ def validate_test_resources(bblock: BuildingBlock,
     if bblock.examples:
         for example_id, example in enumerate(bblock.examples):
             example_base_uri = example.get('base-uri')
-            for snippet_id, snippet in enumerate(example.get('snippets', ())):
+            snippets = example.get('snippets', ())
+            snippet_langs = set(snippet.get('language') for snippet in snippets)
+            add_snippets = {}
+            for snippet_id, snippet in enumerate(snippets):
                 code, lang = snippet.get('code'), snippet.get('language')
+                add_snippets_formats = snippet.get('doc-uplift-formats', DEFAULT_UPLIFT_FORMATS)
+                if isinstance(add_snippets_formats, str):
+                    add_snippets_formats = [add_snippets_formats]
+                elif not add_snippets_formats:
+                    add_snippets_formats = []
                 if code and lang in ('json', 'jsonld', 'ttl'):
                     fn = bblock.tests_dir / f"example_{example_id + 1}_{snippet_id + 1}.{snippet['language']}"
                     output_fn = output_dir / fn.name
@@ -288,7 +305,7 @@ def validate_test_resources(bblock: BuildingBlock,
                     with open(output_fn, 'w') as f:
                         f.write(code)
 
-                    result = not _validate_resource(
+                    example_result = _validate_resource(
                         fn, output_fn,
                         resource_contents=code,
                         schema_url=schema_url,
@@ -299,8 +316,20 @@ def validate_test_resources(bblock: BuildingBlock,
                         json_error=json_error,
                         shacl_error=shacl_error,
                         base_uri=snippet.get('base-uri', example_base_uri),
-                        shacl_files=shacl_files).has_errors and result
+                        shacl_files=shacl_files)
+                    result = result and not example_result.has_errors
+                    for file_format, file_contents in example_result.uplifted_files.items():
+                        if file_format not in snippet_langs and file_format in add_snippets_formats:
+                            add_snippets[file_format] = file_contents
                     test_count += 1
+
+            if add_snippets:
+                snippets = example.setdefault('snippets', [])
+                for lang, code in add_snippets.items():
+                    snippets.append({
+                        'language': lang,
+                        'code': code,
+                    })
 
     return result, test_count
 
