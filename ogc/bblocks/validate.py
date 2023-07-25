@@ -152,7 +152,10 @@ def _validate_resource(filename: Path,
         if graph is not None and (resource_contents or filename.suffix != '.ttl'):
             ttl_fn = output_filename.with_suffix('.ttl')
             graph.serialize(ttl_fn, format='ttl')
-            report.add_info('Files', f'Output Turtle {ttl_fn.name} created')
+            if not graph:
+                report.add_info('Files', f'Output Turtle {ttl_fn.name} created')
+            else:
+                report.add_info('Files', f'*Empty* output Turtle {ttl_fn.name} created')
 
         if json_doc:
             if json_error:
