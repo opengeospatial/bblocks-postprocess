@@ -13,12 +13,19 @@ items:
           minItems: 1
   properties:
     title:
+      description: A title for this example
       type: string
     content:
+      description: Markdown contents to describe the example.
       type: string
     base-uri:
+      description: Base URI that will be used for semantic uplift (JSON -> JSON-LD -> Turtle).
       type: string
     snippets:
+      description: |
+        Collection of snippets to illustrate this example. Preferably, only one snippet per language
+        should be added here, as additional snippets in the same language can be created as different
+        examples.
       type: array
       items:
         type: object
@@ -26,14 +33,28 @@ items:
           - language
         properties:
           language:
+            description: |
+              The language for this snippet. Can be a file format (such as 'jsonld' or 'turtle'),
+              a MIME type (e.g., 'text/html'), a programming language ('python'). 'plaintext' by default.
             type: string
           code:
+            description: Code block for the snippet. Either this property or 'ref' have to be provided.
             type: string
           ref:
+            description: |
+              A reference to a filename (relative to the examples.yaml file) with the contents of
+              this snippet, as an alternative to inlining them in the 'code' property.
             type: string
           base-uri:
+            description: |
+              Base URI that will be used when semantically uplifting this snippet. Overrides
+              that of the example, if any.
             type: string
           doc-uplift-formats:
+            description: |
+              Uplifted snippet format, or array thereof, that will be added to the output documentation.
+              If omitted, both 'jsonld' and 'ttl' will be used; if empty array or null, no uplifted snippets
+              will be included in the documentation.
             oneOf:
               - type: string
                 enum: [jsonld, ttl]
