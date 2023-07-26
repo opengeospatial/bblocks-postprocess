@@ -4,8 +4,10 @@ import itertools
 import json
 import os.path
 import re
+import subprocess
 import sys
 from argparse import ArgumentParser
+import datetime
 from pathlib import Path
 import traceback
 
@@ -52,6 +54,32 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                                  id_prefix=id_prefix)
 
     def do_postprocess(bblock: BuildingBlock) -> bool:
+
+        try:
+            last_git_modified = datetime.datetime.fromisoformat(subprocess.run([
+                'git',
+                'log',
+                '-1',
+                '--pretty=format:%cI',
+                str(bblock.files_path),
+            ], capture_output=True).stdout.decode()).astimezone(datetime.timezone.utc).date()
+        except (ValueError, OSError):
+            last_git_modified = None
+
+        last_update = bblock.metadata.get('dateOfLastChange')
+        if last_update:
+            try:
+                last_update = datetime.date.fromisoformat(last_update)
+                if last_git_modified and last_git_modified > last_update:
+                    last_update = last_git_modified
+            except ValueError:
+                last_update = last_git_modified
+
+        if last_update:
+            bblock.metadata['dateOfLastChange'] = last_update.isoformat()
+        else:
+            bblock.metadata.pop('dateOfLastChange', None)
+
         output_file_root = Path(output_file).resolve().parent
         if bblock.annotated_schema.is_file():
             if base_url:
