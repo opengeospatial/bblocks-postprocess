@@ -3,18 +3,17 @@ from __future__ import annotations
 import json
 import os
 import shutil
+from json import JSONDecodeError
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 from urllib.request import urlopen
 
 import jsonschema
-import pyld.jsonld
 import requests
 from jsonschema.validators import validator_for
 from ogc.na.annotate_schema import SchemaResolver
 from ogc.na.util import validate as shacl_validate, load_yaml, is_url
-from pyld.jsonld import JsonLdError
 from pyparsing import ParseBaseException
 from rdflib import Graph
 from yaml import MarkedYAMLError
@@ -121,8 +120,7 @@ def _validate_resource(filename: Path,
                             '@context': new_context,
                             '@graph': json_doc,
                         }
-                    jsonld_expanded = json.dumps(pyld.jsonld.expand(jsonld_uplifted, {'base': base_uri}))
-                    graph = Graph().parse(data=jsonld_expanded, format='json-ld', base=base_uri)
+                    graph = Graph().parse(data=json.dumps(jsonld_uplifted), format='json-ld', base=base_uri)
 
                     if jsonld_url:
                         if isinstance(jsonld_uplifted['@context'], list):
@@ -137,10 +135,9 @@ def _validate_resource(filename: Path,
                         report.add_info('Files', f'Output JSON-LD {jsonld_fn.name} created')
 
                 elif output_filename.suffix == '.jsonld':
-                    jsonld_expanded = json.dumps(pyld.jsonld.expand(json_doc, {'base': base_uri}))
-                    graph = Graph().parse(data=jsonld_expanded, format='json-ld', base=base_uri)
+                    graph = Graph().parse(data=json_doc, format='json-ld', base=base_uri)
 
-            except JsonLdError as e:
+            except JSONDecodeError as e:
                 report.add_error('JSON-LD', str(e))
                 return
 
