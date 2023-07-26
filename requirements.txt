@@ -3,7 +3,7 @@ pyyaml~=6.0
 Mako~=1.2.4
 jsonschema==4.17.3
 ogc-na>=0.3.2
-rdflib @ git+https://github.com/avillar/rdflib.git@main#egg=rdflib
+rdflib @ git+https://github.com/avillar/rdflib.git@6.x#egg=rdflib
 requests~=2.31.0
 
 pyparsing~=3.0.9
