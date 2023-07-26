@@ -639,3 +639,7 @@ html, body {
 aside a {
   color: $main-text;
 }
+
+.content .highlight pre.highlight {
+  max-height: 30em;
+}
