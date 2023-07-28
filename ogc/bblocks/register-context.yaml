@@ -39,11 +39,6 @@ context:
     dateOfLastChange:
       '@id': dct:modified
       '@type': xsd:date
-    maturity:
-      '@id': bblocks:maturity
-      '@type': '@id'
-      '@context':
-        '@base': http://www.opengis.net/def/bblocks/maturity/
     scope:
       '@id': bblocks:scope
       '@type': '@id'

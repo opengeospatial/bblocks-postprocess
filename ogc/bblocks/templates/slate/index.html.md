@@ -42,7 +42,10 @@ ${'#'} ${bblock.name} `${bblock.identifier}`
 
 ${bblock.abstract}
 
-[Maturity](https://github.com/cportele/ogcapi-building-blocks#building-block-maturity): ${bblock.maturity.capitalize()}
+<p class="status">
+    <span data-rainbow-uri="http://www.opengis.net/def/status">Status</span>:
+    <a href="http://www.opengis.net/def/status/${bblock.status}" target="_blank" data-rainbow-uri>${bblock.status.replace('-', ' ').capitalize()}</a>
+</p>
 
 % if bblock.validationPassed:
 <aside class="success">

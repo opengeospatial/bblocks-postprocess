@@ -10,7 +10,6 @@ required:
   - version
   - dateOfLastChange
   - sources
-  - maturity
   - scope
 properties:
   itemIdentifier:
@@ -113,13 +112,6 @@ properties:
         link:
           type: string
           format: uri
-  maturity:
-    description: Level of maturity for this Building Block.
-    enum:
-      - mature
-      - proposal
-      - stable
-      - development
   schema:
     description: URL (or array thereof) for JSON schemas of this Building Block.
     oneOf:

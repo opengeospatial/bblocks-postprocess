@@ -5,9 +5,7 @@
 
 ${bblock.abstract}
 
-% if bblock.maturity:
-[*Maturity*](https://github.com/cportele/ogcapi-building-blocks#building-block-maturity): ${bblock.maturity.capitalize()}
-% endif
+[*Status*](http://www.opengis.net/def/status): ${bblock.status.replace('-', ' ').capitalize()}
 
 % if bblock.description:
 ${'##'} Description
