@@ -43,17 +43,18 @@ jobs:
           with open('index.html', 'w') as f:
             f.write('<!doctype html><html><head><meta charset="utf-8"/><title>')
             f.write('${{ github.repository }}')
-            f.write(' - Building Blocks</title></head><body><h1>')
+            f.write(' - Building Blocks</title><style>.validation-failed::before{color:red;content:"❌ "}.validation-passed::before{color:green;content:"✅️ "}</style></head><body><h1>')
             f.write('${{ github.repository }}')
             f.write('</h1><ul>')
             for bblock in sorted(bblocks, key=lambda x: x['itemIdentifier']):
               link = bblock.get('documentation', {}).get('slate', {}).get('url')
               name = bblock['name']
               identifier = bblock['itemIdentifier']
+              validation = 'passed' if bblock.get('validationPassed', True) else 'failed'
               if link:
-                f.write(f'<li><a href="{link}"><tt>{identifier}</tt> - {name}</a></li>')
+                f.write(f'<li class="validation-{validation}"><a href="{link}"><tt>{identifier}</tt> - {name}</a></li>')
               else:
-                f.write(f'<li><tt>{identifier}</tt> - {name}</li>')
+                f.write(f'<li class="validation-{validation}"><tt>{identifier}</tt> - {name}</li>')
             f.write('</ul></body></html>')
       - name: Setup Pages
         if: ${{ github.event.repository.has_pages }}
