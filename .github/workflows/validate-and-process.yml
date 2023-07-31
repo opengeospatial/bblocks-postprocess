@@ -32,11 +32,13 @@ jobs:
         with:
           message: Building blocks postprocessing
       - name: Setup Pages
+        if: ${{ github.event.repository.has_pages }}
         uses: actions/configure-pages@v3
       - name: Upload artifacts
         uses: actions/upload-pages-artifact@v1
         with:
           path: .
       - name: Deploy to GH Pages
+        if: ${{ github.event.repository.has_pages }}
         id: deployment
         uses: actions/deploy-pages@v2
