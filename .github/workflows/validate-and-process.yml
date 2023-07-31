@@ -31,6 +31,30 @@ jobs:
         uses: EndBug/add-and-commit@v9
         with:
           message: Building blocks postprocessing
+      - name: Create GH Pages index
+        if: ${{ github.event.repository.has_pages }}
+        shell: python
+        run: |
+          import json
+          
+          with open('build/register.json') as f:
+            bblocks = json.load(f)
+          
+          with open('index.html', 'w') as f:
+            f.write('<!doctype html><html><head><meta charset="utf-8"/><title>')
+            f.write('${{ github.repository }}')
+            f.write(' - Building Blocks</title></head><body><h1>')
+            f.write('${{ github.repository }}')
+            f.write('</h1><ul>')
+            for bblock in bblocks:
+              link = bblock.get('documentation', {}).get('slate', {}).get('url')
+              name = bblock['name']
+              identifier = bblock['itemIdentifier']
+              if link:
+                f.write(f'<li><a href="{link}"><tt>{identifier}</tt> - {name}</a></li>')
+              else:
+                f.write(f'<li><tt>{identifier}</tt> - {name}</li>')
+            f.write('</ul></body></html>')
       - name: Setup Pages
         if: ${{ github.event.repository.has_pages }}
         uses: actions/configure-pages@v3
