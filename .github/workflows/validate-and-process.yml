@@ -2,6 +2,11 @@ name: Validate and process Building Blocks
 on:
   workflow_call:
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
 jobs:
   validate-and-process:
     runs-on: ubuntu-latest
