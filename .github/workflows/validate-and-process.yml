@@ -46,7 +46,7 @@ jobs:
             f.write(' - Building Blocks</title></head><body><h1>')
             f.write('${{ github.repository }}')
             f.write('</h1><ul>')
-            for bblock in bblocks:
+            for bblock in sorted(bblocks, key=lambda x: x['itemIdentifier']):
               link = bblock.get('documentation', {}).get('slate', {}).get('url')
               name = bblock['name']
               identifier = bblock['itemIdentifier']
