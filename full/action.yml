@@ -13,7 +13,10 @@ inputs:
     default: build/generateddocs
   base_url:
     description: Base URL to use for asset linkage
-    default: https://raw.githubusercontent.com/${{github.repository}}/${{github.ref_name}}
+    default: |
+      ${{ github.event.repository.has_pages
+        && format('https://{0}.github.io/{1}', github.repository_owner, github.event.repository.name)
+        || format('https://raw.githubusercontent.com/{0}/{1}', github.repository, github.ref_name) }}
   fail_on_error:
     description: Whether to fail on errors
     default: 'false'
