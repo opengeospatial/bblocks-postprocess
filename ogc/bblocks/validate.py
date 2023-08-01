@@ -12,14 +12,15 @@ from urllib.request import urlopen
 import jsonschema
 import requests
 from jsonschema.validators import validator_for
-from ogc.na.annotate_schema import SchemaResolver
-from ogc.na.util import validate as shacl_validate, load_yaml, is_url
+from ogc.na.util import load_yaml, is_url
 from pyparsing import ParseBaseException
 from rdflib import Graph
+from rdflib.term import Node, URIRef, BNode
 from yaml import MarkedYAMLError
 
 from ogc.bblocks.util import BuildingBlock
 import traceback
+import pyshacl
 
 OUTPUT_SUBDIR = 'output'
 FORMAT_ALIASES = {
@@ -197,11 +198,23 @@ def _validate_resource(filename: Path,
                         'Using SHACL files for validation:\n - ' + '\n - '.join(str(f) for f in shacl_files)
                     )
                 try:
-                    shacl_report = shacl_validate(graph, shacl_graph)
-                    if shacl_report.result:
-                        report.add_info('SHACL', shacl_report.text)
-                    else:
-                        report.add_error('SHACL', shacl_report.text)
+                    shacl_conforms, shacl_result, shacl_report, focus_nodes = shacl_validate(graph, shacl_graph)
+                    report_add = report.add_info if shacl_conforms else report.add_error
+                    report_add('SHACL', shacl_report)
+                    if focus_nodes:
+                        focus_nodes_report = ''
+                        for shape, shape_focus_nodes in focus_nodes.items():
+                            focus_nodes_report += f" - Shape {format_node(shape.node)}"
+                            shape_path = shape.path()
+                            if shape_path:
+                                focus_nodes_report += f" (path {shape_path})"
+                            focus_nodes_report += ": "
+                            if not shape_focus_nodes:
+                                focus_nodes_report += '*none*'
+                            else:
+                                focus_nodes_report += ','.join(format_node(x) for x in shape_focus_nodes)
+                            focus_nodes_report += "\n"
+                        report.add_info('SHACL', 'Focus nodes:\n' + focus_nodes_report)
                 except ParseBaseException as e:
                     if e.args:
                         query_lines = e.args[0].splitlines()
@@ -396,3 +409,20 @@ def validate_json(instance: Any, validator: jsonschema.Validator):
     error = jsonschema.exceptions.best_match(validator.iter_errors(instance))
     if error is not None:
         raise error
+
+
+def shacl_validate(g: Graph, s: Graph) -> tuple[bool, Graph, str, dict[pyshacl.Shape, Node]]:
+    validator = pyshacl.Validator(g, shacl_graph=s, options={
+        'advanced': True
+    })
+    focus_nodes: dict[pyshacl.Shape, Node] = {shape: shape.focus_nodes(g) for shape in validator.shacl_graph.shapes}
+    conforms, shacl_result, shacl_report = validator.run()
+    return conforms, shacl_result, shacl_report, focus_nodes
+
+
+def format_node(n: Node):
+    if isinstance(n, URIRef):
+        return f"<{n}>"
+    if isinstance(n, BNode):
+        return f"_:{n}"
+    return str(n)
