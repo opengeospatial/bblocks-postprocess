@@ -21,6 +21,7 @@ from yaml import MarkedYAMLError
 from ogc.bblocks.util import BuildingBlock
 import traceback
 import pyshacl
+import jsonref
 
 OUTPUT_SUBDIR = 'output'
 FORMAT_ALIASES = {
@@ -87,6 +88,7 @@ def _validate_resource(filename: Path,
                 else:
                     json_doc = load_yaml(filename=filename)
                     report.add_info('Files', f'Using {filename.name}')
+                json_doc = jsonref.replace_refs(json_doc, base_uri=filename.as_uri(), merge_props=True, proxies=False)
             except MarkedYAMLError as e:
                 report.add_error('JSON Schema', f"Error parsing JSON example: {str(e)} "
                                                 f"on or near line {e.context_mark.line + 1} "
@@ -336,7 +338,7 @@ def validate_test_resources(bblock: BuildingBlock,
                 elif not add_snippets_formats:
                     add_snippets_formats = []
                 if code and lang in ('json', 'jsonld', 'ttl'):
-                    fn = bblock.tests_dir / f"example_{example_id + 1}_{snippet_id + 1}.{snippet['language']}"
+                    fn = bblock.files_path / f"example_{example_id + 1}_{snippet_id + 1}.{snippet['language']}"
                     output_fn = output_dir / fn.name
 
                     with open(output_fn, 'w') as f:
