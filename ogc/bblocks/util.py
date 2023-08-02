@@ -197,7 +197,6 @@ class BuildingBlockRegister:
 
             for bblock in self.bblocks.values():
                 found_deps = self.find_dependencies(bblock)
-                dep_graph.add_edges_from([(d, bblock.identifier) for d in found_deps])
                 deps = bblock.metadata.get('dependsOn')
                 if isinstance(deps, str):
                     found_deps.add(deps)
@@ -205,6 +204,7 @@ class BuildingBlockRegister:
                     found_deps.update(deps)
                 if found_deps:
                     bblock.metadata['dependsOn'] = list(found_deps)
+                dep_graph.add_edges_from([(d, bblock.identifier) for d in bblock.metadata.get('dependsOn', ())])
             cycles = list(nx.simple_cycles(dep_graph))
             if cycles:
                 cycles_str = '\n - '.join(' -> '.join(reversed(c)) + ' -> ' + c[-1] for c in cycles)
@@ -385,8 +385,50 @@ def annotate_schema(bblock: BuildingBlock,
         ref_mapper=ref_mapper,
     )
 
-    # follow_refs=False => only one schema
-    annotated_schema = annotator.process_schema(schema_url or schema_fn, context)
+    bb_extends = bblock.extends
+    override_schema = None
+    if bb_extends:
+        bb_path = None
+        if isinstance(bb_extends, dict):
+            bb_path = bb_extends.get('path')
+            bb_extends = bb_extends['itemIdentifier']
+
+        original_schema = load_yaml(filename=schema_fn, url=schema_url)
+        original_schema.pop('$schema', None)
+        if bb_path in (None, '', '.', '$'):
+            inserted_schema = original_schema
+        else:
+            bb_path = re.split(r'\.(?=(?:[^"]*"[^"]*")*[^"]*$)',
+                               re.sub(r'^[\.\$]', '', bb_path.strip()))
+            inserted_schema = {}
+            inner_schema = inserted_schema
+            for p in bb_path:
+                p = p.replace('"', '')
+                inner_schema['properties'] = {}
+
+                if p.endswith('[]'):
+                    p = p[:-2]
+                    inner_schema['properties'][p] = {
+                        'type': 'array',
+                        'items': {}
+                    }
+                    inner_schema = inner_schema['properties'][p]['items']
+                else:
+                    inner_schema = inner_schema['properties'].setdefault(p, {})
+            for k, v in original_schema.items():
+                if k != '$schema' and not k.startswith('x-jsonld-'):
+                    inner_schema[k] = v
+
+        override_schema = {
+            '$schema': 'https://json-schema.org/draft/2020-12/schema',
+            'allOf': [
+                {'$ref': f"bblocks://{bb_extends}"},
+                inserted_schema,
+            ],
+            **{k: v for k, v in original_schema.items() if k.startswith('x-jsonld-')}
+        }
+
+    annotated_schema = annotator.process_schema(schema_url or schema_fn, context, override_schema)
 
     if not annotated_schema:
         return result
