@@ -9,7 +9,6 @@ required:
   - itemClass
   - version
   - dateOfLastChange
-  - sources
   - scope
 properties:
   itemIdentifier:
