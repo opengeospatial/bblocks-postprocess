@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Sequence, Callable
 
 import jsonschema
+import networkx as nx
 from ogc.na.annotate_schema import SchemaAnnotator, ContextBuilder
 from ogc.na.util import load_yaml, dump_yaml, is_url
 
@@ -149,6 +150,7 @@ class BuildingBlock:
             self._lazy_properties['jsonld_context_contents'] = load_file(self.jsonld_context)
         return self._lazy_properties['jsonld_context_contents']
 
+
 class BuildingBlockRegister:
 
     def __init__(self,
@@ -191,8 +193,11 @@ class BuildingBlockRegister:
                 print('=========', file=sys.stderr)
 
         if find_dependencies:
+            dep_graph = nx.DiGraph()
+
             for bblock in self.bblocks.values():
                 found_deps = self.find_dependencies(bblock)
+                dep_graph.add_edges_from([(d, bblock.identifier) for d in found_deps])
                 deps = bblock.metadata.get('dependsOn')
                 if isinstance(deps, str):
                     found_deps.add(deps)
@@ -200,6 +205,11 @@ class BuildingBlockRegister:
                     found_deps.update(deps)
                 if found_deps:
                     bblock.metadata['dependsOn'] = list(found_deps)
+            cycles = list(nx.simple_cycles(dep_graph))
+            if cycles:
+                cycles_str = '\n - '.join(' -> '.join(reversed(c)) + ' -> ' + c[-1] for c in cycles)
+                raise BuildingBlockError(f"Circular dependencies found: \n - {cycles_str}")
+            self.bblocks = {b: self.bblocks[b] for b in nx.topological_sort(dep_graph) if b in self.bblocks}
 
     def find_dependencies(self, bblock: BuildingBlock) -> set[str]:
         if not bblock.schema.is_file():
@@ -229,6 +239,13 @@ class BuildingBlockRegister:
                     walk_schema(item)
 
         walk_schema(bblock_schema)
+
+        extends = bblock.metadata.get('extends')
+        if extends:
+            if isinstance(extends, str):
+                deps.add(extends)
+            elif isinstance(extends, dict):
+                deps.add(extends['itemIdentifier'])
 
         return deps
 

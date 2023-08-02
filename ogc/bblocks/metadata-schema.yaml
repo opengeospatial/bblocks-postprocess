@@ -161,3 +161,22 @@ properties:
     type: array
     items:
       type: string
+  extends:
+    description: |
+      Used to declare that the schema for this Building Block extends another one. The schemas will be joined
+      with an "allOf" declaration.
+    oneOf:
+      - description: Identifier of the base Building Block to extend
+        type: string
+      - type: object
+        required:
+          - itemIdentifier
+        properties:
+          itemIdentifier:
+            description: Identifier of the base Building Block to extend
+            type: string
+          path:
+            description: |
+              Property path where the schema for this Building Block will be inserted, in the format "a.b.c.d".
+              If a property is an array, "prop[]" notation can be used (e.g., "a.b[].c.d[]").
+            type: string
