@@ -204,6 +204,7 @@ class BuildingBlockRegister:
                     found_deps.update(deps)
                 if found_deps:
                     bblock.metadata['dependsOn'] = list(found_deps)
+                dep_graph.add_node(bblock.identifier)
                 dep_graph.add_edges_from([(d, bblock.identifier) for d in bblock.metadata.get('dependsOn', ())])
             cycles = list(nx.simple_cycles(dep_graph))
             if cycles:
