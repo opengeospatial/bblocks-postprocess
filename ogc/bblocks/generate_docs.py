@@ -55,6 +55,7 @@ class DocGenerator:
                  id_prefix: str = ''):
         self.base_url = base_url
         self.output_dir = output_dir if isinstance(output_dir, Path) else Path(output_dir)
+        self.output_dir.joinpath('slate-build').mkdir(parents=True, exist_ok=True)
         self.templates_dir = templates_dir if isinstance(templates_dir, Path) else Path(templates_dir)
         self.id_prefix = id_prefix or ''
 
