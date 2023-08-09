@@ -156,7 +156,8 @@ if __name__ == '__main__':
     ingest_json.process_file(register_file,
                              context_fn=uplift_context_file,
                              jsonld_fn=register_jsonld_fn,
-                             ttl_fn=register_ttl_fn)
+                             ttl_fn=register_ttl_fn,
+                             provenance_base_uri=args.base_url)
 
     # 3. Copy Slate assets
     # Run rsync -rlt /src/ogc/bblocks/slate-assets/ "${GENERATED_DOCS_PATH}/slate/"
