@@ -337,8 +337,9 @@ def validate_test_resources(bblock: BuildingBlock,
                     add_snippets_formats = [add_snippets_formats]
                 elif not add_snippets_formats:
                     add_snippets_formats = []
-                if code and lang in ('json', 'jsonld', 'ttl'):
-                    fn = bblock.files_path / f"example_{example_id + 1}_{snippet_id + 1}.{snippet['language']}"
+                if code and lang in ('json', 'jsonld', 'ttl', 'json-ld', 'turtle'):
+                    fn = bblock.files_path / (f"example_{example_id + 1}_{snippet_id + 1}"
+                                              f".{FORMAT_ALIASES.get(snippet['language'], snippet['language'])}")
                     output_fn = output_dir / fn.name
 
                     with open(output_fn, 'w') as f:
