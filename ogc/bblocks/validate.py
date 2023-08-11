@@ -5,7 +5,7 @@ import os
 import shutil
 from json import JSONDecodeError
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 from urllib.parse import urlsplit
 from urllib.request import urlopen
 
@@ -33,10 +33,11 @@ DEFAULT_UPLIFT_FORMATS = ['jsonld', 'ttl']
 
 class ValidationReport:
 
-    def __init__(self):
+    def __init__(self, require_fail: bool = False):
         self._errors = False
         self._sections: dict[str, list[str]] = {}
         self.uplifted_files: dict[str, str] = {}
+        self.require_fail = require_fail
 
     def add_info(self, section, text):
         self._sections.setdefault(section, []).append(text)
@@ -45,9 +46,7 @@ class ValidationReport:
         self._errors = True
         self.add_info(section, f"\n** Validation error **\n{text}")
 
-    def write(self, basename: Path):
-        status = 'failed' if self._errors else 'passed'
-        report_fn = basename.with_suffix(f'.validation_{status}.txt')
+    def write(self, report_fn: Path):
         with open(report_fn, 'w') as f:
             for section, lines in self._sections.items():
                 f.write(f"=== {section} ===\n")
@@ -57,7 +56,7 @@ class ValidationReport:
 
     @property
     def has_errors(self) -> bool:
-        return self._errors
+        return self.require_fail != self._errors
 
 
 def _validate_resource(filename: Path,
@@ -74,7 +73,9 @@ def _validate_resource(filename: Path,
                        shacl_files: list[Path | str] | None = None,
                        schema_ref: str | None = None) -> ValidationReport:
 
-    report = ValidationReport()
+    require_fail = filename.stem.endswith('-fail')
+    report = ValidationReport(require_fail)
+    unknown_errors = False
 
     def validate_inner():
         json_doc = None
@@ -231,8 +232,18 @@ def _validate_resource(filename: Path,
         validate_inner()
     except Exception as unknown_exc:
         report.add_error('Unknown errors', ','.join(traceback.format_exception(unknown_exc)))
+        unknown_errors = True
 
-    report.write(output_filename)
+    failed = report.has_errors
+    if require_fail and not unknown_errors:
+        if failed:
+            report.add_info("General", "Test was expected to fail but it did not.\n")
+        else:
+            report.add_info("General", "Test was expected to fail and it did.\n")
+
+    status = 'failed' if failed else 'passed'
+    report_fn = output_filename.with_suffix(f'.validation_{status}.txt')
+    report.write(report_fn)
 
     return report
 
@@ -289,6 +300,8 @@ def validate_test_resources(bblock: BuildingBlock,
     # Test resources
     if bblock.tests_dir.is_dir():
         for fn in bblock.tests_dir.resolve().iterdir():
+            if fn.suffix not in ('.json', '.jsonld', '.ttl'):
+                continue
             output_fn = output_dir / fn.name
 
             result = not _validate_resource(
@@ -414,11 +427,12 @@ def validate_json(instance: Any, validator: jsonschema.Validator):
         raise error
 
 
-def shacl_validate(g: Graph, s: Graph) -> tuple[bool, Graph, str, dict[pyshacl.Shape, Node]]:
+def shacl_validate(g: Graph, s: Graph) -> tuple[bool, Graph, str, dict[pyshacl.Shape, Sequence[Node]]]:
     validator = pyshacl.Validator(g, shacl_graph=s, options={
         'advanced': True
     })
-    focus_nodes: dict[pyshacl.Shape, Node] = {shape: shape.focus_nodes(g) for shape in validator.shacl_graph.shapes}
+    focus_nodes: dict[pyshacl.Shape, Sequence[Node]] = {shape: shape.focus_nodes(g)
+                                                        for shape in validator.shacl_graph.shapes}
     conforms, shacl_result, shacl_report = validator.run()
     return conforms, shacl_result, shacl_report, focus_nodes
 
