@@ -134,6 +134,11 @@ ${'#'} For developers
 The source code for this Building Block can be found in the following repository:
 
 * URL: <a href="${git_repo}" target="_blank">${git_repo}</a>
-* Path: `${git_path}`
+* Path:
+% if git_repo.startswith('https://github.com/'):
+<code><a href="${git_repo}/blob/HEAD/${git_path}" target="_blank">${git_path}</a></code>
+% else:
+`${git_path}`
+% endif
 
 % endif
