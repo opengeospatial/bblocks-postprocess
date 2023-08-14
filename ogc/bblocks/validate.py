@@ -5,7 +5,7 @@ import os
 import shutil
 from json import JSONDecodeError
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Sequence, Callable
 from urllib.parse import urlsplit
 from urllib.request import urlopen
 
@@ -71,7 +71,8 @@ def _validate_resource(filename: Path,
                        shacl_error: str | None = None,
                        base_uri: str | None = None,
                        shacl_files: list[Path | str] | None = None,
-                       schema_ref: str | None = None) -> ValidationReport:
+                       schema_ref: str | None = None,
+                       shacl_closure: list[str] | None = None) -> ValidationReport:
 
     require_fail = filename.stem.endswith('-fail')
     report = ValidationReport(require_fail)
@@ -201,8 +202,14 @@ def _validate_resource(filename: Path,
                         'Using SHACL files for validation:\n - ' + '\n - '.join(str(f) for f in shacl_files)
                     )
                 try:
-                    shacl_conforms, shacl_result, shacl_report, focus_nodes = shacl_validate(graph, shacl_graph)
-                    report_add = report.add_info if shacl_conforms else report.add_error
+                    ont_graph = None
+                    if shacl_closure:
+                        ont_graph = Graph()
+                        for c in shacl_closure:
+                            ont_graph.parse(c)
+                    shacl_conforms, shacl_result, shacl_report, focus_nodes = shacl_validate(
+                        graph, shacl_graph, ont_graph=ont_graph)
+                    report_add: Callable[[str, str], None] = report.add_info if shacl_conforms else report.add_error
                     report_add('SHACL', shacl_report)
                     if focus_nodes:
                         focus_nodes_report = ''
@@ -367,6 +374,10 @@ def validate_test_resources(bblock: BuildingBlock,
                     with open(output_fn, 'w') as f:
                         f.write(code)
 
+                    shacl_closure = snippet.get('shacl-closure')
+                    if shacl_closure:
+                        shacl_closure = [bblock.files_path.joinpath(c) for c in shacl_closure]
+
                     example_result = _validate_resource(
                         fn, output_fn,
                         resource_contents=code,
@@ -379,7 +390,8 @@ def validate_test_resources(bblock: BuildingBlock,
                         shacl_error=shacl_error,
                         base_uri=snippet.get('base-uri', example_base_uri),
                         shacl_files=shacl_files,
-                        schema_ref=snippet.get('schema-ref'))
+                        schema_ref=snippet.get('schema-ref'),
+                        shacl_closure=shacl_closure)
                     result = result and not example_result.has_errors
                     for file_format, file_contents in example_result.uplifted_files.items():
                         if file_format not in snippet_langs and file_format in add_snippets_formats:
@@ -436,8 +448,9 @@ def validate_json(instance: Any, validator: jsonschema.Validator):
         raise error
 
 
-def shacl_validate(g: Graph, s: Graph) -> tuple[bool, Graph, str, dict[pyshacl.Shape, Sequence[Node]]]:
-    validator = pyshacl.Validator(g, shacl_graph=s, options={
+def shacl_validate(g: Graph, s: Graph, ont_graph: Graph | None = None) \
+        -> tuple[bool, Graph, str, dict[pyshacl.Shape, Sequence[Node]]]:
+    validator = pyshacl.Validator(g, shacl_graph=s, ont_graph=ont_graph, options={
         'advanced': True
     })
     focus_nodes: dict[pyshacl.Shape, Sequence[Node]] = {shape: shape.focus_nodes(g)

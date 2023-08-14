@@ -73,6 +73,12 @@ items:
                   type: string
                   enum: [jsonld, ttl]
               - type: 'null'
+          shacl-closure:
+            description: |
+              List of Turtle documents (file names or URLs) that will be used as the SHACL closure graph.
+            type: array
+            items:
+              type: string
         oneOf:
           - required:
             - code
