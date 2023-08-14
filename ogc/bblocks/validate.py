@@ -55,7 +55,7 @@ class ValidationReport:
                 f.write(f"=== End {section} ===\n\n")
 
     @property
-    def has_errors(self) -> bool:
+    def failed(self) -> bool:
         return self.require_fail != self._errors
 
 
@@ -250,7 +250,7 @@ def _validate_resource(filename: Path,
         report.add_error('Unknown errors', ','.join(traceback.format_exception(unknown_exc)))
         unknown_errors = True
 
-    failed = report.has_errors
+    failed = report.failed
     if require_fail and not unknown_errors:
         if failed:
             report.add_info("General", "Test was expected to fail but it did not.\n")
@@ -328,7 +328,7 @@ def validate_test_resources(bblock: BuildingBlock,
                 shacl_graph=shacl_graph,
                 json_error=json_error,
                 shacl_error=shacl_error,
-                shacl_files=shacl_files).has_errors and result
+                shacl_files=shacl_files).failed and result
             test_count += 1
 
     # Examples
@@ -392,7 +392,7 @@ def validate_test_resources(bblock: BuildingBlock,
                         shacl_files=shacl_files,
                         schema_ref=snippet.get('schema-ref'),
                         shacl_closure=shacl_closure)
-                    result = result and not example_result.has_errors
+                    result = result and not example_result.failed
                     for file_format, file_contents in example_result.uplifted_files.items():
                         if file_format not in snippet_langs and file_format in add_snippets_formats:
                             add_snippets[file_format] = file_contents
