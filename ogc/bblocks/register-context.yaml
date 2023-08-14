@@ -67,3 +67,6 @@ context:
         url: rdfs:isDefinedBy
     hasConcepts:
       '@reverse': skos:inScheme
+    dependsOn:
+      '@id': bblocks:dependsOn
+      '@type': '@id'
