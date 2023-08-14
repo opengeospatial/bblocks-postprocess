@@ -207,15 +207,24 @@ def _validate_resource(filename: Path,
                     if focus_nodes:
                         focus_nodes_report = ''
                         for shape, shape_focus_nodes in focus_nodes.items():
-                            focus_nodes_report += f" - Shape {format_node(shape.node)}"
+                            g = Graph()
+                            for t in shacl_graph.triples((shape.node, None, None)):
+                                g.add(t)
+                            focus_nodes_str = '/'.join(format_node(shacl_graph, n)
+                                                       for n in
+                                                       (find_closest_uri(shacl_graph, shape.node) or (shape.node,)))
+                            focus_nodes_report += f" - Shape {focus_nodes_str}"
                             shape_path = shape.path()
                             if shape_path:
-                                focus_nodes_report += f" (path {shape_path})"
+                                focus_nodes_report += f" (path {format_node(shacl_graph, shape_path)})"
                             focus_nodes_report += ": "
                             if not shape_focus_nodes:
                                 focus_nodes_report += '*none*'
                             else:
-                                focus_nodes_report += ','.join(format_node(x) for x in shape_focus_nodes)
+                                focus_nodes_report += ','.join(
+                                    '/'.join(format_node(graph, n)
+                                             for n in (find_closest_uri(graph, fn) or (fn,)))
+                                    for fn in shape_focus_nodes)
                             focus_nodes_report += "\n"
                         report.add_info('SHACL', 'Focus nodes:\n' + focus_nodes_report)
                 except ParseBaseException as e:
@@ -437,9 +446,34 @@ def shacl_validate(g: Graph, s: Graph) -> tuple[bool, Graph, str, dict[pyshacl.S
     return conforms, shacl_result, shacl_report, focus_nodes
 
 
-def format_node(n: Node):
+def format_node(g: Graph, n: Node):
     if isinstance(n, URIRef):
-        return f"<{n}>"
+        try:
+            prefix, ns, qname = g.namespace_manager.compute_qname(str(n), False)
+            return f"{prefix}:{qname}"
+        except:
+            return f"<{n}>"
     if isinstance(n, BNode):
         return f"_:{n}"
     return str(n)
+
+
+def find_closest_uri(g: Graph, n: Node, max_depth=3) -> list[URIRef] | None:
+    if isinstance(n, URIRef):
+        return [n]
+
+    alt_paths = []
+    for s, p in g.subject_predicates(n, True):
+        if isinstance(s, URIRef):
+            return [s, p]
+        alt_paths.append((s, p))
+
+    if max_depth == 1:
+        return None
+
+    for s, p in alt_paths:
+        found = find_closest_uri(g, s, max_depth - 1)
+        if found:
+            return found + [p]
+
+    return None
