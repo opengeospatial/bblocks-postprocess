@@ -36,7 +36,7 @@ class ValidationReport:
     def __init__(self, require_fail: bool = False):
         self._errors = False
         self._sections: dict[str, list[str]] = {}
-        self.uplifted_files: dict[str, str] = {}
+        self.uplifted_files: dict[str, tuple[Path, str]] = {}
         self.require_fail = require_fail
 
     def add_info(self, section, text):
@@ -136,8 +136,8 @@ def _validate_resource(filename: Path,
                     jsonld_contents = json.dumps(jsonld_uplifted, indent=2)
                     with open(jsonld_fn, 'w') as f:
                         f.write(jsonld_contents)
-                        report.uplifted_files['jsonld'] = jsonld_contents
-                        report.add_info('Files', f'Output JSON-LD {jsonld_fn.name} created')
+                    report.uplifted_files['jsonld'] = (jsonld_fn, jsonld_contents)
+                    report.add_info('Files', f'Output JSON-LD {jsonld_fn.name} created')
 
                 elif output_filename.suffix == '.jsonld':
                     graph = Graph().parse(data=json_doc, format='json-ld', base=base_uri)
@@ -164,7 +164,7 @@ def _validate_resource(filename: Path,
         if graph is not None and (resource_contents or filename.suffix != '.ttl'):
             ttl_fn = output_filename.with_suffix('.ttl')
             graph.serialize(ttl_fn, format='ttl')
-            report.uplifted_files['ttl'] = graph.serialize(format='ttl')
+            report.uplifted_files['ttl'] = (ttl_fn, graph.serialize(format='ttl'))
             if graph:
                 report.add_info('Files', f'Output Turtle {ttl_fn.name} created')
             else:
@@ -374,6 +374,8 @@ def validate_test_resources(bblock: BuildingBlock,
                     with open(output_fn, 'w') as f:
                         f.write(code)
 
+                    snippet['path'] = output_fn
+
                     shacl_closure = snippet.get('shacl-closure')
                     if shacl_closure:
                         shacl_closure = [bblock.files_path.joinpath(c) for c in shacl_closure]
@@ -393,17 +395,19 @@ def validate_test_resources(bblock: BuildingBlock,
                         schema_ref=snippet.get('schema-ref'),
                         shacl_closure=shacl_closure)
                     result = result and not example_result.failed
-                    for file_format, file_contents in example_result.uplifted_files.items():
+                    for file_format, file_data in example_result.uplifted_files.items():
                         if file_format not in snippet_langs and file_format in add_snippets_formats:
-                            add_snippets[file_format] = file_contents
+                            add_snippets[file_format] = file_data
                     test_count += 1
 
             if add_snippets:
                 snippets = example.setdefault('snippets', [])
-                for lang, code in add_snippets.items():
+                for lang, file_data in add_snippets.items():
+                    fn, code = file_data
                     snippets.append({
                         'language': lang,
                         'code': code,
+                        'path': fn,
                     })
 
     return result, test_count

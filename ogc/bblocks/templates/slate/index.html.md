@@ -87,29 +87,34 @@ ${example['content'].replace('@@assets@@', assets_rel or '')}
 
     %endif
     % for snippet in example.get('snippets', []):
-<% snippet_lang = lang_aliases.get(snippet['language'].lower(), snippet['language']) %>
+<%
+  snippet_lang = lang_aliases.get(snippet['language'].lower(), snippet['language'])
+  snippet_url = snippet.get('url')
+%>
 ```${snippet_lang}
 ${snippet['code']}
 ```
+% if snippet_url:
     % if snippet_lang == 'json':
 
 <blockquote class="lang-specific ${snippet_lang}">
-<p><a target="_blank" href="https://avillar.github.io/TreedocViewer/?dataParser=json&amp;data=${urllib.parse.quote_plus(snippet['code'])}">View on JSON Viewer</a></p>
+<p><a target="_blank" href="https://avillar.github.io/TreedocViewer/?dataParser=json&amp;dataUrl=${urllib.parse.quote_plus(snippet_url)}">View on JSON Viewer</a></p>
 </blockquote>
 
     % elif snippet_lang in ('json-ld', 'jsonld'):
 
 <blockquote class="lang-specific ${snippet_lang}">
-<p><a target="_blank" href="https://json-ld.org/playground/#json-ld=${urllib.parse.quote_plus(snippet['code'])}">View on JSON-LD Playground</a></p>
+<p><a target="_blank" href="https://json-ld.org/playground/#json-ld=${urllib.parse.quote_plus(snippet_url)}">View on JSON-LD Playground</a></p>
 </blockquote>
 
     % elif snippet_lang == 'yaml':
 
 <blockquote class="lang-specific ${snippet_lang}">
-<p><a target="_blank" href="https://avillar.github.io/TreedocViewer/?dataParser=yaml&amp;data=${urllib.parse.quote_plus(snippet['code'], safe='/!$')}">View on YAML Viewer</a></p>
+<p><a target="_blank" href="https://avillar.github.io/TreedocViewer/?dataParser=yaml&amp;dataUrl=${urllib.parse.quote_plus(snippet_url)}">View on YAML Viewer</a></p>
 </blockquote>
 
     % endif
+% endif
 
     % endfor
   % endfor
@@ -122,7 +127,7 @@ ${'#'} JSON Schema
 ${bblock.annotated_schema_contents}
 ```
 
-> <a target="_blank" href="https://avillar.github.io/TreedocViewer/?dataParser=yaml&amp;data=${urllib.parse.quote_plus(bblock.annotated_schema_contents)}">View on YAML Viewer</a>
+> <a target="_blank" href="https://avillar.github.io/TreedocViewer/?dataParser=yaml&amp;dataUrl=${urllib.parse.quote_plus(bblock.metadata['schema']['application/yaml'])}">View on YAML Viewer</a>
 
 Links to the schema:
 
@@ -138,7 +143,7 @@ ${'#'} JSON-LD Context
 ${bblock.jsonld_context_contents}
 ```
 
-> <a target="_blank" href="https://json-ld.org/playground/#json-ld=${urllib.parse.quote_plus(bblock.jsonld_context_contents)}">View on JSON-LD Playground</a>
+> <a target="_blank" href="https://json-ld.org/playground/#json-ld=${urllib.parse.quote_plus(bblock.ldContext)}">View on JSON-LD Playground</a>
 
 You can find the full JSON-LD context here:
 <a href="${bblock.ldContext}" target="_blank">${bblock.ldContext}</a>

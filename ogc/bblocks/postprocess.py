@@ -116,6 +116,13 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         if test_count and test_outputs_base_url:
             bblock.metadata['testOutputs'] = f"{test_outputs_base_url}{bblock.subdirs}/"
 
+        if bblock.examples:
+            for example in bblock.examples:
+                for snippet in example.get('snippets', ()):
+                    path = snippet.pop('path', None)
+                    if base_url and path:
+                        snippet['url'] = f"{base_url}{path}"
+
         print(f"  > Generating documentation for {bblock.identifier}", file=sys.stderr)
         doc_generator.generate_doc(bblock)
         return True
