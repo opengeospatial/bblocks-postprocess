@@ -36,7 +36,7 @@ code_clipboard: true
 meta:
   - name: ${bblock.name} (${bblock.itemClass.capitalize()})
 ---
-<% import re, os %>
+<% import re, os, urllib.parse, json %>
 
 ${'#'} ${bblock.name} `${bblock.identifier}`
 
@@ -86,6 +86,25 @@ ${example['content'].replace('@@assets@@', assets_rel or '')}
 ```${snippet['language']}
 ${snippet['code']}
 ```
+    % if snippet['language'] == 'json':
+
+<blockquote class="lang-specific ${snippet['language']}">
+<p><a target="_blank" href="https://avillar.github.io/TreedocViewer/?dataParser=json&amp;data=${urllib.parse.quote_plus(snippet['code'])}">View on JSON Viewer</a></p>
+</blockquote>
+
+    % elif snippet['language'] in ('json-ld', 'jsonld'):
+
+<blockquote class="lang-specific ${snippet['language']}">
+<p><a target="_blank" href="https://json-ld.org/playground/#json-ld=${urllib.parse.quote_plus(snippet['code'])}">View on JSON-LD Playground</a></p>
+</blockquote>
+
+    % elif snippet['language'] == 'yaml':
+
+<blockquote class="lang-specific ${snippet['language']}">
+<p><a target="_blank" href="https://avillar.github.io/TreedocViewer/?dataParser=yaml&amp;data=${urllib.parse.quote_plus(snippet['code'], safe='/!$')}">View on YAML Viewer</a></p>
+</blockquote>
+
+    % endif
 
     % endfor
   % endfor
@@ -97,6 +116,8 @@ ${'#'} JSON Schema
 ```yaml--schema
 ${bblock.annotated_schema_contents}
 ```
+
+> <a target="_blank" href="https://avillar.github.io/TreedocViewer/?dataParser=yaml&amp;data=${urllib.parse.quote_plus(bblock.annotated_schema_contents)}">View on YAML Viewer</a>
 
 Links to the schema:
 
@@ -111,6 +132,8 @@ ${'#'} JSON-LD Context
 ```json--ldContext
 ${bblock.jsonld_context_contents}
 ```
+
+> <a target="_blank" href="https://json-ld.org/playground/#json-ld=${urllib.parse.quote_plus(bblock.jsonld_context_contents)}">View on JSON-LD Playground</a>
 
 You can find the full JSON-LD context here:
 <a href="${bblock.ldContext}" target="_blank">${bblock.ldContext}</a>
