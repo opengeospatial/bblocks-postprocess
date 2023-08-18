@@ -2,19 +2,23 @@
 title: ${bblock.name} (${bblock.itemClass.capitalize()})
 % if bblock.examples:
 <%
+  lang_aliases = {
+    'txt': 'plaintext',
+    'json-ld': 'jsonld',
+    'ttl': 'turtle',
+  }
   known_langs = {
     'json': 'JSON',
     'turtle': 'RDF/Turtle',
-    'ttl': 'RDF/Turtle',
     'plaintext': 'Plain text',
-    'txt': 'Plain text',
     'yaml': 'YAML',
     'java': 'Java',
     'python': 'Python',
     'javascript': 'Javascript',
     'jsonld': 'JSON-LD',
   }
-  langs = {snippet['language']: True for example in bblock.examples for snippet in example.get('snippets', [])}
+  langs = {lang_aliases.get(snippet['language'].lower(), snippet['language']): True
+           for example in bblock.examples for snippet in example.get('snippets', [])}
 %>
   % if len(langs) > 1:
 language_tabs:
@@ -83,24 +87,25 @@ ${example['content'].replace('@@assets@@', assets_rel or '')}
 
     %endif
     % for snippet in example.get('snippets', []):
-```${snippet['language']}
+<% snippet_lang = lang_aliases.get(snippet['language'].lower(), snippet['language']) %>
+```${snippet_lang}
 ${snippet['code']}
 ```
-    % if snippet['language'] == 'json':
+    % if snippet_lang == 'json':
 
-<blockquote class="lang-specific ${snippet['language']}">
+<blockquote class="lang-specific ${snippet_lang}">
 <p><a target="_blank" href="https://avillar.github.io/TreedocViewer/?dataParser=json&amp;data=${urllib.parse.quote_plus(snippet['code'])}">View on JSON Viewer</a></p>
 </blockquote>
 
-    % elif snippet['language'] in ('json-ld', 'jsonld'):
+    % elif snippet_lang in ('json-ld', 'jsonld'):
 
-<blockquote class="lang-specific ${snippet['language']}">
+<blockquote class="lang-specific ${snippet_lang}">
 <p><a target="_blank" href="https://json-ld.org/playground/#json-ld=${urllib.parse.quote_plus(snippet['code'])}">View on JSON-LD Playground</a></p>
 </blockquote>
 
-    % elif snippet['language'] == 'yaml':
+    % elif snippet_lang == 'yaml':
 
-<blockquote class="lang-specific ${snippet['language']}">
+<blockquote class="lang-specific ${snippet_lang}">
 <p><a target="_blank" href="https://avillar.github.io/TreedocViewer/?dataParser=yaml&amp;data=${urllib.parse.quote_plus(snippet['code'], safe='/!$')}">View on YAML Viewer</a></p>
 </blockquote>
 
