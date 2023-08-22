@@ -38,12 +38,15 @@ class ValidationReport:
         self._sections: dict[str, list[str]] = {}
         self.uplifted_files: dict[str, tuple[Path, str]] = {}
         self.require_fail = require_fail
+        self._general_error = False
 
     def add_info(self, section, text):
         self._sections.setdefault(section, []).append(text)
 
-    def add_error(self, section, text):
+    def add_error(self, section, text, general=False):
         self._errors = True
+        if general:
+            self._general_error = True
         self.add_info(section, f"\n** Validation error **\n{text}")
 
     def write(self, report_fn: Path):
@@ -56,7 +59,11 @@ class ValidationReport:
 
     @property
     def failed(self) -> bool:
-        return self.require_fail != self._errors
+        return self._general_error or self.require_fail != self._errors
+
+    @property
+    def general_errors(self) -> bool:
+        return self._general_error
 
 
 def _validate_resource(filename: Path,
@@ -76,7 +83,6 @@ def _validate_resource(filename: Path,
 
     require_fail = filename.stem.endswith('-fail')
     report = ValidationReport(require_fail)
-    unknown_errors = False
 
     def validate_inner():
         json_doc = None
@@ -174,7 +180,7 @@ def _validate_resource(filename: Path,
             if schema_ref:
                 report.add_info('JSON Schema', f'Using the following JSON Schema: {schema_ref}')
             if json_error:
-                report.add_error('JSON Schema', json_error)
+                report.add_error('JSON Schema', json_error, general=True)
             elif schema_validator:
                 try:
                     validate_json(json_doc, schema_validator)
@@ -194,7 +200,7 @@ def _validate_resource(filename: Path,
 
         if graph:
             if shacl_error:
-                report.add_error('SHACL', shacl_error)
+                report.add_error('SHACL', shacl_error, general=True)
             elif shacl_graph:
                 if shacl_files:
                     report.add_info(
@@ -247,11 +253,10 @@ def _validate_resource(filename: Path,
     try:
         validate_inner()
     except Exception as unknown_exc:
-        report.add_error('Unknown errors', ','.join(traceback.format_exception(unknown_exc)))
-        unknown_errors = True
+        report.add_error('Unknown errors', ','.join(traceback.format_exception(unknown_exc)), general=True)
 
     failed = report.failed
-    if require_fail and not unknown_errors:
+    if require_fail and not report.general_errors:
         if failed:
             report.add_info("General", "Test was expected to fail but it did not.\n")
         else:
