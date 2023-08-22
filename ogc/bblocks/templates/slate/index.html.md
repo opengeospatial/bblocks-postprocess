@@ -18,7 +18,7 @@ title: ${bblock.name} (${bblock.itemClass.capitalize()})
     'jsonld': 'JSON-LD',
   }
   langs = {lang_aliases.get(snippet['language'].lower(), snippet['language']): True
-           for example in bblock.examples for snippet in example.get('snippets', [])}
+           for example in bblock.examples for snippet in example.get('snippets', []) if snippet.get('code', '').strip()}
 %>
   % if len(langs) > 1:
 language_tabs:
@@ -87,6 +87,8 @@ ${example['content'].replace('@@assets@@', assets_rel or '')}
 
     %endif
     % for snippet in example.get('snippets', []):
+% if snippet.get('code', '').strip():
+
 <%
   snippet_lang = lang_aliases.get(snippet['language'].lower(), snippet['language'])
   snippet_url = snippet.get('url')
@@ -114,6 +116,7 @@ ${snippet['code']}
 </blockquote>
 
     % endif
+% endif
 % endif
 
     % endfor
