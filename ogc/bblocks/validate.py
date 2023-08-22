@@ -108,7 +108,8 @@ def _validate_resource(filename: Path,
                 report.add_info('Files', f'"@graph" found, unwrapping')
 
             try:
-                if filename.suffix == '.json' and jsonld_context:
+                if (filename.suffix == '.json' and jsonld_context
+                        and (isinstance(json_doc, dict) or isinstance(json_doc, list))):
                     report.add_info('Files', 'JSON-LD context is present - uplifting')
                     new_context = jsonld_context['@context']
                     if isinstance(json_doc, dict):
