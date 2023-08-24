@@ -79,6 +79,10 @@ items:
             type: array
             items:
               type: string
+          expand-level:
+            description: Default expand level for Treedoc Viewer, where applicable (JSON, YAML)
+            type: integer
+            minimum: 1
         oneOf:
           - required:
             - code

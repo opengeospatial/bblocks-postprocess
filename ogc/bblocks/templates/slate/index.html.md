@@ -95,6 +95,7 @@ ${example['content'].replace('@@assets@@', assets_rel or '')}
 <%
   snippet_lang = lang_aliases.get(snippet['language'].lower(), snippet['language'])
   snippet_url = snippet.get('url')
+  snippet_expand = snippet.get('expand-level', 2)
 %>
 ```${snippet_lang}
 ${snippet['code']}
@@ -103,7 +104,7 @@ ${snippet['code']}
     % if snippet_lang == 'json':
 
 <blockquote class="lang-specific ${snippet_lang}">
-<p><a target="_blank" href="https://avillar.github.io/TreedocViewer/?dataParser=json&amp;dataUrl=${urllib.parse.quote_plus(snippet_url)}${treedocviewer_options}">View on JSON Viewer</a></p>
+<p><a target="_blank" href="https://avillar.github.io/TreedocViewer/?dataParser=json&amp;dataUrl=${urllib.parse.quote_plus(snippet_url)}&amp;expand=${snippet_expand}${treedocviewer_options}">View on JSON Viewer</a></p>
 </blockquote>
 
     % elif snippet_lang in ('json-ld', 'jsonld'):
@@ -115,7 +116,7 @@ ${snippet['code']}
     % elif snippet_lang == 'yaml':
 
 <blockquote class="lang-specific ${snippet_lang}">
-<p><a target="_blank" href="https://avillar.github.io/TreedocViewer/?dataParser=yaml&amp;dataUrl=${urllib.parse.quote_plus(snippet_url)}${treedocviewer_options}">View on YAML Viewer</a></p>
+<p><a target="_blank" href="https://avillar.github.io/TreedocViewer/?dataParser=yaml&amp;dataUrl=${urllib.parse.quote_plus(snippet_url)}&amp;expand=${snippet_expand}${treedocviewer_options}">View on YAML Viewer</a></p>
 </blockquote>
 
     % endif
@@ -133,7 +134,7 @@ ${'#'} JSON Schema
 ${bblock.annotated_schema_contents}
 ```
 
-> <a target="_blank" href="https://avillar.github.io/TreedocViewer/?dataParser=yaml&amp;dataUrl=${urllib.parse.quote_plus(bblock.metadata['schema']['application/yaml'])}${treedocviewer_options}">View on YAML Viewer</a>
+> <a target="_blank" href="https://avillar.github.io/TreedocViewer/?dataParser=yaml&amp;dataUrl=${urllib.parse.quote_plus(bblock.metadata['schema']['application/yaml'])}&amp;expand=2${treedocviewer_options}">View on YAML Viewer</a>
 
 Links to the schema:
 
