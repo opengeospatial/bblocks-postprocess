@@ -467,6 +467,11 @@ def resolve_schema_reference(ref: str,
         return ref
 
     target_id = ref[len('bblocks://'):]
+    fragment = ''
+    if '#' in target_id:
+        target_id, fragment = target_id.split('#', 1)
+        if fragment:
+            fragment = '#' + fragment
 
     base_url = default_base_url
     if identifier_url_mappings:
@@ -485,7 +490,7 @@ def resolve_schema_reference(ref: str,
             target_path = get_bblock_subdirs(target_id)
             from_path = get_bblock_subdirs(from_identifier)
             rel_path = os.path.relpath(target_path, from_path)
-            return f"{rel_path}/schema.yaml"
+            return f"{rel_path}/schema.yaml{fragment}"
         else:
             return ref
 
