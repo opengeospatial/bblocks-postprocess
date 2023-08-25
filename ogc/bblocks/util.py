@@ -11,6 +11,7 @@ from typing import Any, Sequence, Callable
 
 import jsonschema
 import networkx as nx
+import requests
 from ogc.na.annotate_schema import SchemaAnnotator, ContextBuilder
 from ogc.na.util import load_yaml, dump_yaml, is_url
 
@@ -223,6 +224,7 @@ class BuildingBlockRegister:
             if isinstance(schema, dict):
                 ref = schema.get(BBLOCKS_REF_ANNOTATION, schema.get('$ref'))
                 if isinstance(ref, str):
+                    ref = re.sub(r'#.*$', '', ref)
                     if ref.startswith('bblocks://'):
                         # Get id directly from bblocks:// URI
                         deps.add(ref[len('bblocks://'):])
@@ -249,6 +251,16 @@ class BuildingBlockRegister:
                 deps.add(extends['itemIdentifier'])
 
         return deps
+
+
+class ImportedBuildingBlockRegister:
+
+    def __init__(self, metadata_url: str):
+        self.url = metadata_url
+        r = requests.get(metadata_url)
+        r.raise_for_status()
+        bblock_list = r.json()
+        self.bblocks = {b['itemIdentifier']: b for b in bblock_list}
 
 
 def write_superbblocks_schemas(super_bblocks: dict[Path, BuildingBlock],
