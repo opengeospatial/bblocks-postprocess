@@ -10,6 +10,7 @@ from argparse import ArgumentParser
 import datetime
 from pathlib import Path
 import traceback
+from urllib.parse import urljoin
 
 from ogc.na.util import is_url
 
@@ -122,6 +123,10 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                     path = snippet.pop('path', None)
                     if base_url and path:
                         snippet['url'] = f"{base_url}{path}"
+
+        if base_url:
+            if bblock.shaclRules:
+                bblock.metadata['shaclRules'] = [urljoin(bblock.metadata['sourceFiles'], s) for s in bblock.shaclRules]
 
         print(f"  > Generating documentation for {bblock.identifier}", file=sys.stderr)
         doc_generator.generate_doc(bblock)
