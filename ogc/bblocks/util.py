@@ -459,7 +459,7 @@ def annotate_schema(bblock: BuildingBlock,
     result.append(annotated_schema_fn)
 
     # JSON
-    update_refs(annotated_schema, lambda s: re.sub(r'\.yaml$', '.json', s))
+    update_refs(annotated_schema, lambda s: re.sub(r'\.yaml(#.*)?$', r'.json\1', s))
     annotated_schema_json_fn = annotated_schema_fn.with_suffix('.json')
     with open(annotated_schema_json_fn, 'w') as f:
         json.dump(annotated_schema, f, indent=2)

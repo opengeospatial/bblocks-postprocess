@@ -129,6 +129,8 @@ if __name__ == '__main__':
     if bb_config_file and bb_config_file.is_file():
         bb_config = load_yaml(filename=bb_config_file)
         id_prefix = bb_config.get('identifier-prefix', id_prefix)
+        if id_prefix and id_prefix[-1] != '.':
+            id_prefix += '.'
         subdirs = id_prefix.split('.')[1:]
         schema_mapping_config = bb_config.get('schema-mapping', {})
 
