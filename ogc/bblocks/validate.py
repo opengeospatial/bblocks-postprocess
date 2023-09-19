@@ -170,7 +170,11 @@ def _validate_resource(filename: Path,
 
         if graph is not None and (resource_contents or filename.suffix != '.ttl'):
             ttl_fn = output_filename.with_suffix('.ttl')
-            graph.serialize(ttl_fn, format='ttl')
+            if graph:
+                graph.serialize(ttl_fn, format='ttl')
+            else:
+                with open(ttl_fn, 'w') as f:
+                    f.write('# Empty Turtle file\n')
             report.uplifted_files['ttl'] = (ttl_fn, graph.serialize(format='ttl'))
             if graph:
                 report.add_info('Files', f'Output Turtle {ttl_fn.name} created')
