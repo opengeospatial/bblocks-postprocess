@@ -100,27 +100,21 @@ ${example['content'].replace('@@assets@@', assets_rel or '')}
 ```${snippet_lang}
 ${snippet['code']}
 ```
-% if snippet_url:
+  % if snippet_url:
+
+<blockquote class="lang-specific ${snippet_lang}">
+  <p class="example-links">
+    <a target="_blank" href="${snippet_url}">Open in new window</a>
     % if snippet_lang == 'json':
-
-<blockquote class="lang-specific ${snippet_lang}">
-<p><a target="_blank" href="https://avillar.github.io/TreedocViewer/?dataParser=json&amp;dataUrl=${urllib.parse.quote_plus(snippet_url)}&amp;expand=${snippet_expand}${treedocviewer_options}">View on JSON Viewer</a></p>
-</blockquote>
-
+    <a target="_blank" href="https://avillar.github.io/TreedocViewer/?dataParser=json&amp;dataUrl=${urllib.parse.quote_plus(snippet_url)}&amp;expand=${snippet_expand}${treedocviewer_options}">View on JSON Viewer</a></p>
     % elif snippet_lang in ('json-ld', 'jsonld'):
-
-<blockquote class="lang-specific ${snippet_lang}">
-<p><a target="_blank" href="https://json-ld.org/playground/#json-ld=${urllib.parse.quote_plus(snippet_url)}">View on JSON-LD Playground</a></p>
-</blockquote>
-
+    <a target="_blank" href="https://json-ld.org/playground/#json-ld=${urllib.parse.quote_plus(snippet_url)}">View on JSON-LD Playground</a>
     % elif snippet_lang == 'yaml':
-
-<blockquote class="lang-specific ${snippet_lang}">
-<p><a target="_blank" href="https://avillar.github.io/TreedocViewer/?dataParser=yaml&amp;dataUrl=${urllib.parse.quote_plus(snippet_url)}&amp;expand=${snippet_expand}${treedocviewer_options}">View on YAML Viewer</a></p>
+    <a target="_blank" href="https://avillar.github.io/TreedocViewer/?dataParser=yaml&amp;dataUrl=${urllib.parse.quote_plus(snippet_url)}&amp;expand=${snippet_expand}${treedocviewer_options}">View on YAML Viewer</a>
+    % endif
 </blockquote>
 
-    % endif
-% endif
+  % endif
 % endif
 
     % endfor
