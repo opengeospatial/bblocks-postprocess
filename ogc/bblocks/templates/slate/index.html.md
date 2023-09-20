@@ -150,6 +150,22 @@ You can find the full JSON-LD context here:
 <a href="${bblock.ldContext}" target="_blank">${bblock.ldContext}</a>
 
 % endif
+% if bblock.shaclRules:
+${'#'} Validation
+
+${'##'} SHACL Shapes
+
+The following SHACL shapes are used for validating this building block:
+
+  % for rule in bblock.shaclRules:
+    % if rule.startswith('http://') or rule.startswith('https://'):
+* [${rule}](${rule})
+    % else:
+* `${rule}`
+    % endif
+  % endfor
+
+% endif
 % if bblock.sources:
 ${'#'} References
 
