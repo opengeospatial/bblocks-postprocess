@@ -152,6 +152,24 @@ class BuildingBlock:
         return self._lazy_properties['jsonld_context_contents']
 
 
+class ImportedBuildingBlocks:
+
+    def __init__(self, metadata_urls: list[str] | None):
+        self.bblocks: dict[str, dict] = {}
+        if metadata_urls:
+            for metadata_url in metadata_urls:
+                self.load(metadata_url)
+
+    def load(self, metadata_url: str):
+        r = requests.get(metadata_url)
+        r.raise_for_status()
+        bblock_list = r.json()
+        self.bblocks: dict[str, dict] = {}
+        for bblock in bblock_list:
+            bblock['register'] = self
+            self.bblocks[bblock['itemIdentifier']] = bblock
+
+
 class BuildingBlockRegister:
 
     def __init__(self,
@@ -161,12 +179,14 @@ class BuildingBlockRegister:
                  examples_schema_file: str | Path | None = None,
                  fail_on_error: bool = False,
                  prefix: str = 'ogc.',
-                 find_dependencies=True):
+                 find_dependencies=True,
+                 imported_bblocks: ImportedBuildingBlocks | None = None):
 
         self.registered_items_path = registered_items_path
         self.annotated_path = annotated_path
         self.prefix = prefix
         self.bblocks: dict[str, BuildingBlock] = {}
+        self.imported_bblocks = imported_bblocks.bblocks if imported_bblocks else {}
 
         self.bblock_paths: dict[Path, BuildingBlock] = {}
 
@@ -193,8 +213,16 @@ class BuildingBlockRegister:
                 traceback.print_exception(e, file=sys.stderr)
                 print('=========', file=sys.stderr)
 
+        self.imported_bblock_schemas: dict[str, str] = {}
         if find_dependencies:
             dep_graph = nx.DiGraph()
+
+            for identifier, imported_bblock in self.imported_bblocks.items():
+                dep_graph.add_node(identifier)
+                dep_graph.add_edges_from([(d, identifier) for d in imported_bblock.get('dependsOn', ())])
+                imported_bblock.get('dependsOn', [])
+                for schema_url in imported_bblock.get('schema', {}).values():
+                    self.imported_bblock_schemas[schema_url] = identifier
 
             for bblock in self.bblocks.values():
                 found_deps = self.find_dependencies(bblock)
@@ -228,6 +256,8 @@ class BuildingBlockRegister:
                     if ref.startswith('bblocks://'):
                         # Get id directly from bblocks:// URI
                         deps.add(ref[len('bblocks://'):])
+                    elif ref in self.imported_bblock_schemas:
+                        deps.add(self.imported_bblock_schemas[ref])
                     else:
                         ref_parent_path = bblock.files_path.joinpath(ref).resolve().parent
                         ref_bblock = self.bblock_paths.get(ref_parent_path)
@@ -251,16 +281,6 @@ class BuildingBlockRegister:
                 deps.add(extends['itemIdentifier'])
 
         return deps
-
-
-class ImportedBuildingBlockRegister:
-
-    def __init__(self, metadata_url: str):
-        self.url = metadata_url
-        r = requests.get(metadata_url)
-        r.raise_for_status()
-        bblock_list = r.json()
-        self.bblocks = {b['itemIdentifier']: b for b in bblock_list}
 
 
 def write_superbblocks_schemas(super_bblocks: dict[Path, BuildingBlock],
