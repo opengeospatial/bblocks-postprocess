@@ -79,7 +79,7 @@ def _validate_resource(filename: Path,
                        base_uri: str | None = None,
                        shacl_files: list[Path | str] | None = None,
                        schema_ref: str | None = None,
-                       shacl_closure: list[str] | None = None) -> ValidationReport:
+                       shacl_closure: list[str | Path] | None = None) -> ValidationReport:
 
     require_fail = filename.stem.endswith('-fail')
     report = ValidationReport(require_fail)
@@ -386,9 +386,10 @@ def validate_test_resources(bblock: BuildingBlock,
 
                     snippet['path'] = output_fn
 
-                    shacl_closure = snippet.get('shacl-closure')
+                    shacl_closure: list[str | Path] = snippet.get('shacl-closure')
                     if shacl_closure:
-                        shacl_closure = [bblock.files_path.joinpath(c) for c in shacl_closure]
+                        shacl_closure = [c if is_url(c) else bblock.files_path.joinpath(c)
+                                         for c in shacl_closure]
 
                     example_result = _validate_resource(
                         fn, output_fn,
