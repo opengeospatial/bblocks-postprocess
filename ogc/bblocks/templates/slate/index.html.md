@@ -184,6 +184,10 @@ ${transform['code']}
 * Source MIME type: `${transform['mime-types']['source'][0]}`
     % endif
 * Target MIME type: `${transform['mime-types']['target']}`
+* Types of outputs generated:
+    % for t in transform['output-types']:
+  * ${t['label']} (`${t['identifier']}`) 
+    % endfor
 * Link: [${transform['ref']}](${transform['ref']})
 
   % endfor
