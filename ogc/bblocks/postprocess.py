@@ -18,6 +18,7 @@ from ogc.bblocks.generate_docs import DocGenerator
 from ogc.bblocks.util import write_superbblocks_schemas, annotate_schema, BuildingBlock, \
     write_jsonld_context, BuildingBlockRegister
 from ogc.bblocks.validate import validate_test_resources
+from ogc.bblocks.transform import apply_transforms, transformers
 
 ANNOTATED_ITEM_CLASSES = ('schema', 'datatype')
 
@@ -26,8 +27,6 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 output_file: str | Path | None = 'register.json',
                 filter_ids: str | list[str] | None = None,
                 base_url: str | None = None,
-                metadata_schema: str | Path | None = None,
-                examples_schema: str | Path | None = None,
                 generated_docs_path: str | Path = 'generateddocs',
                 templates_dir: str | Path = 'templates',
                 fail_on_error: bool = False,
@@ -117,6 +116,9 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         if test_count and test_outputs_base_url:
             bblock.metadata['testOutputs'] = f"{test_outputs_base_url}{bblock.subdirs}/"
 
+        print(f"  > Running transforms for {bblock.identifier}", file=sys.stderr)
+        apply_transforms(bblock, outputs_path=test_outputs_path)
+
         if bblock.examples:
             for example in bblock.examples:
                 for snippet in example.get('snippets', ()):
@@ -127,6 +129,11 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         if base_url:
             if bblock.shaclRules:
                 bblock.metadata['shaclRules'] = [urljoin(bblock.metadata['sourceFiles'], s) for s in bblock.shaclRules]
+            if bblock.transforms:
+                bblock.metadata['transforms'] = []
+                for transform in bblock.transforms:
+                    transform['ref'] = urljoin(bblock.metadata['sourceFiles'], transform['ref'])
+                    bblock.metadata['transforms'].append({k: v for k, v in transform.items() if k != 'code'})
 
         print(f"  > Generating documentation for {bblock.identifier}", file=sys.stderr)
         doc_generator.generate_doc(bblock)
@@ -135,11 +142,16 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
     if not isinstance(registered_items_path, Path):
         registered_items_path = Path(registered_items_path)
 
+    if transformers.transform_modules:
+        print("Available transformers:", file=sys.stderr)
+        for t in transformers.transform_modules:
+            print(f"  - {t.transform_type}", file=sys.stderr)
+    else:
+        print("No transformers found", file=sys.stderr)
+
     child_bblocks = []
     super_bblocks = {}
     bbr = BuildingBlockRegister(registered_items_path,
-                                metadata_schema_file=metadata_schema,
-                                examples_schema_file=examples_schema,
                                 fail_on_error=fail_on_error,
                                 prefix=id_prefix,
                                 annotated_path=annotated_path)

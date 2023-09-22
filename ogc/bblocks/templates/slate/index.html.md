@@ -166,6 +166,28 @@ The following SHACL shapes are used for validating this building block:
   % endfor
 
 % endif
+% if bblock.transforms:
+${'#'} Transforms
+
+  % for transform in bblock.transforms:
+${'## ' + transform['title']} <small>${transform['type']}</small>
+
+```
+${transform['code']}
+```
+    % if len(transform['mime-types']['source']) > 1:
+* Source MIME types:
+      % for mt in transform['mime-types']['source']:
+  * `${mt}`
+      % endfor
+    % else:
+* Source MIME type: `${transform['mime-types']['source'][0]}`
+    % endif
+* Target MIME type: `${transform['mime-types']['target']}`
+* Link: [${transform['ref']}](${transform['ref']})
+
+  % endfor
+% endif
 % if bblock.sources:
 ${'#'} References
 

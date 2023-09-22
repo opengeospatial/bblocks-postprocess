@@ -1,0 +1,30 @@
+json:
+  label: JSON
+  mime-type: application/json
+  extensions:
+    - json
+
+ttl:
+  label: RDF/Turtle
+  mime-type: text/turtle
+  aliases:
+    - turtle
+    - rdf/turtle
+  extensions:
+    - ttl
+
+rdf:
+  label: RDF/XML
+  mime-type: application/rdf+xml
+  aliases:
+    - rdf/xml
+  extensions:
+    - rdf
+
+json-ld:
+  label: JSON-LD
+  mime-type: application/ld+json
+  aliases:
+    - jsonld
+  extensions:
+    - jsonld

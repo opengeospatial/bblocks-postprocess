@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import functools
 import json
 import os.path
@@ -7,7 +8,7 @@ import re
 import sys
 from collections import deque
 from pathlib import Path
-from typing import Any, Sequence, Callable
+from typing import Any, Sequence, Callable, AnyStr
 
 import jsonschema
 import networkx as nx
@@ -18,10 +19,22 @@ from ogc.na.util import load_yaml, dump_yaml, is_url
 BBLOCK_METADATA_FILE = 'bblock.json'
 BBLOCKS_REF_ANNOTATION = 'x-bblocks-ref'
 
+loaded_schemas: dict[str, dict] = {}
+
 
 def load_file(fn):
+    if isinstance(fn, str) and is_url(fn):
+        r = requests.get(fn)
+        r.raise_for_status()
+        return r.text
     with open(fn) as f:
         return f.read()
+
+
+def get_schema(t: str) -> dict:
+    if t not in loaded_schemas:
+        loaded_schemas[t] = load_yaml(Path(__file__).parent / f'{t}-schema.yaml')
+    return loaded_schemas[t]
 
 
 def get_bblock_identifier(metadata_file: Path, root_path: Path = Path(),
@@ -45,8 +58,6 @@ class BuildingBlock:
 
     def __init__(self, identifier: str, metadata_file: Path,
                  rel_path: Path,
-                 metadata_schema: Any | None = None,
-                 examples_schema: Any | None = None,
                  annotated_path: Path = Path()):
         self.identifier = identifier
         metadata_file = metadata_file.resolve()
@@ -55,11 +66,10 @@ class BuildingBlock:
         with open(metadata_file) as f:
             self.metadata = json.load(f)
 
-            if metadata_schema:
-                try:
-                    jsonschema.validate(self.metadata, metadata_schema)
-                except Exception as e:
-                    raise BuildingBlockError('Error validating building block metadata') from e
+            try:
+                jsonschema.validate(self.metadata, get_schema('metadata'))
+            except Exception as e:
+                raise BuildingBlockError('Error validating building block metadata') from e
 
             self.metadata['itemIdentifier'] = identifier
 
@@ -83,7 +93,7 @@ class BuildingBlock:
         self.assets_path = ap if ap.is_dir() else None
 
         self.examples_file = fp / 'examples.yaml'
-        self.examples = self._load_examples(examples_schema)
+        self.examples = self._load_examples()
 
         self.tests_dir = fp / 'tests'
 
@@ -96,22 +106,42 @@ class BuildingBlock:
         if default_shacl_rules.is_file():
             shacl_rules.append('rules.shacl')
 
-    def _load_examples(self, examples_schema: Any | None = None):
+        self.transforms_file = fp / 'transforms.yaml'
+        self.transforms = self._load_transforms()
+
+    def _load_examples(self):
         examples = None
         if self.examples_file.is_file():
             examples = load_yaml(self.examples_file)
-            if examples_schema:
-                try:
-                    jsonschema.validate(examples, examples_schema)
-                except Exception as e:
-                    raise BuildingBlockError('Error validating building block examples') from e
+            try:
+                jsonschema.validate(examples, get_schema('examples'))
+            except Exception as e:
+                raise BuildingBlockError('Error validating building block examples') from e
 
             for example in examples:
                 for snippet in example.get('snippets', ()):
                     if 'ref' in snippet:
                         # Load snippet code from "ref"
-                        snippet['code'] = load_file(self.files_path / snippet['ref'])
+                        ref = snippet['ref'] if is_url(snippet['ref']) else self.files_path / snippet['ref']
+                        snippet['code'] = load_file(ref)
         return examples
+
+    def _load_transforms(self) -> list:
+        transforms = None
+        if self.transforms_file.is_file():
+            transforms = load_yaml(self.transforms_file)
+            try:
+                jsonschema.validate(transforms, get_schema('transforms'))
+            except Exception as e:
+                raise BuildingBlockError('Error validating building block transforms') from e
+
+            transforms = transforms.get('transforms', [])
+            for transform in transforms:
+                ref = transform['ref'] if is_url(transform['ref']) else self.files_path / transform['ref']
+                transform['code'] = load_file(ref)
+                if isinstance(transform['mime-types']['source'], str):
+                    transform['mime-types']['source'] = [transform['mime-types']['source']]
+        return transforms
 
     @property
     def schema_contents(self):
@@ -157,8 +187,6 @@ class BuildingBlockRegister:
     def __init__(self,
                  registered_items_path: Path,
                  annotated_path: Path = Path(),
-                 metadata_schema_file: str | Path | None = None,
-                 examples_schema_file: str | Path | None = None,
                  fail_on_error: bool = False,
                  prefix: str = 'ogc.',
                  find_dependencies=True):
@@ -170,17 +198,12 @@ class BuildingBlockRegister:
 
         self.bblock_paths: dict[Path, BuildingBlock] = {}
 
-        metadata_schema = load_yaml(metadata_schema_file) if metadata_schema_file else None
-        examples_schema = load_yaml(examples_schema_file) if examples_schema_file else None
-
         for metadata_file in sorted(registered_items_path.glob(f"**/{BBLOCK_METADATA_FILE}")):
             bblock_id, bblock_rel_path = get_bblock_identifier(metadata_file, registered_items_path, prefix)
             if bblock_id in self.bblocks:
                 raise ValueError(f"Found duplicate bblock id: {bblock_id}")
             try:
                 bblock = BuildingBlock(bblock_id, metadata_file,
-                                       metadata_schema=metadata_schema,
-                                       examples_schema=examples_schema,
                                        rel_path=bblock_rel_path,
                                        annotated_path=annotated_path)
                 self.bblocks[bblock_id] = bblock
@@ -261,6 +284,17 @@ class ImportedBuildingBlockRegister:
         r.raise_for_status()
         bblock_list = r.json()
         self.bblocks = {b['itemIdentifier']: b for b in bblock_list}
+
+
+@dataclasses.dataclass
+class TransformMetadata:
+    type: str
+    source_mime_type: str
+    target_mime_type: str
+    source_ref: str | Path
+    transform_content: AnyStr
+    input_data: AnyStr
+    metadata: Any | None = None
 
 
 def write_superbblocks_schemas(super_bblocks: dict[Path, BuildingBlock],
