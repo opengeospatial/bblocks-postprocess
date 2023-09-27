@@ -10,6 +10,8 @@ from ogc.na.util import load_yaml
 from ogc.bblocks.postprocess import postprocess
 from ogc.na import ingest_json
 
+MAIN_BBR = 'https://blocks.ogc.org/register.json'
+
 templates_dir = Path(__file__).parent / 'templates'
 uplift_context_file = Path(__file__).parent / 'register-context.yaml'
 
@@ -126,6 +128,7 @@ if __name__ == '__main__':
     id_prefix = 'ogc.'
     annotated_path = Path(args.annotated_path)
     schema_mapping_config = {}
+    imported_registers = []
     if bb_config_file and bb_config_file.is_file():
         bb_config = load_yaml(filename=bb_config_file)
         id_prefix = bb_config.get('identifier-prefix', id_prefix)
@@ -133,6 +136,9 @@ if __name__ == '__main__':
             id_prefix += '.'
         subdirs = id_prefix.split('.')[1:]
         schema_mapping_config = bb_config.get('schema-mapping', {})
+        imported_registers = bb_config.get('imports')
+        if imported_registers is None:
+            imported_registers = [MAIN_BBR]
 
     # 1. Postprocess BBs
     print(f"Running postprocess...", file=sys.stderr)
@@ -149,7 +155,8 @@ if __name__ == '__main__':
                 schema_default_base_url=schema_mapping_config.get('default'),
                 schema_identifier_url_mappings=schema_mapping_config.get('mappings'),
                 test_outputs_path=args.test_outputs_path,
-                github_base_url=args.github_base_url)
+                github_base_url=args.github_base_url,
+                imported_registers=imported_registers)
 
     # 2. Uplift register.json
     print(f"Running semantic uplift of {register_file}", file=sys.stderr)

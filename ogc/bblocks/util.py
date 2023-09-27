@@ -156,18 +156,30 @@ class ImportedBuildingBlocks:
 
     def __init__(self, metadata_urls: list[str] | None):
         self.bblocks: dict[str, dict] = {}
+        self.imported_registers: dict[str, list[str]] = {}
         if metadata_urls:
-            for metadata_url in metadata_urls:
-                self.load(metadata_url)
+            pending_urls = deque(metadata_urls)
+            while pending_urls:
+                metadata_url = pending_urls.popleft()
+                new_pending = self.load(metadata_url)
+                pending_urls.extend(u for u in new_pending if u not in self.imported_registers)
 
-    def load(self, metadata_url: str):
+    def load(self, metadata_url: str) -> list[str]:
         r = requests.get(metadata_url)
         r.raise_for_status()
-        bblock_list = r.json()
-        self.bblocks: dict[str, dict] = {}
+        imported = r.json()
+        if isinstance(imported, list):
+            bblock_list = imported
+            dependencies = []
+        else:
+            bblock_list = imported['bblocks']
+            dependencies = imported.get('imports', [])
+        self.imported_registers[metadata_url] = []
         for bblock in bblock_list:
             bblock['register'] = self
             self.bblocks[bblock['itemIdentifier']] = bblock
+            self.imported_registers[metadata_url].append(bblock['itemIdentifier'])
+        return dependencies
 
 
 class BuildingBlockRegister:
