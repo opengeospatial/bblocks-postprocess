@@ -64,7 +64,7 @@ def apply_transforms(bblock: BuildingBlock,
                         with open(output_fn, 'w') as f:
                             f.write(transform_result)
 
-                except Exception as e:
+                except Exception:
                     with open(output_fn.with_stem(output_fn.name + '.error'), 'w') as f:
                         f.write('Error generating transformed file:\n')
                         f.write(traceback.format_exc())

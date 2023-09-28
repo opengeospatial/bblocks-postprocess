@@ -1,4 +1,6 @@
 transform:
+  # Extract bblocks
+  - if type != "array" then .bblocks else . end
   # Add @type from itemClass with initial capital letter
   - '[ .[] | ."@type" = [("bblocks:" + (.itemClass[:1]|ascii_upcase) + .itemClass[1:]), "skos:Concept"] ]'
   # Add ConceptScheme

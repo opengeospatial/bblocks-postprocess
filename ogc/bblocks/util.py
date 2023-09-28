@@ -7,6 +7,7 @@ import os.path
 import re
 import sys
 from collections import deque
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Sequence, Callable, AnyStr
 
@@ -105,6 +106,7 @@ class BuildingBlock:
         default_shacl_rules = fp / 'rules.shacl'
         if default_shacl_rules.is_file():
             shacl_rules.append('rules.shacl')
+        self.shacl_rules = [r if is_url(r) else fp / r for r in shacl_rules]
 
         self.transforms_file = fp / 'transforms.yaml'
         self.transforms = self._load_transforms()
@@ -182,6 +184,36 @@ class BuildingBlock:
         return self._lazy_properties['jsonld_context_contents']
 
 
+class ImportedBuildingBlocks:
+
+    def __init__(self, metadata_urls: list[str] | None):
+        self.bblocks: dict[str, dict] = {}
+        self.imported_registers: dict[str, list[str]] = {}
+        if metadata_urls:
+            pending_urls = deque(metadata_urls)
+            while pending_urls:
+                metadata_url = pending_urls.popleft()
+                new_pending = self.load(metadata_url)
+                pending_urls.extend(u for u in new_pending if u not in self.imported_registers)
+
+    def load(self, metadata_url: str) -> list[str]:
+        r = requests.get(metadata_url)
+        r.raise_for_status()
+        imported = r.json()
+        if isinstance(imported, list):
+            bblock_list = imported
+            dependencies = []
+        else:
+            bblock_list = imported['bblocks']
+            dependencies = imported.get('imports', [])
+        self.imported_registers[metadata_url] = []
+        for bblock in bblock_list:
+            bblock['register'] = self
+            self.bblocks[bblock['itemIdentifier']] = bblock
+            self.imported_registers[metadata_url].append(bblock['itemIdentifier'])
+        return dependencies
+
+
 class BuildingBlockRegister:
 
     def __init__(self,
@@ -189,12 +221,14 @@ class BuildingBlockRegister:
                  annotated_path: Path = Path(),
                  fail_on_error: bool = False,
                  prefix: str = 'ogc.',
-                 find_dependencies=True):
+                 find_dependencies=True,
+                 imported_bblocks: ImportedBuildingBlocks | None = None):
 
         self.registered_items_path = registered_items_path
         self.annotated_path = annotated_path
         self.prefix = prefix
         self.bblocks: dict[str, BuildingBlock] = {}
+        self.imported_bblocks = imported_bblocks.bblocks if imported_bblocks else {}
 
         self.bblock_paths: dict[Path, BuildingBlock] = {}
 
@@ -216,11 +250,19 @@ class BuildingBlockRegister:
                 traceback.print_exception(e, file=sys.stderr)
                 print('=========', file=sys.stderr)
 
+        self.imported_bblock_schemas: dict[str, str] = {}
         if find_dependencies:
             dep_graph = nx.DiGraph()
 
+            for identifier, imported_bblock in self.imported_bblocks.items():
+                dep_graph.add_node(identifier)
+                dep_graph.add_edges_from([(d, identifier) for d in imported_bblock.get('dependsOn', ())])
+                imported_bblock.get('dependsOn', [])
+                for schema_url in imported_bblock.get('schema', {}).values():
+                    self.imported_bblock_schemas[schema_url] = identifier
+
             for bblock in self.bblocks.values():
-                found_deps = self.find_dependencies(bblock)
+                found_deps = self._resolve_bblock_deps(bblock)
                 deps = bblock.metadata.get('dependsOn')
                 if isinstance(deps, str):
                     found_deps.add(deps)
@@ -234,9 +276,12 @@ class BuildingBlockRegister:
             if cycles:
                 cycles_str = '\n - '.join(' -> '.join(reversed(c)) + ' -> ' + c[-1] for c in cycles)
                 raise BuildingBlockError(f"Circular dependencies found: \n - {cycles_str}")
-            self.bblocks = {b: self.bblocks[b] for b in nx.topological_sort(dep_graph) if b in self.bblocks}
+            self.bblocks: dict[str, BuildingBlock] = {b: self.bblocks[b]
+                                                      for b in nx.topological_sort(dep_graph)
+                                                      if b in self.bblocks}
+            self.dep_graph = dep_graph
 
-    def find_dependencies(self, bblock: BuildingBlock) -> set[str]:
+    def _resolve_bblock_deps(self, bblock: BuildingBlock) -> set[str]:
         if not bblock.schema.is_file():
             return set()
         bblock_schema = load_yaml(filename=bblock.schema)
@@ -251,6 +296,8 @@ class BuildingBlockRegister:
                     if ref.startswith('bblocks://'):
                         # Get id directly from bblocks:// URI
                         deps.add(ref[len('bblocks://'):])
+                    elif ref in self.imported_bblock_schemas:
+                        deps.add(self.imported_bblock_schemas[ref])
                     else:
                         ref_parent_path = bblock.files_path.joinpath(ref).resolve().parent
                         ref_bblock = self.bblock_paths.get(ref_parent_path)
@@ -275,15 +322,31 @@ class BuildingBlockRegister:
 
         return deps
 
+    @lru_cache
+    def find_dependencies(self, identifier: str) -> list[dict | BuildingBlock]:
+        if identifier in self.bblocks:
+            bblock = self.bblocks[identifier]
+            metadata = bblock.metadata
+        elif identifier in self.imported_bblocks:
+            bblock = None
+            metadata = self.imported_bblocks[identifier]
+        else:
+            return []
 
-class ImportedBuildingBlockRegister:
+        dependencies = [bblock or metadata]
+        for d in metadata.get('dependsOn', ()):
+            dependencies.extend(self.find_dependencies(d))
 
-    def __init__(self, metadata_url: str):
-        self.url = metadata_url
-        r = requests.get(metadata_url)
-        r.raise_for_status()
-        bblock_list = r.json()
-        self.bblocks = {b['itemIdentifier']: b for b in bblock_list}
+        return dependencies
+
+    def get_inherited_shacl_rules(self, identifier: str) -> set[str | Path]:
+        rules = set()
+        for dep in self.find_dependencies(identifier):
+            if isinstance(dep, BuildingBlock):
+                rules.update(dep.shacl_rules or ())
+            else:
+                rules.update(dep.get('shaclRules', ()))
+        return rules
 
 
 @dataclasses.dataclass

@@ -16,7 +16,7 @@ from ogc.na.util import is_url
 
 from ogc.bblocks.generate_docs import DocGenerator
 from ogc.bblocks.util import write_superbblocks_schemas, annotate_schema, BuildingBlock, \
-    write_jsonld_context, BuildingBlockRegister
+    write_jsonld_context, BuildingBlockRegister, ImportedBuildingBlocks
 from ogc.bblocks.validate import validate_test_resources
 from ogc.bblocks.transform import apply_transforms, transformers
 
@@ -35,7 +35,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 schema_default_base_url: str | None = None,
                 schema_identifier_url_mappings: list[dict[str, str]] = None,
                 test_outputs_path: str | Path = 'build/tests',
-                github_base_url: str | None = None) -> list[BuildingBlock]:
+                github_base_url: str | None = None,
+                imported_registers: list[str] | None = None) -> list[BuildingBlock]:
 
     cwd = Path().resolve()
 
@@ -52,6 +53,18 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                                  output_dir=generated_docs_path,
                                  templates_dir=templates_dir,
                                  id_prefix=id_prefix)
+
+    if not isinstance(registered_items_path, Path):
+        registered_items_path = Path(registered_items_path)
+
+    child_bblocks = []
+    super_bblocks = {}
+    imported_bblocks = ImportedBuildingBlocks(imported_registers)
+    bbr = BuildingBlockRegister(registered_items_path,
+                                fail_on_error=fail_on_error,
+                                prefix=id_prefix,
+                                annotated_path=annotated_path,
+                                imported_bblocks=imported_bblocks)
 
     def do_postprocess(bblock: BuildingBlock) -> bool:
 
@@ -109,6 +122,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         print(f"  > Running tests for {bblock.identifier}", file=sys.stderr)
         validation_passed, test_count = validate_test_resources(bblock,
                                                                 registered_items_path=registered_items_path,
+                                                                bblocks_register=bbr,
                                                                 outputs_path=test_outputs_path)
         bblock.metadata['validationPassed'] = validation_passed
         if not validation_passed:
@@ -149,12 +163,6 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
     else:
         print("No transformers found", file=sys.stderr)
 
-    child_bblocks = []
-    super_bblocks = {}
-    bbr = BuildingBlockRegister(registered_items_path,
-                                fail_on_error=fail_on_error,
-                                prefix=id_prefix,
-                                annotated_path=annotated_path)
     for building_block in bbr.bblocks.values():
         if filter_ids and building_block.identifier not in filter_ids:
             continue
@@ -223,11 +231,15 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             print(f"{building_block.identifier} failed postprocessing, skipping...", file=sys.stderr)
 
     if output_file:
+        output_register_json = {
+            'imports': imported_registers or [],
+            'bblocks': output_bblocks,
+        }
         if output_file == '-':
-            print(json.dumps(output_bblocks, indent=2))
+            print(json.dumps(output_register_json, indent=2))
         else:
             with open(output_file, 'w') as f:
-                json.dump(output_bblocks, f, indent=2)
+                json.dump(output_register_json, f, indent=2)
 
     print(f"Finished processing {len(output_bblocks)} building blocks", file=sys.stderr)
     return output_bblocks
@@ -300,7 +312,6 @@ def _main():
                 output_file=None if args.no_output else args.output_register,
                 filter_ids=args.filter_id,
                 base_url=args.base_url,
-                metadata_schema=args.metadata_schema,
                 templates_dir=args.templates_dir,
                 fail_on_error=args.fail_on_error,
                 id_prefix=args.identifier_prefix)
