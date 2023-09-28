@@ -11,5 +11,6 @@ if bblock.annotated_schema:
     output['annotatedSchema'] = bblock.annotated_schema_contents
 if git_repo:
     output['gitRepository'] = git_repo
+    output['gitPath'] = git_path
 %>
 ${json.dumps(output)}
