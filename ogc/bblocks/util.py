@@ -6,6 +6,7 @@ import os.path
 import re
 import sys
 from collections import deque
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Sequence, Callable
 
@@ -95,6 +96,7 @@ class BuildingBlock:
         default_shacl_rules = fp / 'rules.shacl'
         if default_shacl_rules.is_file():
             shacl_rules.append('rules.shacl')
+        self.shacl_rules = [r if is_url(r) else fp / r for r in shacl_rules]
 
     def _load_examples(self, examples_schema: Any | None = None):
         examples = None
@@ -237,7 +239,7 @@ class BuildingBlockRegister:
                     self.imported_bblock_schemas[schema_url] = identifier
 
             for bblock in self.bblocks.values():
-                found_deps = self.find_dependencies(bblock)
+                found_deps = self._resolve_bblock_deps(bblock)
                 deps = bblock.metadata.get('dependsOn')
                 if isinstance(deps, str):
                     found_deps.add(deps)
@@ -251,9 +253,12 @@ class BuildingBlockRegister:
             if cycles:
                 cycles_str = '\n - '.join(' -> '.join(reversed(c)) + ' -> ' + c[-1] for c in cycles)
                 raise BuildingBlockError(f"Circular dependencies found: \n - {cycles_str}")
-            self.bblocks = {b: self.bblocks[b] for b in nx.topological_sort(dep_graph) if b in self.bblocks}
+            self.bblocks: dict[str, BuildingBlock] = {b: self.bblocks[b]
+                                                      for b in nx.topological_sort(dep_graph)
+                                                      if b in self.bblocks}
+            self.dep_graph = dep_graph
 
-    def find_dependencies(self, bblock: BuildingBlock) -> set[str]:
+    def _resolve_bblock_deps(self, bblock: BuildingBlock) -> set[str]:
         if not bblock.schema.is_file():
             return set()
         bblock_schema = load_yaml(filename=bblock.schema)
@@ -293,6 +298,32 @@ class BuildingBlockRegister:
                 deps.add(extends['itemIdentifier'])
 
         return deps
+
+    @lru_cache
+    def find_dependencies(self, identifier: str) -> list[dict | BuildingBlock]:
+        if identifier in self.bblocks:
+            bblock = self.bblocks[identifier]
+            metadata = bblock.metadata
+        elif identifier in self.imported_bblocks:
+            bblock = None
+            metadata = self.imported_bblocks[identifier]
+        else:
+            return []
+
+        dependencies = [bblock or metadata]
+        for d in metadata.get('dependsOn', ()):
+            dependencies.extend(self.find_dependencies(d))
+
+        return dependencies
+
+    def get_inherited_shacl_rules(self, identifier: str) -> set[str | Path]:
+        rules = set()
+        for dep in self.find_dependencies(identifier):
+            if isinstance(dep, BuildingBlock):
+                rules.update(dep.shacl_rules or ())
+            else:
+                rules.update(dep.get('shaclRules', ()))
+        return rules
 
 
 def write_superbblocks_schemas(super_bblocks: dict[Path, BuildingBlock],

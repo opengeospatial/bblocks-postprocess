@@ -55,6 +55,20 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                                  templates_dir=templates_dir,
                                  id_prefix=id_prefix)
 
+    if not isinstance(registered_items_path, Path):
+        registered_items_path = Path(registered_items_path)
+
+    child_bblocks = []
+    super_bblocks = {}
+    imported_bblocks = ImportedBuildingBlocks(imported_registers)
+    bbr = BuildingBlockRegister(registered_items_path,
+                                metadata_schema_file=metadata_schema,
+                                examples_schema_file=examples_schema,
+                                fail_on_error=fail_on_error,
+                                prefix=id_prefix,
+                                annotated_path=annotated_path,
+                                imported_bblocks=imported_bblocks)
+
     def do_postprocess(bblock: BuildingBlock) -> bool:
 
         try:
@@ -111,6 +125,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         print(f"  > Running tests for {bblock.identifier}", file=sys.stderr)
         validation_passed, test_count = validate_test_resources(bblock,
                                                                 registered_items_path=registered_items_path,
+                                                                bblocks_register=bbr,
                                                                 outputs_path=test_outputs_path)
         bblock.metadata['validationPassed'] = validation_passed
         if not validation_passed:
@@ -133,19 +148,6 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         doc_generator.generate_doc(bblock)
         return True
 
-    if not isinstance(registered_items_path, Path):
-        registered_items_path = Path(registered_items_path)
-
-    child_bblocks = []
-    super_bblocks = {}
-    imported_bblocks = ImportedBuildingBlocks(imported_registers)
-    bbr = BuildingBlockRegister(registered_items_path,
-                                metadata_schema_file=metadata_schema,
-                                examples_schema_file=examples_schema,
-                                fail_on_error=fail_on_error,
-                                prefix=id_prefix,
-                                annotated_path=annotated_path,
-                                imported_bblocks=imported_bblocks)
     for building_block in bbr.bblocks.values():
         if filter_ids and building_block.identifier not in filter_ids:
             continue

@@ -11,6 +11,7 @@ from ogc.bblocks.postprocess import postprocess
 from ogc.na import ingest_json
 
 MAIN_BBR = 'https://blocks.ogc.org/register.json'
+DEFAULT_IMPORT_MARKER = 'default'
 
 templates_dir = Path(__file__).parent / 'templates'
 uplift_context_file = Path(__file__).parent / 'register-context.yaml'
@@ -139,6 +140,8 @@ if __name__ == '__main__':
         imported_registers = bb_config.get('imports')
         if imported_registers is None:
             imported_registers = [MAIN_BBR]
+        else:
+            imported_registers = [ir if ir != DEFAULT_IMPORT_MARKER else MAIN_BBR for ir in imported_registers if ir]
 
     # 1. Postprocess BBs
     print(f"Running postprocess...", file=sys.stderr)

@@ -18,7 +18,7 @@ from rdflib import Graph
 from rdflib.term import Node, URIRef, BNode
 from yaml import MarkedYAMLError
 
-from ogc.bblocks.util import BuildingBlock
+from ogc.bblocks.util import BuildingBlock, BuildingBlockRegister
 import traceback
 import pyshacl
 import jsonref
@@ -276,6 +276,7 @@ def _validate_resource(filename: Path,
 
 def validate_test_resources(bblock: BuildingBlock,
                             registered_items_path: Path,
+                            bblocks_register: BuildingBlockRegister,
                             outputs_path: str | Path | None = None) -> tuple[bool, int]:
     result = True
     test_count = 0
@@ -287,18 +288,17 @@ def validate_test_resources(bblock: BuildingBlock,
     shacl_error = None
 
     shacl_files = []
-    if bblock.shaclRules:
-        try:
-            for shacl_file in bblock.shaclRules:
-                if isinstance(shacl_file, Path) or (isinstance(shacl_file, str) and not is_url(shacl_file)):
-                    # assume file
-                    shacl_file = bblock.files_path / shacl_file
-                    shacl_files.append(os.path.relpath(shacl_file, registered_items_path))
-                else:
-                    shacl_files.append(shacl_file)
-                shacl_graph.parse(shacl_file, format='turtle')
-        except Exception as e:
-            shacl_error = str(e)
+    try:
+        for shacl_file in bblocks_register.get_inherited_shacl_rules(bblock.identifier):
+            if isinstance(shacl_file, Path) or (isinstance(shacl_file, str) and not is_url(shacl_file)):
+                # assume file
+                shacl_file = bblock.files_path / shacl_file
+                shacl_files.append(os.path.relpath(shacl_file, registered_items_path))
+            else:
+                shacl_files.append(shacl_file)
+            shacl_graph.parse(shacl_file, format='turtle')
+    except Exception as e:
+        shacl_error = str(e)
 
     json_error = None
     schema_validator = None
