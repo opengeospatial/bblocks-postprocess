@@ -39,6 +39,8 @@ jobs:
           
           with open('build/register.json') as f:
             bblocks = json.load(f)
+            if isinstance(bblocks, dict):
+              bblocks = bblocks.get('bblocks', ())
           
           with open('index.html', 'w') as f:
             f.write('<!doctype html><html><head><meta charset="utf-8"/><title>')
