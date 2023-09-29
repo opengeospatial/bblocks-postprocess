@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import shutil
 from json import JSONDecodeError
 from pathlib import Path
+from time import time
 from typing import Any, Sequence, Callable
 from urllib.parse import urlsplit
 from urllib.request import urlopen
@@ -356,18 +358,18 @@ def validate_test_resources(bblock: BuildingBlock,
                     snippet_schema_validator = schema_validator
                 else:
                     schema_ref = snippet['schema-ref']
+                    random_fn = f"example.{time()}.{random.randint(0,1000)}.yaml"
+                    schema_uri = bblock.schema.with_name(random_fn).as_uri()
                     if schema_ref.startswith('#/'):
                         schema_ref = f"{bblock.schema}{schema_ref}"
-                        schema_uri = bblock.schema.with_name('snippet-schema.yaml').as_uri()
                     elif not is_url(schema_ref):
                         if '#' in schema_ref:
                             path, fragment = schema_ref.split('#', 1)
                             schema_ref = f"{bblock.schema.parent.joinpath(path)}#{fragment}"
-                            schema_uri = f"{bblock.schema.parent.joinpath(path).as_uri()}#{fragment}"
+                            schema_uri = (f"{bblock.schema.parent.joinpath(path).with_name(random_fn).as_uri()}"
+                                          f"#{fragment}")
                         else:
-                            schema_uri = bblock.schema.parent.joinpath(schema_ref).as_uri()
-                    else:
-                        schema_uri = bblock.schema.as_uri()
+                            schema_uri = bblock.schema.parent.joinpath(schema_ref).with_name(random_fn).as_uri()
                     snippet_schema = {'$ref': schema_ref}
                     snippet_schema_validator = get_json_validator(snippet_schema,
                                                                   schema_uri)
