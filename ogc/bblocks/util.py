@@ -108,9 +108,6 @@ class BuildingBlock:
             shacl_rules.append('rules.shacl')
         self.shacl_rules = [r if is_url(r) else fp / r for r in shacl_rules]
 
-        self.transforms_file = fp / 'transforms.yaml'
-        self.transforms = self._load_transforms()
-
     def _load_examples(self):
         examples = None
         if self.examples_file.is_file():
@@ -126,24 +123,12 @@ class BuildingBlock:
                         # Load snippet code from "ref"
                         ref = snippet['ref'] if is_url(snippet['ref']) else self.files_path / snippet['ref']
                         snippet['code'] = load_file(ref)
+                for transform in example.get('transforms', ()):
+                    if 'ref' in transform:
+                        # Load transform code from "ref"
+                        ref = transform['ref'] if is_url(transform['ref']) else self.files_path / transform['ref']
+                        transform['code'] = load_file(ref)
         return examples
-
-    def _load_transforms(self) -> list:
-        transforms = None
-        if self.transforms_file.is_file():
-            transforms = load_yaml(self.transforms_file)
-            try:
-                jsonschema.validate(transforms, get_schema('transforms'))
-            except Exception as e:
-                raise BuildingBlockError('Error validating building block transforms') from e
-
-            transforms = transforms.get('transforms', [])
-            for transform in transforms:
-                ref = transform['ref'] if is_url(transform['ref']) else self.files_path / transform['ref']
-                transform['code'] = load_file(ref)
-                if isinstance(transform['mime-types']['source'], str):
-                    transform['mime-types']['source'] = [transform['mime-types']['source']]
-        return transforms
 
     @property
     def schema_contents(self):
@@ -354,7 +339,6 @@ class TransformMetadata:
     type: str
     source_mime_type: str
     target_mime_type: str
-    source_ref: str | Path
     transform_content: AnyStr
     input_data: AnyStr
     metadata: Any | None = None

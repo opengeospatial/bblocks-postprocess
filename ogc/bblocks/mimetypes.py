@@ -20,3 +20,9 @@ def lookup(t: str) -> dict | None:
         if 'aliases' in entry and entry['aliases'] and t in entry['aliases']:
             return entry
 
+
+def normalize(t: str) -> str:
+    n = lookup(t)
+    if n:
+        return n['mime-type']
+    return t
