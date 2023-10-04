@@ -120,7 +120,7 @@ ${snippet['code']}
     % endfor
   % endfor
 % endif
-% if bblock.schema:
+% if bblock.schema.is_file():
 
 ${'#'} JSON Schema
 
