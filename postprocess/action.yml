@@ -44,7 +44,7 @@ runs:
     - ${{ inputs.register_file }}
     - '--items-dir'
     - ${{ inputs.items_dir }}
-    - '--generated-docs'
+    - '--generated-docs-path'
     - ${{ inputs.generated_docs_path }}
     - '--base-url'
     - ${{ inputs.base_url }}

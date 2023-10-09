@@ -22,7 +22,7 @@ if __name__ == '__main__':
 
     parser.add_argument(
         '--register-file',
-        default='build/register.json',
+        default='build-local/register.json',
         help='Output JSON Building Blocks register document',
     )
 
@@ -34,13 +34,13 @@ if __name__ == '__main__':
 
     parser.add_argument(
         '--generated-docs-path',
-        default='build/generateddocs',
+        default='build-local/generateddocs',
         help='Output directory for generated documentation',
     )
 
     parser.add_argument(
         '--base-url',
-        default='',
+        default='http://www.example.com/my-building-blocks/',
         help='Base URL for hyperlink generation',
     )
 
@@ -52,7 +52,7 @@ if __name__ == '__main__':
 
     parser.add_argument(
         '--annotated-path',
-        default='build/annotated',
+        default='build-local/annotated',
         help='Fail run if an error is encountered',
     )
 
@@ -76,7 +76,7 @@ if __name__ == '__main__':
 
     parser.add_argument(
         '--test-outputs-path',
-        default='build/tests',
+        default='build-local/tests',
         help='Directory for test output resources',
     )
 
