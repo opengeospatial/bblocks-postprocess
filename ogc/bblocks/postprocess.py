@@ -33,7 +33,6 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 id_prefix: str = '',
                 annotated_path: str | Path = 'annotated',
                 schema_default_base_url: str | None = None,
-                schema_identifier_url_mappings: list[dict[str, str]] = None,
                 test_outputs_path: str | Path = 'build/tests',
                 github_base_url: str | None = None,
                 imported_registers: list[str] | None = None) -> list[BuildingBlock]:
@@ -187,9 +186,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
             try:
                 for annotated in annotate_schema(building_block,
-                                                 context=default_jsonld_context,
-                                                 default_base_url=schema_default_base_url,
-                                                 identifier_url_mappings=schema_identifier_url_mappings):
+                                                 bblocks_register=bbr,
+                                                 context=default_jsonld_context):
                     print(f"  - {annotated}", file=sys.stderr)
             except Exception as e:
                 if fail_on_error:

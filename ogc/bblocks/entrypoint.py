@@ -128,7 +128,6 @@ if __name__ == '__main__':
     # Read local bblocks-config.yaml, if present
     id_prefix = 'ogc.'
     annotated_path = Path(args.annotated_path)
-    schema_mapping_config = {}
     imported_registers = []
     if bb_config_file and bb_config_file.is_file():
         bb_config = load_yaml(filename=bb_config_file)
@@ -136,7 +135,6 @@ if __name__ == '__main__':
         if id_prefix and id_prefix[-1] != '.':
             id_prefix += '.'
         subdirs = id_prefix.split('.')[1:]
-        schema_mapping_config = bb_config.get('schema-mapping', {})
         imported_registers = bb_config.get('imports')
         if imported_registers is None:
             imported_registers = [MAIN_BBR]
@@ -153,8 +151,6 @@ if __name__ == '__main__':
                 fail_on_error=fail_on_error,
                 id_prefix=id_prefix,
                 annotated_path=annotated_path,
-                schema_default_base_url=schema_mapping_config.get('default'),
-                schema_identifier_url_mappings=schema_mapping_config.get('mappings'),
                 test_outputs_path=args.test_outputs_path,
                 github_base_url=args.github_base_url,
                 imported_registers=imported_registers)

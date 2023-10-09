@@ -449,9 +449,8 @@ def update_refs(schema: Any, updater: Callable[[str], str]):
 
 
 def annotate_schema(bblock: BuildingBlock,
-                    context: Path | dict | None = None,
-                    default_base_url: str | None = None,
-                    identifier_url_mappings: list[dict[str, str]] | None = None) -> list[Path]:
+                    bblocks_register: BuildingBlockRegister,
+                    context: Path | dict | None = None) -> list[Path]:
     result = []
     schema_fn = None
     schema_url = None
@@ -471,9 +470,8 @@ def annotate_schema(bblock: BuildingBlock,
         return result
 
     ref_mapper = functools.partial(resolve_schema_reference,
-                                   from_identifier=bblock.identifier,
-                                   default_base_url=default_base_url,
-                                   identifier_url_mappings=identifier_url_mappings)
+                                   bblocks_register=bblocks_register,
+                                   from_bblock=bblock)
 
     annotator = SchemaAnnotator(
         ref_mapper=ref_mapper,
@@ -539,8 +537,13 @@ def annotate_schema(bblock: BuildingBlock,
     dump_yaml(annotated_schema, annotated_schema_fn)
     result.append(annotated_schema_fn)
 
+    def update_json_ref(ref):
+        if ref in bblocks_register.imported_bblock_schemas or not is_url(ref):
+            return re.sub(r'\.yaml(#.*)?$', r'.json\1', ref)
+        return ref
+
     # JSON
-    update_refs(annotated_schema, lambda s: re.sub(r'\.yaml(#.*)?$', r'.json\1', s))
+    update_refs(annotated_schema, update_json_ref)
     annotated_schema_json_fn = annotated_schema_fn.with_suffix('.json')
     with open(annotated_schema_json_fn, 'w') as f:
         json.dump(annotated_schema, f, indent=2)
@@ -550,9 +553,8 @@ def annotate_schema(bblock: BuildingBlock,
 
 def resolve_schema_reference(ref: str,
                              schema: Any,
-                             from_identifier: str | None = None,
-                             default_base_url: str | None = None,
-                             identifier_url_mappings: list[dict[str, str]] | None = None) -> str:
+                             bblocks_register: BuildingBlockRegister,
+                             from_bblock: BuildingBlock | None = None) -> str:
 
     ref = schema.pop(BBLOCKS_REF_ANNOTATION, ref)
 
@@ -566,31 +568,17 @@ def resolve_schema_reference(ref: str,
         if fragment:
             fragment = '#' + fragment
 
-    base_url = default_base_url
-    if identifier_url_mappings:
-        for mapping in identifier_url_mappings:
-            prefix = mapping['prefix']
-            if prefix[-1] != '.':
-                prefix += '.'
-            if target_id.startswith(prefix):
-                target_id = target_id[len(prefix):]
-                base_url = mapping.get('base_url')
-                break
-
-    if not base_url:
-        if from_identifier:
-            # Compute local relative path
-            target_path = get_bblock_subdirs(target_id)
-            from_path = get_bblock_subdirs(from_identifier)
-            rel_path = os.path.relpath(target_path, from_path)
-            return f"{rel_path}/schema.yaml{fragment}"
+    target_bb = bblocks_register.bblocks.get(target_id)
+    if target_bb:
+        if from_bblock:
+            return os.path.relpath(target_bb.annotated_schema, from_bblock.annotated_path)
         else:
             return ref
-
-    if base_url[-1] != '/':
-        base_url += '/'
-    subdirs = get_bblock_subdirs(target_id)
-    return f"{base_url}{subdirs}/schema.yaml"
+    else:
+        target_bb = bblocks_register.imported_bblocks.get(target_id)
+        if not target_bb or not target_bb.get('schema'):
+            raise ValueError(f'Error replacing dependency {target_id}. Is an import missing?')
+        return f"{target_bb['schema']['application/yaml']}{fragment}"
 
 
 def get_git_repo_url(url: str) -> str:
