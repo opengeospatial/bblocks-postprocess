@@ -25,17 +25,16 @@ ANNOTATED_ITEM_CLASSES = ('schema', 'datatype')
 
 def postprocess(registered_items_path: str | Path = 'registereditems',
                 output_file: str | Path | None = 'register.json',
-                filter_ids: str | list[str] | None = None,
                 base_url: str | None = None,
                 generated_docs_path: str | Path = 'generateddocs',
                 templates_dir: str | Path = 'templates',
                 fail_on_error: bool = False,
                 id_prefix: str = '',
                 annotated_path: str | Path = 'annotated',
-                schema_default_base_url: str | None = None,
                 test_outputs_path: str | Path = 'build/tests',
                 github_base_url: str | None = None,
-                imported_registers: list[str] | None = None) -> list[BuildingBlock]:
+                imported_registers: list[str] | None = None,
+                filter: str | None = None) -> list[BuildingBlock]:
 
     cwd = Path().resolve()
 
@@ -65,7 +64,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                                 annotated_path=annotated_path,
                                 imported_bblocks=imported_bblocks)
 
-    def do_postprocess(bblock: BuildingBlock) -> bool:
+    def do_postprocess(bblock: BuildingBlock, light: bool = False) -> bool:
 
         try:
             last_git_modified = datetime.datetime.fromisoformat(subprocess.run([
@@ -118,19 +117,21 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         else:
             bblock.metadata['sourceFiles'] = f"./{os.path.relpath(rel_files_path, output_file_root)}/"
 
-        print(f"  > Running tests for {bblock.identifier}", file=sys.stderr)
-        validation_passed, test_count = validate_test_resources(bblock,
-                                                                registered_items_path=registered_items_path,
-                                                                bblocks_register=bbr,
-                                                                outputs_path=test_outputs_path)
-        bblock.metadata['validationPassed'] = validation_passed
-        if not validation_passed:
-            bblock.metadata['status'] = 'invalid'
-        if test_count and test_outputs_base_url:
-            bblock.metadata['testOutputs'] = f"{test_outputs_base_url}{bblock.subdirs}/"
+        if not light:
+            print(f"  > Running tests for {bblock.identifier}", file=sys.stderr)
+            validation_passed, test_count = validate_test_resources(bblock,
+                                                                    registered_items_path=registered_items_path,
+                                                                    bblocks_register=bbr,
+                                                                    outputs_path=test_outputs_path)
+            bblock.metadata['validationPassed'] = validation_passed
+            if not validation_passed:
+                bblock.metadata['status'] = 'invalid'
+            if test_count and test_outputs_base_url:
+                bblock.metadata['testOutputs'] = f"{test_outputs_base_url}{bblock.subdirs}/"
 
-        print(f"  > Running transforms for {bblock.identifier}", file=sys.stderr)
-        apply_transforms(bblock, outputs_path=test_outputs_path)
+        if not light:
+            print(f"  > Running transforms for {bblock.identifier}", file=sys.stderr)
+            apply_transforms(bblock, outputs_path=test_outputs_path)
 
         if bblock.examples:
             for example in bblock.examples:
@@ -148,12 +149,30 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                     transform['ref'] = urljoin(bblock.metadata['sourceFiles'], transform['ref'])
                     bblock.metadata['transforms'].append({k: v for k, v in transform.items() if k != 'code'})
 
-        print(f"  > Generating documentation for {bblock.identifier}", file=sys.stderr)
-        doc_generator.generate_doc(bblock)
+        if not light:
+            print(f"  > Generating documentation for {bblock.identifier}", file=sys.stderr)
+            doc_generator.generate_doc(bblock)
         return True
 
     if not isinstance(registered_items_path, Path):
         registered_items_path = Path(registered_items_path)
+
+    filter_id = None
+    if filter:
+        filter_id = False
+        filter_p = Path(filter)
+        if filter_p.exists():
+            # Find closest bblocks.json
+            for p in itertools.chain((filter_p,), filter_p.parents):
+                p = p.resolve()
+                for bb in bbr.bblocks.values():
+                    if p in (bb.files_path, bb.tests_dir.resolve(), bb.annotated_path.resolve()):
+                        filter_id = bb.identifier
+                        break
+                if filter_id:
+                    break
+        else:
+            filter_id = filter
 
     if transformers.transform_modules:
         print("Available transformers:", file=sys.stderr)
@@ -163,11 +182,11 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         print("No transformers found", file=sys.stderr)
 
     for building_block in bbr.bblocks.values():
-        if filter_ids and building_block.identifier not in filter_ids:
-            continue
         if building_block.super_bblock:
             super_bblocks[building_block.files_path] = building_block
-        else:
+            continue
+
+        if filter_id is None or building_block.identifier == filter_id:
             # Annotate schema
             print(f"Annotating schema for {building_block.identifier}", file=sys.stderr)
 
@@ -194,11 +213,13 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                     raise
                 traceback.print_exception(e, file=sys.stderr)
 
-            child_bblocks.append(building_block)
+        child_bblocks.append(building_block)
 
     print(f"Writing JSON-LD contexts", file=sys.stderr)
     # Create JSON-lD contexts
     for building_block in child_bblocks:
+        if filter_id is not None and building_block.identifier != filter_id:
+            continue
         if building_block.annotated_schema.is_file():
             try:
                 written_context = write_jsonld_context(building_block.annotated_schema)
@@ -222,8 +243,10 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
     output_bblocks = []
     for building_block in itertools.chain(child_bblocks, super_bblocks.values()):
-        print(f"Postprocessing building block {building_block.identifier}", file=sys.stderr)
-        if do_postprocess(building_block):
+        light = filter_id is not None and building_block.identifier != filter_id
+        lightmsg = ' (light)' if light else ''
+        print(f"Postprocessing building block {building_block.identifier}{lightmsg}", file=sys.stderr)
+        if do_postprocess(building_block, light=light):
             output_bblocks.append(building_block.metadata)
         else:
             print(f"{building_block.identifier} failed postprocessing, skipping...", file=sys.stderr)
@@ -256,13 +279,6 @@ def _main():
         '-u',
         '--base-url',
         help='Base URL for hyperlink generation',
-    )
-
-    parser.add_argument(
-        '-i',
-        '--filter-id',
-        nargs='+',
-        help='Only process building blocks matching these ids',
     )
 
     parser.add_argument(
@@ -308,7 +324,6 @@ def _main():
 
     postprocess(args.registered_items,
                 output_file=None if args.no_output else args.output_register,
-                filter_ids=args.filter_id,
                 base_url=args.base_url,
                 templates_dir=args.templates_dir,
                 fail_on_error=args.fail_on_error,

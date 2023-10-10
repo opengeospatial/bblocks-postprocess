@@ -85,6 +85,11 @@ if __name__ == '__main__':
         help='Base URL for linking to GitHub content',
     )
 
+    parser.add_argument(
+        '--filter',
+        help='Filter by building block id or file. Sets --clean to false'
+    )
+
     args = parser.parse_args()
 
     fail_on_error = args.fail_on_error in ('true', 'on', 'yes')
@@ -103,6 +108,7 @@ if __name__ == '__main__':
 - config_file: {bb_config_file}
 - test_outputs_path: {args.test_outputs_path}
 - github_base_url: {args.github_base_url}
+- filter: {args.filter}
     """, file=sys.stderr)
 
     register_file = Path(args.register_file)
@@ -113,7 +119,7 @@ if __name__ == '__main__':
     items_dir = Path(args.items_dir)
 
     # Clean old output
-    if clean:
+    if clean and not args.filter:
         for old_file in register_file, register_jsonld_fn, register_ttl_fn:
             print(f"Deleting {old_file}", file=sys.stderr)
             old_file.unlink(missing_ok=True)
@@ -153,7 +159,8 @@ if __name__ == '__main__':
                 annotated_path=annotated_path,
                 test_outputs_path=args.test_outputs_path,
                 github_base_url=args.github_base_url,
-                imported_registers=imported_registers)
+                imported_registers=imported_registers,
+                filter=args.filter)
 
     # 2. Uplift register.json
     print(f"Running semantic uplift of {register_file}", file=sys.stderr)
