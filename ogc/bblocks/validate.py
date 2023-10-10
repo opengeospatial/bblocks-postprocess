@@ -299,6 +299,7 @@ def validate_test_resources(bblock: BuildingBlock,
             else:
                 shacl_files.append(shacl_file)
             shacl_graph.parse(shacl_file, format='turtle')
+        bblock.metadata['shaclRules'] = shacl_files
     except Exception as e:
         shacl_error = str(e)
 
