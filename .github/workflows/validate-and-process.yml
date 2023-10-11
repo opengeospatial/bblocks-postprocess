@@ -1,6 +1,50 @@
 name: Validate and process Building Blocks
 on:
   workflow_call:
+    inputs:
+      register_file:
+        type: string
+        description: JSON register file for output
+        default: build/register.json
+      items_dir:
+        type: string
+        description: Root directory where building blocks (subdirectories with bblock.json) are located
+        default: _sources
+      generated_docs_path:
+        type: string
+        description: Output directory for documentation
+        default: build/generateddocs
+      base_url:
+        type: string
+        description: Base URL to use for asset linkage
+        default: >-
+          ${{ github.event.repository.has_pages
+            && format('https://{0}.github.io/{1}', github.repository_owner, github.event.repository.name)
+            || format('https://raw.githubusercontent.com/{0}/{1}', github.repository, github.ref_name) }}
+      fail_on_error:
+        type: string
+        description: Whether to fail on errors
+        default: 'true'
+      annotated_path:
+        type: string
+        description: Output path for annotated schemas
+        default: build/annotated
+      clean:
+        type: string
+        description: Whether to delete all output files and directories before generating new ones
+        default: 'true'
+      config_file:
+        type: string
+        description: Building blocks submodule config file
+        default: 'bblocks-config.yaml'
+      test_outputs_path:
+        type: string
+        description: Directory for test output resources
+        default: build/tests
+      github_base_url:
+        type: string
+        description: Base URL for linking to GitHub content
+        default: https://github.com/${{github.repository}}/blob/${{github.ref_name}}/
 
 permissions:
   contents: write
@@ -25,7 +69,16 @@ jobs:
       - name: OGC BB postprocess
         uses: opengeospatial/bblocks-postprocess/full@v1
         with:
-          fail_on_error: 'true'
+          register_file: ${{ inputs.register_file }}
+          items_dir: ${{ inputs.items_dir }}
+          generated_docs_path: ${{ inputs.generated_docs_path }}
+          base_url: ${{ inputs.base_url }}
+          fail_on_error: ${{ inputs.fail_on_error }}
+          annotated_path: ${{ inputs.annotated_path }}
+          clean: ${{ inputs.clean }}
+          config_file: ${{ inputs.config_file }}
+          test_outputs_path: ${{ inputs.test_outputs_path }}
+          github_base_url: ${{ inputs.github_base_url }}
       - name: Add & Commit
         if: ${{ !endsWith(github.repository, '/bblock-template') }}
         uses: EndBug/add-and-commit@v9
@@ -37,7 +90,7 @@ jobs:
         run: |
           import json
           
-          with open('build/register.json') as f:
+          with open('${{ inputs.register_file }}') as f:
             bblocks = json.load(f)
             if isinstance(bblocks, dict):
               bblocks = bblocks.get('bblocks', ())
