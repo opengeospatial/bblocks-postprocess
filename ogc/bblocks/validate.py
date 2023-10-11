@@ -11,7 +11,7 @@ from json import JSONDecodeError
 from pathlib import Path
 from time import time
 from typing import Any, Sequence
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urljoin
 from urllib.request import urlopen
 from datetime import datetime, timezone
 
@@ -55,7 +55,7 @@ class ValidationReportSection(Enum):
 @dataclasses.dataclass
 class ValidationItemSource:
     type: ValidationItemSourceType
-    filename: str | Path | None = None
+    filename: Path | None = None
     example_index: int | None = None
     snippet_index: int | None = None
     language: str | None = None
@@ -123,7 +123,10 @@ class ValidationReportItem:
         return self._uplifted_files
 
 
-def _report_to_json(bblock: BuildingBlock, items: Sequence[ValidationReportItem], report_fn: Path | None) -> str | None:
+def _report_to_json(bblock: BuildingBlock,
+                    items: Sequence[ValidationReportItem],
+                    report_fn: Path | None,
+                    base_url: str | None = None) -> str | None:
     result = {
         'title': f"Validation report for {bblock.identifier} - {bblock.name}",
         'bblockId': bblock.identifier,
@@ -132,6 +135,7 @@ def _report_to_json(bblock: BuildingBlock, items: Sequence[ValidationReportItem]
     }
 
     global_errors = {}
+    cwd = Path().resolve()
 
     for item in items:
         source = {
@@ -139,7 +143,9 @@ def _report_to_json(bblock: BuildingBlock, items: Sequence[ValidationReportItem]
             'require_fail': item.source.require_fail,
         }
         if item.source.filename:
-            source['filename'] = str(item.source.filename)
+            source['filename'] = str(os.path.relpath(item.source.filename, cwd))
+            if base_url:
+                source['filename'] = urljoin(base_url, source['filename'])
         if item.source.example_index:
             source['exampleIndex'] = item.source.example_index
             if item.source.snippet_index:
@@ -154,8 +160,20 @@ def _report_to_json(bblock: BuildingBlock, items: Sequence[ValidationReportItem]
                 entry_dict = {}
                 if entry.payload:
                     for k, v in entry.payload.items():
-                        entry_dict[k] = str(k) if isinstance(k, Path) else k
-                    entry_dict.update(entry.payload)
+                        if isinstance(v, Path):
+                            v = str(os.path.relpath(v.resolve(), cwd))
+                            if base_url:
+                                v = urljoin(base_url, v)
+                        elif k == 'files' and isinstance(v, list):
+                            fv = []
+                            for f in v:
+                                if isinstance(f, Path):
+                                    f = str(os.path.relpath(f.resolve(), cwd))
+                                if base_url:
+                                    f = urljoin(base_url, f)
+                                fv.append(f)
+                            v = fv
+                        entry_dict[k] = v
                 entry_dict['is_error'] = entry.is_error
                 entry_dict['message'] = entry.message
                 if not entry.is_global:
@@ -542,9 +560,9 @@ def _validate_resource(bblock: BuildingBlock,
 
 
 def validate_test_resources(bblock: BuildingBlock,
-                            registered_items_path: Path,
                             bblocks_register: BuildingBlockRegister,
-                            outputs_path: str | Path | None = None) -> tuple[bool, int]:
+                            outputs_path: str | Path | None = None,
+                            base_url: str | None = None) -> tuple[bool, int]:
     final_result = True
     test_count = 0
 
@@ -553,6 +571,7 @@ def validate_test_resources(bblock: BuildingBlock,
 
     shacl_graph = Graph()
     shacl_error = None
+    cwd = Path().resolve()
 
     shacl_files = []
     try:
@@ -560,7 +579,7 @@ def validate_test_resources(bblock: BuildingBlock,
             if isinstance(shacl_file, Path) or (isinstance(shacl_file, str) and not is_url(shacl_file)):
                 # assume file
                 shacl_file = bblock.files_path / shacl_file
-                shacl_files.append(os.path.relpath(shacl_file, registered_items_path))
+                shacl_files.append(os.path.relpath(shacl_file))
             else:
                 shacl_files.append(shacl_file)
             shacl_graph.parse(shacl_file, format='turtle')
@@ -694,7 +713,7 @@ def validate_test_resources(bblock: BuildingBlock,
                     })
 
     if all_results:
-        _report_to_json(bblock, all_results, output_dir / '_report.json')
+        _report_to_json(bblock, all_results, output_dir / '_report.json', base_url)
 
     return final_result, test_count
 

@@ -34,7 +34,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 test_outputs_path: str | Path = 'build/tests',
                 github_base_url: str | None = None,
                 imported_registers: list[str] | None = None,
-                filter: str | None = None) -> list[BuildingBlock]:
+                bb_filter: str | None = None) -> list[BuildingBlock]:
 
     cwd = Path().resolve()
 
@@ -120,9 +120,9 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         if not light:
             print(f"  > Running tests for {bblock.identifier}", file=sys.stderr)
             validation_passed, test_count = validate_test_resources(bblock,
-                                                                    registered_items_path=registered_items_path,
                                                                     bblocks_register=bbr,
-                                                                    outputs_path=test_outputs_path)
+                                                                    outputs_path=test_outputs_path,
+                                                                    base_url=base_url)
             bblock.metadata['validationPassed'] = validation_passed
             if not validation_passed:
                 bblock.metadata['status'] = 'invalid'
@@ -158,9 +158,9 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         registered_items_path = Path(registered_items_path)
 
     filter_id = None
-    if filter:
+    if bb_filter:
         filter_id = False
-        filter_p = Path(filter)
+        filter_p = Path(bb_filter)
         if filter_p.exists():
             # Find closest bblocks.json
             for p in itertools.chain((filter_p,), filter_p.parents):
@@ -172,7 +172,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 if filter_id:
                     break
         else:
-            filter_id = filter
+            filter_id = bb_filter
 
     if transformers.transform_modules:
         print("Available transformers:", file=sys.stderr)

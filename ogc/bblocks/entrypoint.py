@@ -160,7 +160,7 @@ if __name__ == '__main__':
                 test_outputs_path=args.test_outputs_path,
                 github_base_url=args.github_base_url,
                 imported_registers=imported_registers,
-                filter=args.filter)
+                bb_filter=args.filter)
 
     # 2. Uplift register.json
     print(f"Running semantic uplift of {register_file}", file=sys.stderr)
