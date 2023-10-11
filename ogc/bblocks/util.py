@@ -491,7 +491,7 @@ def annotate_schema(bblock: BuildingBlock,
             inserted_schema = original_schema
         else:
             bb_path = re.split(r'\.(?=(?:[^"]*"[^"]*")*[^"]*$)',
-                               re.sub(r'^[\.\$]', '', bb_path.strip()))
+                               re.sub(r'^[.$]', '', bb_path.strip()))
             inserted_schema = {}
             inner_schema = inserted_schema
             for p in bb_path:
@@ -558,9 +558,20 @@ def resolve_schema_reference(ref: str,
 
     ref = schema.pop(BBLOCKS_REF_ANNOTATION, ref)
 
+    if not is_url(ref):
+        # Update local $ref if not to another bblock schema
+        original = from_bblock.files_path / ref
+        if (original.stem != 'schema' or original.prefix not in ('.json', '.yaml')
+                or not original.parent.joinpath('bblock.json').is_file()):
+            # $ref is to non-bblock canonical schema.json/schema.yaml -> update
+            ref = os.path.relpath(original, from_bblock.annotated_path)
+            print("updated >>", ref)
+        return ref
+
     if not ref.startswith('bblocks://'):
         return ref
 
+    # Process bblocks:// URIs
     target_id = ref[len('bblocks://'):]
     fragment = ''
     if '#' in target_id:
