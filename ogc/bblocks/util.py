@@ -85,9 +85,13 @@ class BuildingBlock:
         fp = metadata_file.parent
         self.files_path = fp
 
-        schema = fp / 'schema.yaml'
-        if not schema.is_file():
-            schema = fp / 'schema.json'
+        metadata_schema = self.metadata.get('schema')
+        if metadata_schema and not is_url(metadata_schema):
+            schema = self.files_path.joinpath(metadata_schema).resolve()
+        else:
+            schema = fp / 'schema.yaml'
+            if not schema.is_file():
+                schema = fp / 'schema.json'
         self.schema = schema
 
         ap = fp / 'assets'
@@ -284,7 +288,7 @@ class BuildingBlockRegister:
                     elif ref in self.imported_bblock_schemas:
                         deps.add(self.imported_bblock_schemas[ref])
                     else:
-                        ref_parent_path = bblock.files_path.joinpath(ref).resolve().parent
+                        ref_parent_path = bblock.schema.parent.joinpath(ref).resolve().parent
                         ref_bblock = self.bblock_paths.get(ref_parent_path)
                         if ref_bblock:
                             deps.add(ref_bblock.identifier)
@@ -462,7 +466,7 @@ def annotate_schema(bblock: BuildingBlock,
         if is_url(ref_schema, http_only=True):
             schema_url = ref_schema
         else:
-            schema_fn = ref_schema
+            schema_fn = bblock.files_path.joinpath(ref_schema).resolve()
     elif bblock.schema.is_file():
         schema_fn = bblock.schema
 
@@ -558,14 +562,16 @@ def resolve_schema_reference(ref: str,
 
     ref = schema.pop(BBLOCKS_REF_ANNOTATION, ref)
 
-    if not is_url(ref):
+    if (from_bblock.schema.is_file() or from_bblock.metadata.get('schema')) and not is_url(ref):
         # Update local $ref if not to another bblock schema
-        original = from_bblock.files_path / ref
+        if from_bblock.schema.is_file():
+            original = from_bblock.schema.parent / ref
+        else:
+            original = from_bblock.files_path / ref
         if (original.stem != 'schema' or original.prefix not in ('.json', '.yaml')
                 or not original.parent.joinpath('bblock.json').is_file()):
             # $ref is to non-bblock canonical schema.json/schema.yaml -> update
             ref = os.path.relpath(original, from_bblock.annotated_path)
-            print("updated >>", ref)
         return ref
 
     if not ref.startswith('bblocks://'):
