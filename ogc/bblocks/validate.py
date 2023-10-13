@@ -223,6 +223,7 @@ def _validate_resource(bblock: BuildingBlock,
             type=ValidationItemSourceType.TEST_RESOURCE,
             filename=filename,
             language=filename.suffix[1:],
+            require_fail=filename.stem.endswith('-fail'),
         )
     report = ValidationReportItem(source)
 
