@@ -123,12 +123,13 @@ class ValidationReportItem:
         return self._uplifted_files
 
 
-def _report_to_json(bblock: BuildingBlock,
-                    items: Sequence[ValidationReportItem],
-                    report_fn: Path | None,
-                    base_url: str | None = None) -> str | None:
+def report_to_dict(bblock: BuildingBlock,
+                   items: Sequence[ValidationReportItem],
+                   report_fn: Path | None = None,
+                   base_url: str | None = None) -> dict:
     result = {
         'title': f"Validation report for {bblock.identifier} - {bblock.name}",
+        'bblockName': bblock.name,
         'bblockId': bblock.identifier,
         'generated': datetime.now(timezone.utc).astimezone().isoformat(),
         'items': [],
@@ -140,7 +141,7 @@ def _report_to_json(bblock: BuildingBlock,
     for item in items:
         source = {
             'type': item.source.type.name,
-            'require_fail': item.source.require_fail,
+            'requireFail': item.source.require_fail,
         }
         if item.source.filename:
             source['filename'] = str(os.path.relpath(item.source.filename, cwd))
@@ -188,11 +189,7 @@ def _report_to_json(bblock: BuildingBlock,
         result['items'].append(res_item)
         result['globalErrors'] = global_errors
 
-    if report_fn:
-        with open(report_fn, 'w') as f:
-            json.dump(result, f, indent=2)
-    else:
-        return json.dumps(result, indent=2)
+    return result
 
 
 def _validate_resource(bblock: BuildingBlock,
@@ -713,7 +710,9 @@ def validate_test_resources(bblock: BuildingBlock,
                     })
 
     if all_results:
-        _report_to_json(bblock, all_results, output_dir / '_report.json', base_url)
+        json_report = report_to_dict(bblock=bblock, items=all_results, base_url=base_url)
+        with open(output_dir / '_report.json', 'w') as f:
+            json.dump(json_report, f, indent=2)
 
     return final_result, test_count
 
