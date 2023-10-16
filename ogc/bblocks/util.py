@@ -566,16 +566,21 @@ def resolve_schema_reference(ref: str,
     ref = schema.pop(BBLOCKS_REF_ANNOTATION, ref)
 
     if ref[0] != '#' and (from_bblock.schema.is_file() or from_bblock.metadata.get('schema')) and not is_url(ref):
+        if '#' in ref:
+            ref, fragment = ref.split('#', 1)
+        else:
+            fragment = ''
         # Update local $ref if not to another bblock schema
         if from_bblock.schema.is_file():
             original = from_bblock.schema.parent / ref
         else:
             original = from_bblock.files_path / ref
+        original = original.resolve()
         if (original.stem != 'schema' or original.suffix not in ('.json', '.yaml')
                 or not original.parent.joinpath('bblock.json').is_file()):
             # $ref is to non-bblock canonical schema.json/schema.yaml -> update
-            ref = os.path.relpath(original, from_bblock.annotated_path)
-        return ref
+            ref = os.path.relpath(str(original).split('#', 1)[0], from_bblock.annotated_path)
+        return ref if not fragment else f"{ref}#{fragment}"
 
     if not ref.startswith('bblocks://'):
         return ref
