@@ -40,6 +40,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
     if not isinstance(test_outputs_path, Path):
         test_outputs_path = Path(test_outputs_path)
+    test_outputs_path.mkdir(parents=True, exist_ok=True)
 
     if base_url and base_url[-1] != '/':
         base_url += '/'

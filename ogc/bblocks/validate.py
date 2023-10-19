@@ -213,12 +213,13 @@ def report_to_dict(bblock: BuildingBlock,
                 'sections': sections,
             }
             result['items'].append(res_item)
-            result['globalErrors'] = global_errors
-        result['counts'] = {
-            'total': len(result['items']),
-            'passed': len(result['items']) - failed_count,
-            'failed': failed_count,
-        }
+
+    result['globalErrors'] = global_errors
+    result['counts'] = {
+        'total': len(result['items']),
+        'passed': len(result['items']) - failed_count,
+        'failed': failed_count,
+    }
 
     return result
 
