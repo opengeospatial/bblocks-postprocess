@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import logging
 import os
 import random
 import re
 import shutil
 from enum import Enum
+from io import StringIO
 from json import JSONDecodeError
 from pathlib import Path
 from time import time
@@ -35,6 +37,18 @@ FORMAT_ALIASES = {
     'json-ld': 'jsonld',
 }
 DEFAULT_UPLIFT_FORMATS = ['jsonld', 'ttl']
+
+
+class CaptureLogHandler(logging.StreamHandler):
+
+    def __init__(self):
+        logging.StreamHandler.__init__(self, StringIO())
+
+    def clear(self):
+        self.stream = StringIO()
+
+    def getvalue(self):
+        return self.stream.getvalue()
 
 
 class ValidationItemSourceType(Enum):
@@ -121,6 +135,11 @@ class ValidationReportItem:
     @property
     def uplifted_files(self) -> dict[str, tuple[Path, str]]:
         return self._uplifted_files
+
+
+capture_log_handler = CaptureLogHandler()
+capture_log_handler.setLevel(logging.WARN)
+rdflib_logger = logging.getLogger('rdflib')
 
 
 def report_to_dict(bblock: BuildingBlock,
@@ -302,7 +321,24 @@ def _validate_resource(bblock: BuildingBlock,
                             '@context': new_context,
                             '@graph': json_doc,
                         }
-                    graph = Graph().parse(data=json.dumps(jsonld_uplifted), format='json-ld', base=base_uri)
+
+                    try:
+                        capture_log_handler.clear()
+                        rdflib_logger.addHandler(capture_log_handler)
+                        graph = Graph().parse(data=json.dumps(jsonld_uplifted), format='json-ld', base=base_uri)
+                    finally:
+                        rdflib_logger.removeHandler(capture_log_handler)
+
+                    if capture_log_handler.getvalue():
+                        report.add_entry(ValidationReportEntry(
+                            section=ValidationReportSection.JSON_LD,
+                            is_error=True,
+                            message=f'Error found when uplifting JSON-LD: {capture_log_handler.getvalue()}',
+                            payload={
+                                'op': 'jsonld-uplift-error',
+                                'contents': capture_log_handler.getvalue(),
+                            }
+                        ))
 
                     if jsonld_url:
                         if isinstance(jsonld_uplifted['@context'], list):
