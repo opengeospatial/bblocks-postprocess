@@ -18,6 +18,7 @@ from urllib.request import urlopen
 from datetime import datetime, timezone
 
 import jsonschema
+from mako import exceptions as mako_exceptions, template as mako_template
 import requests
 from jsonschema.validators import validator_for
 from ogc.na.util import load_yaml, is_url
@@ -143,72 +144,105 @@ rdflib_logger = logging.getLogger('rdflib')
 
 
 def report_to_dict(bblock: BuildingBlock,
-                   items: Sequence[ValidationReportItem],
-                   report_fn: Path | None = None,
+                   items: Sequence[ValidationReportItem] | None,
                    base_url: str | None = None) -> dict:
     result = {
         'title': f"Validation report for {bblock.identifier} - {bblock.name}",
         'bblockName': bblock.name,
         'bblockId': bblock.identifier,
         'generated': datetime.now(timezone.utc).astimezone().isoformat(),
+        'result': True,
         'items': [],
     }
 
     global_errors = {}
     cwd = Path().resolve()
 
-    for item in items:
-        source = {
-            'type': item.source.type.name,
-            'requireFail': item.source.require_fail,
-        }
-        if item.source.filename:
-            source['filename'] = str(os.path.relpath(item.source.filename, cwd))
-            if base_url:
-                source['filename'] = urljoin(base_url, source['filename'])
-        if item.source.example_index:
-            source['exampleIndex'] = item.source.example_index
-            if item.source.snippet_index:
-                source['snippetIndex'] = item.source.snippet_index
-        if item.source.language:
-            source['language'] = item.source.language
+    failed_count = 0
+    if items:
+        for item in items:
+            source = {
+                'type': item.source.type.name,
+                'requireFail': item.source.require_fail,
+            }
+            if item.failed:
+                result['result'] = False
+                failed_count += 1
+            if item.source.filename:
+                source['filename'] = str(os.path.relpath(item.source.filename, cwd))
+                if base_url:
+                    source['filename'] = urljoin(base_url, source['filename'])
+            if item.source.example_index:
+                source['exampleIndex'] = item.source.example_index
+                if item.source.snippet_index:
+                    source['snippetIndex'] = item.source.snippet_index
+            if item.source.language:
+                source['language'] = item.source.language
 
-        sections = {}
-        for section, entries in item.sections.items():
-            sections[section.name] = []
-            for entry in entries:
-                entry_dict = {}
-                if entry.payload:
-                    for k, v in entry.payload.items():
-                        if isinstance(v, Path):
-                            v = str(os.path.relpath(v.resolve(), cwd))
-                            if base_url:
-                                v = urljoin(base_url, v)
-                        elif k == 'files' and isinstance(v, list):
-                            fv = []
-                            for f in v:
-                                if isinstance(f, Path):
-                                    f = str(os.path.relpath(f.resolve(), cwd))
+            sections = {}
+            for section, entries in item.sections.items():
+                sections[section.name] = []
+                for entry in entries:
+                    entry_dict = {}
+                    if entry.payload:
+                        for k, v in entry.payload.items():
+                            if isinstance(v, Path):
+                                v = str(os.path.relpath(v.resolve(), cwd))
                                 if base_url:
-                                    f = urljoin(base_url, f)
-                                fv.append(f)
-                            v = fv
-                        entry_dict[k] = v
-                entry_dict['is_error'] = entry.is_error
-                entry_dict['message'] = entry.message
-                if not entry.is_global:
-                    sections[section.name].append(entry_dict)
-                elif entry.is_error:
-                    global_errors.setdefault(section.name, entry_dict)
+                                    v = urljoin(base_url, v)
+                            elif k == 'files' and isinstance(v, list):
+                                fv = []
+                                for f in v:
+                                    if isinstance(f, Path):
+                                        f = str(os.path.relpath(f.resolve(), cwd))
+                                    if base_url:
+                                        f = urljoin(base_url, f)
+                                    fv.append(f)
+                                v = fv
+                            entry_dict[k] = v
+                    entry_dict['isError'] = entry.is_error
+                    entry_dict['message'] = entry.message
+                    if not entry.is_global:
+                        sections[section.name].append(entry_dict)
+                    elif entry.is_error:
+                        global_errors.setdefault(section.name, entry_dict)
 
-        res_item = {
-            'source': source,
-            'sections': sections,
+            res_item = {
+                'source': source,
+                'result': not item.failed,
+                'sections': sections,
+            }
+            result['items'].append(res_item)
+            result['globalErrors'] = global_errors
+        result['counts'] = {
+            'total': len(result['items']),
+            'passed': len(result['items']) - failed_count,
+            'failed': failed_count,
         }
-        result['items'].append(res_item)
-        result['globalErrors'] = global_errors
 
     return result
+
+
+def report_to_html(json_reports: list[dict],
+                   report_fn: Path | None = None) -> str | None:
+
+    pass_count = sum(r['result'] for r in json_reports)
+    counts = {
+        'total': len(json_reports),
+        'passed': pass_count,
+        'failed': len(json_reports) - pass_count,
+    }
+    template = mako_template.Template(filename=str(Path(__file__).parent / 'validation/report.html.mako'))
+    try:
+        result = template.render(reports=json_reports, counts=counts)
+    except:
+        raise ValueError(mako_exceptions.text_error_template().render())
+
+    if report_fn:
+        with open(report_fn, 'w') as f:
+            f.write(result)
+    else:
+        return result
 
 
 def _validate_resource(bblock: BuildingBlock,
@@ -595,17 +629,16 @@ def _validate_resource(bblock: BuildingBlock,
 
 def validate_test_resources(bblock: BuildingBlock,
                             bblocks_register: BuildingBlockRegister,
-                            outputs_path: str | Path | None = None,
-                            base_url: str | None = None) -> tuple[bool, int]:
+                            outputs_path: Path | None = None,
+                            base_url: str | None = None) -> tuple[bool, int, dict]:
     final_result = True
     test_count = 0
 
     if not bblock.tests_dir.is_dir() and not bblock.examples:
-        return final_result, test_count
+        return final_result, test_count, report_to_dict(bblock, None, base_url)
 
     shacl_graph = Graph()
     shacl_error = None
-    cwd = Path().resolve()
 
     shacl_files = []
     try:
@@ -638,7 +671,7 @@ def validate_test_resources(bblock: BuildingBlock,
         json_error = f"{type(e).__name__}: {e}"
 
     if outputs_path:
-        output_dir = Path(outputs_path) / bblock.subdirs
+        output_dir = outputs_path / bblock.subdirs
     else:
         output_dir = bblock.tests_dir.resolve() / OUTPUT_SUBDIR
     shutil.rmtree(output_dir, ignore_errors=True)
@@ -746,12 +779,11 @@ def validate_test_resources(bblock: BuildingBlock,
                         'path': fn,
                     })
 
-    if all_results:
-        json_report = report_to_dict(bblock=bblock, items=all_results, base_url=base_url)
-        with open(output_dir / '_report.json', 'w') as f:
-            json.dump(json_report, f, indent=2)
+    json_report = report_to_dict(bblock=bblock, items=all_results, base_url=base_url)
+    with open(output_dir / '_report.json', 'w') as f:
+        json.dump(json_report, f, indent=2)
 
-    return final_result, test_count
+    return final_result, test_count, json_report
 
 
 class RefResolver(jsonschema.validators.RefResolver):

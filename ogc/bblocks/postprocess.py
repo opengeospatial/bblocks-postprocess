@@ -17,7 +17,7 @@ from ogc.na.util import is_url
 from ogc.bblocks.generate_docs import DocGenerator
 from ogc.bblocks.util import write_superbblocks_schemas, annotate_schema, BuildingBlock, \
     write_jsonld_context, BuildingBlockRegister, ImportedBuildingBlocks
-from ogc.bblocks.validate import validate_test_resources
+from ogc.bblocks.validate import validate_test_resources, report_to_html
 from ogc.bblocks.transform import apply_transforms, transformers
 
 ANNOTATED_ITEM_CLASSES = ('schema', 'datatype')
@@ -37,6 +37,9 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 bb_filter: str | None = None) -> list[BuildingBlock]:
 
     cwd = Path().resolve()
+
+    if not isinstance(test_outputs_path, Path):
+        test_outputs_path = Path(test_outputs_path)
 
     if base_url and base_url[-1] != '/':
         base_url += '/'
@@ -63,6 +66,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                                 prefix=id_prefix,
                                 annotated_path=annotated_path,
                                 imported_bblocks=imported_bblocks)
+
+    validation_reports = []
 
     def do_postprocess(bblock: BuildingBlock, light: bool = False) -> bool:
 
@@ -119,10 +124,13 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
         if not light:
             print(f"  > Running tests for {bblock.identifier}", file=sys.stderr)
-            validation_passed, test_count = validate_test_resources(bblock,
-                                                                    bblocks_register=bbr,
-                                                                    outputs_path=test_outputs_path,
-                                                                    base_url=base_url)
+            validation_passed, test_count, json_report = validate_test_resources(
+                bblock,
+                bblocks_register=bbr,
+                outputs_path=test_outputs_path,
+                base_url=base_url)
+            validation_reports.append(json_report)
+
             bblock.metadata['validationPassed'] = validation_passed
             if not validation_passed:
                 bblock.metadata['status'] = 'invalid'
@@ -250,6 +258,9 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             output_bblocks.append(building_block.metadata)
         else:
             print(f"{building_block.identifier} failed postprocessing, skipping...", file=sys.stderr)
+
+    print(f"Writing full validation report to {test_outputs_path / 'report.html'}", file=sys.stderr)
+    report_to_html(json_reports=validation_reports, report_fn=test_outputs_path / 'report.html')
 
     if output_file:
         output_register_json = {
