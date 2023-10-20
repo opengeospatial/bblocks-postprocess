@@ -120,7 +120,7 @@ class ValidationReportItem:
                     if entry.is_error:
                         f.write("\n** Validation error **\n")
                     f.write(f"{entry.message}\n")
-                f.write(f"=== End {section} ===\n\n")
+                f.write(f"=== End {section.value} ===\n\n")
 
     @property
     def failed(self) -> bool:
