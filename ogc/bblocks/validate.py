@@ -13,6 +13,7 @@ from json import JSONDecodeError
 from pathlib import Path
 from time import time
 from typing import Any, Sequence
+from urllib.error import HTTPError
 from urllib.parse import urlsplit, urljoin
 from urllib.request import urlopen
 from datetime import datetime, timezone
@@ -652,6 +653,8 @@ def validate_test_resources(bblock: BuildingBlock,
                 shacl_files.append(shacl_file)
             shacl_graph.parse(shacl_file, format='turtle')
         bblock.metadata['shaclRules'] = shacl_files
+    except HTTPError as e:
+        shacl_error = f"Error retrieving {e.url}: {e}"
     except Exception as e:
         shacl_error = str(e)
 

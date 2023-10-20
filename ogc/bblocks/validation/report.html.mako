@@ -68,6 +68,23 @@ get_filename = lambda s: basename(urlparse(s).path)
                                         Test passed: ${report['counts']['passed']} / ${report['counts']['total']}
                                     </p>
                                 % endif
+                                % if report.get('globalErrors'):
+                                    <div class="card mb-2 global-validation-item validation-item">
+                                        <div class="card-body">
+                                            <div class="card-title">
+                                                Building block global validation errors
+                                                <div class="float-end">
+                                                    <span class="badge text-bg-danger me-2">Failed</span>
+                                                </div>
+                                            </div>
+                                            <div class="card-text text-danger">
+                                                % for subsection_title, section in report['globalErrors'].items():
+                                                    <div class="font-monospace entry-message section-${e(subsection_title.lower())}">${e(section['message'])}</div>
+                                                % endfor
+                                            </div>
+                                        </div>
+                                    </div>
+                                % endif
                                 % for item in report['items']:
                                     <div class="card mb-2 validation-item ${'require-fail' if item['source']['requireFail'] else ''}">
                                         <div class="card-body">
@@ -85,13 +102,13 @@ get_filename = lambda s: basename(urlparse(s).path)
                                                     % endif
                                                 </div>
                                             </div>
-                                            <p class="card-text">
+                                            <div class="card-text">
                                                 % for subsection_title, section in item['sections'].items():
                                                     % for entry in section:
                                                         <div class="font-monospace entry-message section-${e(subsection_title.lower())} ${'text-danger' if entry['isError'] else ''}">${e(entry['message'])}</div>
                                                     % endfor
                                                 % endfor
-                                            </p>
+                                            </div>
                                         </div>
                                     </div>
                                 % endfor
