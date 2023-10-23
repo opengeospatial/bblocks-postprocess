@@ -42,7 +42,7 @@ get_filename = lambda s: basename(urlparse(s).path)
                     % for i, report in enumerate(reports):
                         <div class="accordion-item bblock-report" data-bblock-id="${e(report['bblockId'])}" id="bblock-${i}">
                             <h2 class="accordion-header bblock-title">
-                                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#bblock-collapse-${i}">
+                                <button class="accordion-button ${'collapsed' if report['result'] else ''}" type="button" data-bs-toggle="collapse" data-bs-target="#bblock-collapse-${i}">
                                     <div class="flex-fill">
                                         ${e(report['bblockName'])}
                                         <small class="ms-2 bblock-id">${e(report['bblockId'])}</small>
