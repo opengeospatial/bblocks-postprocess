@@ -110,7 +110,7 @@ jobs:
                 f.write(f'<li class="validation-{validation}"><a href="{link}"><tt>{identifier}</tt> - {name}</a></li>')
               else:
                 f.write(f'<li class="validation-{validation}"><tt>{identifier}</tt> - {name}</li>')
-            f.write('</ul></body></html>')
+            f.write('</ul><p style="margin-top:1em"><a href="${{ inputs.test_outputs_path }}/report.html">Validation report</a></p></body></html>')
       - name: Setup Pages
         if: ${{ github.event.repository.has_pages }}
         uses: actions/configure-pages@v3
