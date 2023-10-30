@@ -160,6 +160,13 @@ properties:
     type: array
     items:
       type: string
+  shaclClosures:
+    description: |
+      List of RDF files or URLs that will be used as SHACL closures for RDF validation. They will be merged with
+      the SHACL closures for every snippet, if any.
+    type: array
+    items:
+      type: string
   extends:
     description: |
       Used to declare that the schema for this Building Block extends another one. The schemas will be joined

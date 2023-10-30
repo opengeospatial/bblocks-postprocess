@@ -175,6 +175,13 @@ class BuildingBlock:
             self._lazy_properties['jsonld_context_contents'] = load_file(self.jsonld_context)
         return self._lazy_properties['jsonld_context_contents']
 
+    def resolve_file(self, fn_or_url):
+        if isinstance(fn_or_url, Path) or (isinstance(fn_or_url, str) and not is_url(fn_or_url)):
+            # assume file
+            return self.files_path / fn_or_url
+        else:
+            return fn_or_url
+
 
 class ImportedBuildingBlocks:
 

@@ -75,7 +75,8 @@ items:
               - type: 'null'
           shacl-closure:
             description: |
-              List of Turtle documents (file names or URLs) that will be used as the SHACL closure graph.
+              List of Turtle documents (file names or URLs) that will be used as the SHACL closure graph. This list
+              will be merged with the one defined inside `bblock.json`, if any.
             type: array
             items:
               type: string

@@ -22,7 +22,7 @@ import jsonschema
 from mako import exceptions as mako_exceptions, template as mako_template
 import requests
 from jsonschema.validators import validator_for
-from ogc.na.util import load_yaml, is_url
+from ogc.na.util import load_yaml, is_url, copy_triples
 from pyparsing import ParseBaseException
 from rdflib import Graph
 from rdflib.term import Node, URIRef, BNode
@@ -261,7 +261,8 @@ def _validate_resource(bblock: BuildingBlock,
                        base_uri: str | None = None,
                        shacl_files: list[Path | str] | None = None,
                        schema_ref: str | None = None,
-                       shacl_closure: list[str | Path] | None = None) -> ValidationReportItem:
+                       shacl_closure_files: list[str | Path] | None = None,
+                       shacl_closure: Graph | None = None) -> ValidationReportItem:
 
     require_fail = filename.stem.endswith('-fail')
     if resource_contents:
@@ -524,11 +525,12 @@ def _validate_resource(bblock: BuildingBlock,
                         }
                     ))
                 try:
-                    ont_graph = None
-                    if shacl_closure:
-                        ont_graph = Graph()
-                        for c in shacl_closure:
+                    ont_graph = Graph()
+                    if shacl_closure_files:
+                        for c in shacl_closure_files:
                             ont_graph.parse(c)
+                    if shacl_closure:
+                        copy_triples(shacl_closure, ont_graph)
                     shacl_conforms, shacl_result, shacl_report, focus_nodes = shacl_validate(
                         graph, shacl_graph, ont_graph=ont_graph)
 
@@ -640,6 +642,7 @@ def validate_test_resources(bblock: BuildingBlock,
         return final_result, test_count, report_to_dict(bblock, None, base_url)
 
     shacl_graph = Graph()
+    bblock_shacl_closure = Graph()
     shacl_error = None
 
     shacl_files = []
@@ -653,6 +656,9 @@ def validate_test_resources(bblock: BuildingBlock,
                 shacl_files.append(shacl_file)
             shacl_graph.parse(shacl_file, format='turtle')
         bblock.metadata['shaclRules'] = shacl_files
+
+        for sc in bblock.shaclClosures or ():
+            bblock_shacl_closure.parse(bblock.resolve_file(sc), format='turtle')
     except HTTPError as e:
         shacl_error = f"Error retrieving {e.url}: {e}"
     except Exception as e:
@@ -697,7 +703,8 @@ def validate_test_resources(bblock: BuildingBlock,
                 shacl_graph=shacl_graph,
                 json_error=json_error,
                 shacl_error=shacl_error,
-                shacl_files=shacl_files)
+                shacl_files=shacl_files,
+                shacl_closure=bblock_shacl_closure)
             all_results.append(test_result)
             final_result = not test_result.failed and final_result
             test_count += 1
@@ -747,10 +754,10 @@ def validate_test_resources(bblock: BuildingBlock,
 
                     snippet['path'] = output_fn
 
-                    shacl_closure: list[str | Path] = snippet.get('shacl-closure')
-                    if shacl_closure:
-                        shacl_closure = [c if is_url(c) else bblock.files_path.joinpath(c)
-                                         for c in shacl_closure]
+                    snippet_shacl_closure: list[str | Path] = snippet.get('shacl-closure')
+                    if snippet_shacl_closure:
+                        snippet_shacl_closure = [c if is_url(c) else bblock.files_path.joinpath(c)
+                                         for c in snippet_shacl_closure]
 
                     example_result = _validate_resource(
                         bblock, fn, output_fn,
@@ -765,7 +772,8 @@ def validate_test_resources(bblock: BuildingBlock,
                         base_uri=snippet.get('base-uri', example_base_uri),
                         shacl_files=shacl_files,
                         schema_ref=snippet.get('schema-ref'),
-                        shacl_closure=shacl_closure)
+                        shacl_closure_files=snippet_shacl_closure,
+                        shacl_closure=bblock_shacl_closure)
                     all_results.append(example_result)
                     final_result = final_result and not example_result.failed
                     for file_format, file_data in example_result.uplifted_files.items():
