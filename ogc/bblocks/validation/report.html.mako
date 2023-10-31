@@ -1,4 +1,4 @@
-<%
+<%!
 from html import escape as e
 from datetime import datetime, timezone
 from urllib.parse import urlparse, urljoin
@@ -8,6 +8,13 @@ from ogc.na.util import is_url
 import re
 import os.path
 
+uid = 0
+last_uid = None
+def get_uid():
+    global uid, last_uid
+    uid += 1
+    last_uid = f"uid-{globals()['uid']}"
+    return last_uid
 get_filename = lambda s: basename(urlparse(s).path)
 %>
 <!doctype html>
@@ -16,11 +23,21 @@ get_filename = lambda s: basename(urlparse(s).path)
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>Building Blocks validation report</title>
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous">
         <style>
             .entry-message {
                 white-space: pre-wrap;
-                font-size: 90%;
+                font-size: 80%;
+                line-height: 1.1;
+            }
+            *[data-bs-toggle] .caret {
+                display: inline-block;
+                transform: rotate(90deg);
+                transition: transform 0.25s;
+            }
+            *[data-bs-toggle].collapsed .caret {
+                transform: rotate(0deg);
             }
         </style>
     </head>
@@ -89,7 +106,14 @@ get_filename = lambda s: basename(urlparse(s).path)
                                     % for item in report['items']:
                                         <div class="card mb-2 validation-item ${'require-fail' if item['source']['requireFail'] else ''}">
                                             <div class="card-body">
-                                                <div class="card-title">
+                                                <div class="card-title mb-0">
+                                                    <button type="button" class="btn btn-sm btn-primary collapsed"
+                                                            data-bs-toggle="collapse" data-bs-target="#${get_uid()}"
+                                                            aria-expanded="false" aria-controls="${last_uid}"
+                                                            style="--bs-btn-padding-y: .25rem; --bs-btn-padding-x: .5rem; --bs-btn-font-size: .75rem;">
+                                                        <i class="bi bi-caret-right-fill caret"></i>
+                                                        Details
+                                                    </button>
                                                     <a href="${e(item['source']['filename'])}" target="_blank">${e(re.sub(r'.*/', '', item['source']['filename']))}</a>
                                                     <span class="badge bg-secondary ${e(item['source']['type'].lower())}">${e(item['source']['type'].replace('_', ' ').capitalize())}</span>
                                                     % if item['source']['requireFail']:
@@ -103,12 +127,14 @@ get_filename = lambda s: basename(urlparse(s).path)
                                                         % endif
                                                     </div>
                                                 </div>
-                                                <div class="card-text">
-                                                    % for subsection_title, section in item['sections'].items():
-                                                        % for entry in section:
-                                                            <div class="font-monospace entry-message section-${e(subsection_title.lower())} ${'text-danger' if entry['isError'] else ''}">${e(entry['message'])}</div>
+                                                <div class="card-text mt-2 validation-text collapse" id="${last_uid}">
+                                                    <div class="validation-text-inner">
+                                                        % for subsection_title, section in item['sections'].items():
+                                                            % for entry in section:
+                                                                <div class="font-monospace entry-message section-${e(subsection_title.lower())} ${'text-danger' if entry['isError'] else ''}">${e(entry['message'])}</div>
+                                                            % endfor
                                                         % endfor
-                                                    % endfor
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
@@ -129,7 +155,6 @@ get_filename = lambda s: basename(urlparse(s).path)
         <script type="text/javascript">
             window.addEventListener('load', () => {
                 const accordionEntries = [...document.querySelectorAll('#bblock-reports .accordion-collapse')];
-                console.log(accordionEntries);
                 document.querySelector('#expand-collapse').addEventListener('click', ev => {
                     ev.preventDefault();
                     if (ev.target.matches('.expand-all')) {
