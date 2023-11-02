@@ -215,7 +215,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             try:
                 for annotated in annotate_schema(building_block,
                                                  bblocks_register=bbr,
-                                                 context=default_jsonld_context):
+                                                 context=default_jsonld_context,
+                                                 base_url=base_url):
                     print(f"  - {annotated}", file=sys.stderr)
             except Exception as e:
                 if fail_on_error:

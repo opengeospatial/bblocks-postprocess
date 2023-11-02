@@ -40,7 +40,6 @@ if __name__ == '__main__':
 
     parser.add_argument(
         '--base-url',
-        default='http://www.example.com/my-building-blocks/',
         help='Base URL for hyperlink generation',
     )
 

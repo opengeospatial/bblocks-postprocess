@@ -10,6 +10,7 @@ from collections import deque
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Sequence, Callable, AnyStr
+from urllib.parse import urljoin
 
 import jsonschema
 import networkx as nx
@@ -464,7 +465,8 @@ def update_refs(schema: Any, updater: Callable[[str], str]):
 
 def annotate_schema(bblock: BuildingBlock,
                     bblocks_register: BuildingBlockRegister,
-                    context: Path | dict | None = None) -> list[Path]:
+                    context: Path | dict | None = None,
+                    base_url: str | None = None) -> list[Path]:
     result = []
     schema_fn = None
     schema_url = None
@@ -562,6 +564,18 @@ def annotate_schema(bblock: BuildingBlock,
     with open(annotated_schema_json_fn, 'w') as f:
         json.dump(annotated_schema, f, indent=2)
     result.append(annotated_schema_json_fn)
+
+    # OAS 3.0
+    if base_url:
+        oas30_schema_fn = annotated_schema_fn.with_stem('schema-oas3.0')
+        dump_yaml(to_oas30(annotated_schema_fn, base_url), oas30_schema_fn)
+        result.append(oas30_schema_fn)
+
+        oas30_schema_json_fn = annotated_schema_json_fn.with_stem('schema-oas3.0')
+        with open(oas30_schema_json_fn, 'w') as f:
+            json.dump(to_oas30(annotated_schema_fn, base_url), f, indent=2)
+        result.append(oas30_schema_json_fn)
+
     return result
 
 
@@ -628,3 +642,39 @@ def get_git_submodules(repo_path=Path()) -> list[list[str, str]]:
     from git.objects.submodule.util import SubmoduleConfigParser
     parser = SubmoduleConfigParser(repo_path / '.gitmodules', read_only=True)
     return [[parser.get(sms, "path"), parser.get(sms, "url")] for sms in parser.sections()]
+
+
+def to_oas30(schema_fn: Path, schema_url: str) -> dict:
+    schema = load_yaml(schema_fn)
+
+    schema.pop('$schema', None)
+    schema_url = schema.pop('$id', schema_url)
+
+    def walk(subschema):
+        if isinstance(subschema, list):
+            for item in subschema:
+                walk(item)
+        elif isinstance(subschema, dict):
+            if '$ref' in subschema:
+                ref = subschema.pop('$ref')
+
+                if not is_url(ref):
+                    ref = urljoin(schema_url, ref)
+
+                if not subschema:
+                    subschema['$ref'] = ref
+                else:
+                    all_of = subschema.pop('allOf', [])
+                    moved = {}
+                    for k in list(subschema.keys()):
+                        moved[k] = subschema.pop(k)
+                        walk(moved[k])
+                    all_of.append(moved)
+                    all_of.append({'$ref': ref})
+            else:
+                for v in subschema.values():
+                    walk(v)
+
+    walk(schema)
+
+    return schema
