@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import functools
+import hashlib
 import json
 import os.path
 import re
@@ -22,6 +23,11 @@ BBLOCK_METADATA_FILE = 'bblock.json'
 BBLOCKS_REF_ANNOTATION = 'x-bblocks-ref'
 
 loaded_schemas: dict[str, dict] = {}
+
+
+@functools.lru_cache
+def load_file_cached(fn):
+    return load_file(fn)
 
 
 def load_file(fn):
@@ -568,12 +574,13 @@ def annotate_schema(bblock: BuildingBlock,
     # OAS 3.0
     if base_url:
         oas30_schema_fn = annotated_schema_fn.with_stem('schema-oas3.0')
-        dump_yaml(to_oas30(annotated_schema_fn, base_url), oas30_schema_fn)
+        dump_yaml(to_oas30(annotated_schema_fn, urljoin(base_url, os.path.relpath(oas30_schema_fn))), oas30_schema_fn)
         result.append(oas30_schema_fn)
 
         oas30_schema_json_fn = annotated_schema_json_fn.with_stem('schema-oas3.0')
         with open(oas30_schema_json_fn, 'w') as f:
-            json.dump(to_oas30(annotated_schema_fn, base_url), f, indent=2)
+            json.dump(to_oas30(annotated_schema_json_fn,
+                               urljoin(base_url, os.path.relpath(oas30_schema_json_fn))), f, indent=2)
         result.append(oas30_schema_json_fn)
 
     return result
@@ -645,36 +652,112 @@ def get_git_submodules(repo_path=Path()) -> list[list[str, str]]:
 
 
 def to_oas30(schema_fn: Path, schema_url: str) -> dict:
-    schema = load_yaml(schema_fn)
+    mapped_refs: dict[str | Path, str] = {}
+    used_refs: set[str] = set()
+    pending_schemas: deque[str | Path] = deque()
 
-    schema.pop('$schema', None)
-    schema_url = schema.pop('$id', schema_url)
+    def get_ref_mapping(schema_id: str | Path, ref: str) -> str:
+        ref_parts = ref.split('#', 1)
+        ref_base = ref_parts[0]
+        ref_fragment = ref_parts[1] if len(ref_parts) > 1 else ''
 
-    def walk(subschema):
+        if not ref_base:
+            ref_base = schema_id
+        if not is_url(ref):
+            if isinstance(schema_id, Path):
+                ref_base = schema_id.parent.joinpath(ref_base).resolve()
+            else:
+                ref_base = urljoin(schema_id, ref_base)
+
+        existing = mapped_refs.get(ref_base)
+        if existing:
+            return f"{existing}{ref_fragment}"
+
+        new_mapping = hashlib.sha1(str(ref_base).encode()).hexdigest()
+        while new_mapping in used_refs:
+            new_mapping += 'x'
+        used_refs.add(new_mapping)
+        pending_schemas.append(ref_base)
+        mapped_refs[ref_base] = new_mapping
+        return f"{new_mapping}{ref_fragment}"
+
+    def apply_fixes(parent):
+        if 'type' in parent:
+            if parent['type'] == 'null':
+                del parent['type']
+                parent['nullable'] = True
+            elif isinstance(parent['type'], list):
+                prop_val = parent['type']
+                if 'null' in prop_val:
+                    parent['nullable'] = True
+                    prop_val.remove('null')
+                if not prop_val:
+                    del parent['type']
+                elif len(prop_val) == 1:
+                    parent['type'] = prop_val[0]
+                else:
+                    one_of = {'oneOf': [{'type': v} for v in prop_val]}
+                    if 'oneOf' in parent:
+                        parent.setdefault('allOf', []).append(one_of)
+                    else:
+                        parent['oneOf'] = one_of
+
+    def walk(subschema, schema_id: str | Path, is_properties: bool = False) -> tuple[dict, str, str | Path]:
+        schema_version = None
         if isinstance(subschema, list):
             for item in subschema:
-                walk(item)
+                walk(item, schema_id)
         elif isinstance(subschema, dict):
-            if '$ref' in subschema:
-                ref = subschema.pop('$ref')
 
-                if not is_url(ref):
-                    ref = urljoin(schema_url, ref)
+            if not is_properties:
+                apply_fixes(subschema)
+
+            schema_version = subschema.pop('$schema', None)
+            schema_id = subschema.pop('$id', schema_id)
+            if '$ref' in subschema:
+
+                ref = f"{schema_url}#/$defs/{get_ref_mapping(schema_id, subschema.pop('$ref'))}"
 
                 if not subschema:
                     subschema['$ref'] = ref
                 else:
-                    all_of = subschema.pop('allOf', [])
+                    all_of = subschema.setdefault('allOf', [])
                     moved = {}
                     for k in list(subschema.keys()):
                         moved[k] = subschema.pop(k)
-                        walk(moved[k])
+                        walk(moved[k], schema_id, not is_properties and k == 'properties')
                     all_of.append(moved)
                     all_of.append({'$ref': ref})
             else:
-                for v in subschema.values():
-                    walk(v)
+                for k, v in subschema.items():
+                    walk(v, schema_id, not is_properties and k == 'properties')
+        return subschema, schema_version, schema_id
 
-    walk(schema)
+    schema_fn = schema_fn.resolve()
+    root_ref_id = get_ref_mapping(schema_fn, '')
+    mapped_refs[schema_url] = root_ref_id
+    root_defs = {}
 
-    return schema
+    while pending_schemas:
+        cur_ref = pending_schemas.popleft()
+        cur_ref_id = mapped_refs[cur_ref]
+        if root_ref_id == cur_ref_id:
+            ref_schema = load_yaml(content=load_file_cached(schema_fn))
+        else:
+            ref_schema = load_yaml(content=load_file_cached(cur_ref))
+        ref_schema, ref_version, ref_id = walk(ref_schema, cur_ref)
+
+        if ref_version:
+            ref_schema['x-schema-version'] = ref_version
+        if isinstance(ref_id, Path):
+            ref_id = urljoin(schema_url, os.path.relpath(ref_id, schema_fn))
+        ref_schema['x-schema-source'] = ref_id
+
+        root_defs[cur_ref_id] = ref_schema
+
+    return {
+        '$defs': root_defs,
+        'allOf': [
+            {'$ref': f"{schema_url}#/$defs/{root_ref_id}"}
+        ]
+    }
