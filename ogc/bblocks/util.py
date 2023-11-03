@@ -696,11 +696,27 @@ def to_oas30(schema_fn: Path, schema_url: str) -> dict:
                 elif len(prop_val) == 1:
                     parent['type'] = prop_val[0]
                 else:
-                    one_of = {'oneOf': [{'type': v} for v in prop_val]}
-                    if 'oneOf' in parent:
+                    one_of = {'anyOf': [{'type': v} for v in prop_val]}
+                    if 'anyOf' in parent:
                         parent.setdefault('allOf', []).append(one_of)
                     else:
-                        parent['oneOf'] = one_of
+                        parent['anyOf'] = one_of
+
+        if 'oneOf' in parent:
+            add_nullable = False
+            for_deletion = []
+            for oo in parent['oneOf']:
+                if oo.get('type') == 'null':
+                    del oo['type']
+                    add_nullable = True
+                    if not oo:
+                        for_deletion.append(oo)
+            for item in for_deletion:
+                parent['oneOf'].remove(item)
+            if not parent['oneOf']:
+                del parent['oneOf']
+            if add_nullable:
+                parent['nullable'] = True
 
     def walk(subschema, schema_id: str | Path, is_properties: bool = False) -> tuple[dict, str, str | Path]:
         schema_version = None
@@ -749,7 +765,10 @@ def to_oas30(schema_fn: Path, schema_url: str) -> dict:
 
         if ref_version:
             ref_schema['x-schema-version'] = ref_version
-        if isinstance(ref_id, Path):
+
+        if root_ref_id == cur_ref_id:
+            ref_id = schema_url
+        elif isinstance(ref_id, Path):
             ref_id = urljoin(schema_url, os.path.relpath(ref_id, schema_fn))
         ref_schema['x-schema-source'] = ref_id
 
