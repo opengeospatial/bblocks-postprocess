@@ -368,8 +368,11 @@ class BuildingBlockRegister:
             else:
                 dep_rules = dep.get('shaclRules')
                 if dep_rules:
-                    for inh_id, inh_rules in dep_rules.items():
-                        rules.setdefault(inh_id, set()).update(inh_rules)
+                    if isinstance(dep_rules, list):
+                        rules.setdefault(dep.get('itemIdentifier'), set()).update(dep_rules)
+                    elif isinstance(dep_rules, dict):
+                        for inh_id, inh_rules in dep_rules.items():
+                            rules.setdefault(inh_id, set()).update(inh_rules)
         return rules
 
     def get(self, identifier: str):
@@ -768,7 +771,7 @@ def to_oas30(schema_fn: Path, schema_url: str, bbr: BuildingBlockRegister) -> di
 
             schema_version = subschema.pop('$schema', None)
             schema_id = subschema.pop('$id', schema_id)
-            if '$ref' in subschema:
+            if isinstance(subschema.get('$ref'), str):
 
                 ref = f"{schema_url}#/x-defs/{get_ref_mapping(schema_id, subschema.pop('$ref'))}"
 

@@ -655,7 +655,6 @@ def validate_test_resources(bblock: BuildingBlock,
                 all_shacl_files.append(shacl_file)
                 shacl_graph.parse(shacl_file, format='turtle')
             inherited_shacl_rules[shacl_bblock] = bblock_shacl_files
-        bblock.metadata['shaclRules'] = inherited_shacl_rules
 
         for sc in bblock.shaclClosures or ():
             bblock_shacl_closure.parse(bblock.resolve_file(sc), format='turtle')
@@ -663,6 +662,7 @@ def validate_test_resources(bblock: BuildingBlock,
         shacl_error = f"Error retrieving {e.url}: {e}"
     except Exception as e:
         shacl_error = str(e)
+    bblock.metadata['shaclRules'] = inherited_shacl_rules
 
     if not bblock.tests_dir.is_dir() and not bblock.examples:
         return final_result, test_count, report_to_dict(bblock, None, base_url)
