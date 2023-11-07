@@ -25,6 +25,14 @@ BBLOCKS_REF_ANNOTATION = 'x-bblocks-ref'
 loaded_schemas: dict[str, dict] = {}
 
 
+class CustomJSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, set):
+            return list(obj)
+        else:
+            return json.JSONEncoder.default(self, obj)
+
+
 @functools.lru_cache
 def load_file_cached(fn):
     return load_file(fn)
@@ -587,13 +595,14 @@ def annotate_schema(bblock: BuildingBlock,
     # OAS 3.0
     if base_url:
         oas30_schema_fn = annotated_schema_fn.with_stem('schema-oas3.0')
-        dump_yaml(to_oas30(annotated_schema_fn, urljoin(base_url, os.path.relpath(oas30_schema_fn))), oas30_schema_fn)
+        dump_yaml(to_oas30(annotated_schema_fn, urljoin(base_url, os.path.relpath(oas30_schema_fn)), bblocks_register),
+                  oas30_schema_fn)
         result.append(oas30_schema_fn)
 
         oas30_schema_json_fn = annotated_schema_json_fn.with_stem('schema-oas3.0')
         with open(oas30_schema_json_fn, 'w') as f:
             json.dump(to_oas30(annotated_schema_json_fn,
-                               urljoin(base_url, os.path.relpath(oas30_schema_json_fn))), f, indent=2)
+                               urljoin(base_url, os.path.relpath(oas30_schema_json_fn)), bblocks_register), f, indent=2)
         result.append(oas30_schema_json_fn)
 
     return result
@@ -664,7 +673,7 @@ def get_git_submodules(repo_path=Path()) -> list[list[str, str]]:
     return [[parser.get(sms, "path"), parser.get(sms, "url")] for sms in parser.sections()]
 
 
-def to_oas30(schema_fn: Path, schema_url: str) -> dict:
+def to_oas30(schema_fn: Path, schema_url: str, bbr: BuildingBlockRegister) -> dict:
     mapped_refs: dict[str | Path, str] = {}
     used_refs: set[str] = set()
     pending_schemas: deque[str | Path] = deque()
@@ -686,9 +695,25 @@ def to_oas30(schema_fn: Path, schema_url: str) -> dict:
         if existing:
             return f"{existing}{ref_fragment}"
 
-        new_mapping = hashlib.sha1(str(ref_base).encode()).hexdigest()
+        new_mapping = None
+        if isinstance(ref_base, Path):
+            for bb_id, bb in bbr.bblocks.items():
+                if bb.annotated_schema.resolve().with_suffix(ref_base.suffix) == ref_base:
+                    new_mapping = bb_id
+                    break
+        elif ref_base in bbr.imported_bblock_schemas:
+            new_mapping = bbr.imported_bblock_schemas[ref_base]
+
+        if not new_mapping:
+            # new_mapping = hashlib.sha1(str(ref_base).encode()).hexdigest()
+            new_mapping = re.sub(r'^https?://', '', str(ref_base))
+            new_mapping = re.sub(r'[^a-zA-Z0-9:_~@.-]+', '_', new_mapping)
+
+        if not re.match(r'^[a-zA-Z_]', new_mapping):
+            new_mapping = '_' + new_mapping
+
         while new_mapping in used_refs:
-            new_mapping += 'x'
+            new_mapping += '_'
         used_refs.add(new_mapping)
         pending_schemas.append(ref_base)
         mapped_refs[ref_base] = new_mapping
@@ -745,7 +770,7 @@ def to_oas30(schema_fn: Path, schema_url: str) -> dict:
             schema_id = subschema.pop('$id', schema_id)
             if '$ref' in subschema:
 
-                ref = f"{schema_url}#/$defs/{get_ref_mapping(schema_id, subschema.pop('$ref'))}"
+                ref = f"{schema_url}#/x-defs/{get_ref_mapping(schema_id, subschema.pop('$ref'))}"
 
                 if not subschema:
                     subschema['$ref'] = ref
@@ -788,8 +813,8 @@ def to_oas30(schema_fn: Path, schema_url: str) -> dict:
         root_defs[cur_ref_id] = ref_schema
 
     return {
-        '$defs': root_defs,
+        'x-defs': root_defs,
         'allOf': [
-            {'$ref': f"{schema_url}#/$defs/{root_ref_id}"}
+            {'$ref': f"{schema_url}#/x-defs/{root_ref_id}"}
         ]
     }

@@ -16,7 +16,7 @@ from ogc.na.util import is_url
 
 from ogc.bblocks.generate_docs import DocGenerator
 from ogc.bblocks.util import write_superbblocks_schemas, annotate_schema, BuildingBlock, \
-    write_jsonld_context, BuildingBlockRegister, ImportedBuildingBlocks
+    write_jsonld_context, BuildingBlockRegister, ImportedBuildingBlocks, CustomJSONEncoder
 from ogc.bblocks.validate import validate_test_resources, report_to_html
 from ogc.bblocks.transform import apply_transforms, transformers
 
@@ -272,10 +272,10 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             'bblocks': output_bblocks,
         }
         if output_file == '-':
-            print(json.dumps(output_register_json, indent=2))
+            print(json.dumps(output_register_json, indent=2, cls=CustomJSONEncoder))
         else:
             with open(output_file, 'w') as f:
-                json.dump(output_register_json, f, indent=2)
+                json.dump(output_register_json, f, indent=2, cls=CustomJSONEncoder)
 
     print(f"Finished processing {len(output_bblocks)} building blocks", file=sys.stderr)
     return output_bblocks

@@ -646,12 +646,12 @@ def validate_test_resources(bblock: BuildingBlock,
     inherited_shacl_rules = bblocks_register.get_inherited_shacl_rules(bblock.identifier)
     try:
         for shacl_bblock in list(inherited_shacl_rules.keys()):
-            bblock_shacl_files = []
+            bblock_shacl_files = set()
             for shacl_file in inherited_shacl_rules[shacl_bblock]:
                 if isinstance(shacl_file, Path) or (isinstance(shacl_file, str) and not is_url(shacl_file)):
                     # assume file
                     shacl_file = os.path.relpath(bblock.files_path / shacl_file)
-                bblock_shacl_files.append(shacl_file)
+                bblock_shacl_files.add(shacl_file)
                 all_shacl_files.append(shacl_file)
                 shacl_graph.parse(shacl_file, format='turtle')
             inherited_shacl_rules[shacl_bblock] = bblock_shacl_files

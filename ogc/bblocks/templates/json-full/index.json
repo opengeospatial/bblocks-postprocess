@@ -1,7 +1,9 @@
-<%
+<%!
 import json
 from pathlib import Path
-
+from ogc.bblocks.util import CustomJSONEncoder
+%>
+<%
 output = {**bblock.metadata}
 if bblock.description:
     output['description'] = bblock.description
@@ -13,4 +15,4 @@ if git_repo:
     output['gitRepository'] = git_repo
     output['gitPath'] = git_path
 %>
-${json.dumps(output)}
+${json.dumps(output, indent=2, cls=CustomJSONEncoder)}
