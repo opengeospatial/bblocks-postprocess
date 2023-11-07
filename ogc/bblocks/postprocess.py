@@ -51,11 +51,6 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             github_base_url += '/'
         test_outputs_base_url = f"{github_base_url}{os.path.relpath(Path(test_outputs_path).resolve(), cwd)}/"
 
-    doc_generator = DocGenerator(base_url=base_url,
-                                 output_dir=generated_docs_path,
-                                 templates_dir=templates_dir,
-                                 id_prefix=id_prefix)
-
     if not isinstance(registered_items_path, Path):
         registered_items_path = Path(registered_items_path)
 
@@ -67,6 +62,12 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                                 prefix=id_prefix,
                                 annotated_path=annotated_path,
                                 imported_bblocks=imported_bblocks)
+
+    doc_generator = DocGenerator(base_url=base_url,
+                                 output_dir=generated_docs_path,
+                                 templates_dir=templates_dir,
+                                 id_prefix=id_prefix,
+                                 bblocks_register=bbr)
 
     validation_reports = []
 
@@ -151,7 +152,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
         if base_url:
             if bblock.shaclRules:
-                bblock.metadata['shaclRules'] = [urljoin(base_url, s) for s in bblock.shaclRules]
+                bblock.metadata['shaclRules'] = {k: [urljoin(base_url, s) for s in v]
+                                                 for k, v in bblock.shaclRules.items()}
             if bblock.transforms:
                 bblock.metadata['transforms'] = []
                 for transform in bblock.transforms:

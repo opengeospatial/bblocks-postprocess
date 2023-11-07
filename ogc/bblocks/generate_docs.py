@@ -52,12 +52,14 @@ class DocGenerator:
                  base_url: str | None = None,
                  output_dir: str | Path = 'generateddocs',
                  templates_dir: str | Path = 'templates',
-                 id_prefix: str = ''):
+                 id_prefix: str = '',
+                 bblocks_register: BuildingBlockRegister | None = None):
         self.base_url = base_url
         self.output_dir = output_dir if isinstance(output_dir, Path) else Path(output_dir)
         self.output_dir.joinpath('slate-build').mkdir(parents=True, exist_ok=True)
         self.templates_dir = templates_dir if isinstance(templates_dir, Path) else Path(templates_dir)
         self.id_prefix = id_prefix or ''
+        self.bblocks_register = bblocks_register
 
         self.templates = find_templates(self.templates_dir)
 
@@ -112,7 +114,9 @@ class DocGenerator:
                                         root_dir=Path(),
                                         base_url=self.base_url,
                                         git_repo=git_repo,
-                                        git_path=git_path))
+                                        git_path=git_path,
+                                        bblocks_register=self.bblocks_register,
+                                        ))
                 if template.id and template.mediatype:
                     doc_url = f"{self.base_url}{self.output_dir}/" \
                               f"{template.dir_name}/{bblock.subdirs}/{template.template_file.name}"
@@ -133,9 +137,10 @@ def generate_docs(regs: str | Path | Sequence[str | Path],
                   filter_ids: str | list[str] | None = None,
                   output_dir: str | Path = 'generateddocs',
                   templates_dir: str | Path = 'templates'):
+    bblocks_register = BuildingBlockRegister(regs)
     doc_generator = DocGenerator(output_dir, templates_dir)
 
-    for bblock in BuildingBlockRegister(regs).bblocks.values():
+    for bblock in bblocks_register.bblocks.values():
         if not filter_ids or bblock.identifier in filter_ids:
             doc_generator.generate_doc(bblock)
 

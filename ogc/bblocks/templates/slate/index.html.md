@@ -155,14 +155,21 @@ ${'#'} Validation
 
 ${'##'} SHACL Shapes
 
-The following SHACL shapes are used for validating this building block:
+The following sets of SHACL shapes are used for validating this building block:
 
-  % for rule in bblock.shaclRules:
-    % if rule.startswith('http://') or rule.startswith('https://'):
-* [${rule}](${rule})
+  % for shacl_bblock_id, shacl_rules in bblock.shaclRules.items():
+    % if bblocks_register.get(shacl_bblock_id):
+* ${bblocks_register.get(shacl_bblock_id).get('name')} <small><code>${shacl_bblock_id}</code></small>
     % else:
-* `${rule}`
+* `${shacl_bblock_id}`
     % endif
+    % for rule in shacl_rules:
+      % if rule.startswith('http://') or rule.startswith('https://'):
+  * [${rule}](${rule})
+      % else:
+  * `${rule}`
+      % endif
+    % endfor
   % endfor
 
 % endif

@@ -120,7 +120,16 @@ class BuildingBlock:
         default_shacl_rules = fp / 'rules.shacl'
         if default_shacl_rules.is_file():
             shacl_rules.append('rules.shacl')
-        self.shacl_rules = [r if is_url(r) else fp / r for r in shacl_rules]
+        self.shacl_rules = set(r if is_url(r) else fp / r for r in shacl_rules)
+
+    def __getattr__(self, item):
+        return self.metadata.get(item)
+
+    def __getitem__(self, item):
+        return self.metadata.get(item)
+
+    def get(self, item, default=None):
+        return self.metadata.get(item, default)
 
     def _load_examples(self):
         examples = None
@@ -158,9 +167,6 @@ class BuildingBlock:
             desc_file = self.files_path / 'description.md'
             self._lazy_properties['description'] = load_file(desc_file) if desc_file.is_file() else None
         return self._lazy_properties['description']
-
-    def __getattr__(self, item):
-        return self.metadata.get(item)
 
     @property
     def annotated_schema_contents(self):
@@ -345,14 +351,21 @@ class BuildingBlockRegister:
 
         return dependencies
 
-    def get_inherited_shacl_rules(self, identifier: str) -> set[str | Path]:
-        rules = set()
+    def get_inherited_shacl_rules(self, identifier: str) -> dict[str, set[str | Path]]:
+        rules: dict[str, set[str | Path]] = {}
         for dep in self.find_dependencies(identifier):
             if isinstance(dep, BuildingBlock):
-                rules.update(dep.shacl_rules or ())
+                if dep.shacl_rules:
+                    rules[dep.identifier] = dep.shacl_rules
             else:
-                rules.update(dep.get('shaclRules', ()))
+                dep_rules = dep.get('shaclRules')
+                if dep_rules:
+                    for inh_id, inh_rules in dep_rules.items():
+                        rules.setdefault(inh_id, set()).update(inh_rules)
         return rules
+
+    def get(self, identifier: str):
+        return self.bblocks.get(identifier, self.imported_bblocks.get(identifier))
 
 
 @dataclasses.dataclass

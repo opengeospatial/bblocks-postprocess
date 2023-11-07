@@ -638,24 +638,24 @@ def validate_test_resources(bblock: BuildingBlock,
     final_result = True
     test_count = 0
 
-    if not bblock.tests_dir.is_dir() and not bblock.examples:
-        return final_result, test_count, report_to_dict(bblock, None, base_url)
-
     shacl_graph = Graph()
     bblock_shacl_closure = Graph()
     shacl_error = None
 
-    shacl_files = []
+    all_shacl_files = []
+    inherited_shacl_rules = bblocks_register.get_inherited_shacl_rules(bblock.identifier)
     try:
-        for shacl_file in bblocks_register.get_inherited_shacl_rules(bblock.identifier):
-            if isinstance(shacl_file, Path) or (isinstance(shacl_file, str) and not is_url(shacl_file)):
-                # assume file
-                shacl_file = bblock.files_path / shacl_file
-                shacl_files.append(os.path.relpath(shacl_file))
-            else:
-                shacl_files.append(shacl_file)
-            shacl_graph.parse(shacl_file, format='turtle')
-        bblock.metadata['shaclRules'] = shacl_files
+        for shacl_bblock in list(inherited_shacl_rules.keys()):
+            bblock_shacl_files = []
+            for shacl_file in inherited_shacl_rules[shacl_bblock]:
+                if isinstance(shacl_file, Path) or (isinstance(shacl_file, str) and not is_url(shacl_file)):
+                    # assume file
+                    shacl_file = os.path.realpath(bblock.files_path / shacl_file)
+                bblock_shacl_files.append(shacl_file)
+                all_shacl_files.append(shacl_file)
+                shacl_graph.parse(shacl_file, format='turtle')
+            inherited_shacl_rules[shacl_bblock] = bblock_shacl_files
+        bblock.metadata['shaclRules'] = inherited_shacl_rules
 
         for sc in bblock.shaclClosures or ():
             bblock_shacl_closure.parse(bblock.resolve_file(sc), format='turtle')
@@ -663,6 +663,9 @@ def validate_test_resources(bblock: BuildingBlock,
         shacl_error = f"Error retrieving {e.url}: {e}"
     except Exception as e:
         shacl_error = str(e)
+
+    if not bblock.tests_dir.is_dir() and not bblock.examples:
+        return final_result, test_count, report_to_dict(bblock, None, base_url)
 
     json_error = None
     schema_validator = None
@@ -703,7 +706,7 @@ def validate_test_resources(bblock: BuildingBlock,
                 shacl_graph=shacl_graph,
                 json_error=json_error,
                 shacl_error=shacl_error,
-                shacl_files=shacl_files,
+                shacl_files=all_shacl_files,
                 shacl_closure=bblock_shacl_closure)
             all_results.append(test_result)
             final_result = not test_result.failed and final_result
@@ -770,7 +773,7 @@ def validate_test_resources(bblock: BuildingBlock,
                         json_error=json_error,
                         shacl_error=shacl_error,
                         base_uri=snippet.get('base-uri', example_base_uri),
-                        shacl_files=shacl_files,
+                        shacl_files=all_shacl_files,
                         schema_ref=snippet.get('schema-ref'),
                         shacl_closure_files=snippet_shacl_closure,
                         shacl_closure=bblock_shacl_closure)
