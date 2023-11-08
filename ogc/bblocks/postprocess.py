@@ -152,6 +152,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
         if base_url:
             if bblock.shaclRules:
+                if isinstance(bblock.shaclRules, list):
+                    bblock.metadata['shaclRules'] = {bblock.identifier: bblock.shacl_rules}
                 bblock.metadata['shaclRules'] = {k: [urljoin(base_url, str(s)) for s in v]
                                                  for k, v in bblock.shaclRules.items()}
             if bblock.transforms:
