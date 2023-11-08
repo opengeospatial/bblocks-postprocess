@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import re
 import shutil
 import subprocess
 import sys
@@ -9,6 +10,8 @@ from ogc.na.util import load_yaml
 
 from ogc.bblocks.postprocess import postprocess
 from ogc.na import ingest_json
+
+from ogc.bblocks.util import get_github_repo
 
 MAIN_BBR = 'https://blocks.ogc.org/register.json'
 DEFAULT_IMPORT_MARKER = 'default'
@@ -146,18 +149,36 @@ if __name__ == '__main__':
         else:
             imported_registers = [ir if ir != DEFAULT_IMPORT_MARKER else MAIN_BBR for ir in imported_registers if ir]
 
+    base_url = args.base_url
+    github_base_url = args.github_base_url
+    if not base_url or not github_base_url:
+        try:
+            import git
+            repo = git.Repo()
+            remote_branch = repo.active_branch.tracking_branch()
+            remote = repo.remote(remote_branch.remote_name)
+            remote_url = next(remote.urls)
+            gh_repo = get_github_repo(remote_url)
+            if gh_repo:
+                base_url = f"https://{gh_repo[0]}.github.io/{gh_repo[1]}/"
+                github_base_url = f"https://github.com/{gh_repo[0]}/{gh_repo[1]}/"
+                print(f"Autodetected GitHub repo {gh_repo[0]}/{gh_repo[1]}")
+        except:
+            print('[WARN] Could not autodetect base_url / github_base_url', file=sys.stderr)
+            pass
+
     # 1. Postprocess BBs
     print(f"Running postprocess...", file=sys.stderr)
     postprocess(registered_items_path=items_dir,
                 output_file=args.register_file,
-                base_url=args.base_url,
+                base_url=base_url,
                 generated_docs_path=args.generated_docs_path,
                 templates_dir=templates_dir,
                 fail_on_error=fail_on_error,
                 id_prefix=id_prefix,
                 annotated_path=annotated_path,
                 test_outputs_path=args.test_outputs_path,
-                github_base_url=args.github_base_url,
+                github_base_url=github_base_url,
                 imported_registers=imported_registers,
                 bb_filter=args.filter)
 

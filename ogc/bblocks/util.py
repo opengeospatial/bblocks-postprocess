@@ -659,13 +659,20 @@ def resolve_schema_reference(ref: str,
         return f"{target_bb['schema']['application/yaml']}{fragment}"
 
 
-def get_git_repo_url(url: str) -> str:
+def get_github_repo(url: str) -> tuple[str, str] | None:
     if not url:
-        return url
+        return None
     m = re.match(r'^(?:git@|https?://(?:www)?)github.com[:/](.+)/(.+).git$', url)
     if m:
         groups = m.groups()
-        return f"https://github.com/{groups[0]}/{groups[1]}"
+        return groups[0], groups[1]
+    return None
+
+
+def get_git_repo_url(url: str) -> str:
+    gh_repo = get_github_repo(url)
+    if gh_repo:
+        return f"https://github.com/{gh_repo[0]}/{gh_repo[1]}"
     return url
 
 
