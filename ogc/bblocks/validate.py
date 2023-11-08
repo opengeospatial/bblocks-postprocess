@@ -448,6 +448,7 @@ def _validate_resource(bblock: BuildingBlock,
             report.add_entry(ValidationReportEntry(
                 section=ValidationReportSection.FILES,
                 message=f"{'O' if graph else '**Empty** o'}utput Turtle {ttl_fn.name} created",
+                is_error=not graph,
                 payload={
                     'op': 'ttl-create',
                     'empty': not graph,
