@@ -69,10 +69,10 @@ get_filename = lambda s: basename(urlparse(s).path)
                                         % if report['result']:
                                             Passed
                                         % else:
-                                            Failed
+                                            Tests Failed
                                         % endif
                                         % if report['counts']['total'] > 0:
-                                            (${f"{report['counts']['passed'] * 100 / report['counts']['total']:.2f}".rstrip('0').rstrip('.')}%)
+                                            (${f"{report['counts']['passed'] * 100 / report['counts']['total']:.2f}".rstrip('0').rstrip('.')}% passed)
                                         % else:
                                             (100%)
                                         % endif
