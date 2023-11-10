@@ -129,10 +129,16 @@ get_filename = lambda s: basename(urlparse(s).path)
                                                 </div>
                                                 <div class="card-text mt-2 validation-text collapse" id="${last_uid}">
                                                     <div class="validation-text-inner">
-                                                        % for subsection_title, section in item['sections'].items():
-                                                            % for entry in section:
-                                                                <div class="font-monospace entry-message section-${e(subsection_title.lower())} ${'text-danger' if entry['isError'] else ''}">${e(entry['message'])}</div>
-                                                            % endfor
+                                                        % if report.get('globalErrors'):
+                                                            <div class="font-monospace entry-message text-danger">Note: Test failed because there are global validation errors.</div>
+                                                        % endif
+                                                        % for section in item['sections']:
+                                                            % if section.get('entries'):
+                                                                    <div class="font-monospace subsection-title mt-2">${e(section['title'])}</div>
+                                                                % for entry in section.get('entries'):
+                                                                    <div class="font-monospace entry-message section-${e(section['name'].lower())} ${'text-danger' if entry['isError'] else ''}">${e(entry['message'])}</div>
+                                                                % endfor
+                                                            % endif
                                                         % endfor
                                                     </div>
                                                 </div>

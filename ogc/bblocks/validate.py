@@ -92,7 +92,8 @@ class ValidationReportItem:
     def __init__(self, source: ValidationItemSource):
         self._has_errors = False
         self.source = source
-        self._sections: dict[ValidationReportSection, list[ValidationReportEntry]] = {}
+        self._sections: dict[ValidationReportSection, list[ValidationReportEntry]] = {s: []
+                                                                                      for s in ValidationReportSection}
         self._uplifted_files: dict[str, tuple[Path, str]] = {}
         self._has_general_errors = False
         self._used_files: list[tuple[Path | str, bool]] = []
@@ -180,9 +181,14 @@ def report_to_dict(bblock: BuildingBlock,
             if item.source.language:
                 source['language'] = item.source.language
 
-            sections = {}
-            for section, entries in item.sections.items():
-                sections[section.name] = []
+            sections = []
+            for section_enum, entries in item.sections.items():
+                section = {
+                    'name': section_enum.name,
+                    'title': section_enum.value,
+                    'entries': [],
+                }
+                sections.append(section)
                 for entry in entries:
                     entry_dict = {}
                     if entry.payload:
@@ -204,9 +210,9 @@ def report_to_dict(bblock: BuildingBlock,
                     entry_dict['isError'] = entry.is_error
                     entry_dict['message'] = entry.message
                     if not entry.is_global:
-                        sections[section.name].append(entry_dict)
+                        section['entries'].append(entry_dict)
                     elif entry.is_error:
-                        global_errors.setdefault(section.name, entry_dict)
+                        global_errors.setdefault(section_enum.name, entry_dict)
 
             res_item = {
                 'source': source,
