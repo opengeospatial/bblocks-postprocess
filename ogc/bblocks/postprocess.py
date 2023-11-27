@@ -34,13 +34,15 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 test_outputs_path: str | Path = 'build/tests',
                 github_base_url: str | None = None,
                 imported_registers: list[str] | None = None,
-                bb_filter: str | None = None) -> list[BuildingBlock]:
+                bb_filter: str | None = None,
+                steps: list[str] | None = None) -> list[BuildingBlock]:
 
     cwd = Path().resolve()
 
     if not isinstance(test_outputs_path, Path):
         test_outputs_path = Path(test_outputs_path)
-    test_outputs_path.mkdir(parents=True, exist_ok=True)
+    if not steps or 'tests' in steps:
+        test_outputs_path.mkdir(parents=True, exist_ok=True)
 
     if base_url and base_url[-1] != '/':
         base_url += '/'
@@ -125,21 +127,22 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             bblock.metadata['sourceFiles'] = f"./{os.path.relpath(rel_files_path, output_file_root)}/"
 
         if not light:
-            print(f"  > Running tests for {bblock.identifier}", file=sys.stderr)
-            validation_passed, test_count, json_report = validate_test_resources(
-                bblock,
-                bblocks_register=bbr,
-                outputs_path=test_outputs_path,
-                base_url=base_url)
-            validation_reports.append(json_report)
+            if not steps or 'tests' in steps:
+                print(f"  > Running tests for {bblock.identifier}", file=sys.stderr)
+                validation_passed, test_count, json_report = validate_test_resources(
+                    bblock,
+                    bblocks_register=bbr,
+                    outputs_path=test_outputs_path,
+                    base_url=base_url)
+                validation_reports.append(json_report)
 
-            bblock.metadata['validationPassed'] = validation_passed
-            if not validation_passed:
-                bblock.metadata['status'] = 'invalid'
-            if test_count and test_outputs_base_url:
-                bblock.metadata['testOutputs'] = f"{test_outputs_base_url}{bblock.subdirs}/"
+                bblock.metadata['validationPassed'] = validation_passed
+                if not validation_passed:
+                    bblock.metadata['status'] = 'invalid'
+                if test_count and test_outputs_base_url:
+                    bblock.metadata['testOutputs'] = f"{test_outputs_base_url}{bblock.subdirs}/"
 
-        if not light:
+        if not light and (not steps or 'transforms' in steps):
             print(f"  > Running transforms for {bblock.identifier}", file=sys.stderr)
             apply_transforms(bblock, outputs_path=test_outputs_path)
 
@@ -162,7 +165,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                     transform['ref'] = urljoin(bblock.metadata['sourceFiles'], transform['ref'])
                     bblock.metadata['transforms'].append({k: v for k, v in transform.items() if k != 'code'})
 
-        if not light:
+        if not light and (not steps or 'doc' in steps):
             print(f"  > Generating documentation for {bblock.identifier}", file=sys.stderr)
             doc_generator.generate_doc(bblock)
         return True
@@ -199,7 +202,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             super_bblocks[building_block.files_path] = building_block
             continue
 
-        if filter_id is None or building_block.identifier == filter_id:
+        if (filter_id is None or building_block.identifier == filter_id) and (not steps or 'annotate' in steps):
+
             # Annotate schema
             print(f"Annotating schema for {building_block.identifier}", file=sys.stderr)
 
@@ -229,31 +233,33 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
         child_bblocks.append(building_block)
 
-    print(f"Writing JSON-LD contexts", file=sys.stderr)
-    # Create JSON-lD contexts
-    for building_block in child_bblocks:
-        if filter_id is not None and building_block.identifier != filter_id:
-            continue
-        if building_block.annotated_schema.is_file():
-            try:
-                written_context = write_jsonld_context(building_block.annotated_schema)
-                if written_context:
-                    print(f"  - {written_context}", file=sys.stderr)
-            except Exception as e:
-                if fail_on_error:
-                    raise e
-                print(f"[Error] Writing context for {building_block.identifier}: {type(e).__name__}: {e}")
+    if not steps or 'jsonld' in steps:
+        print(f"Writing JSON-LD contexts", file=sys.stderr)
+        # Create JSON-lD contexts
+        for building_block in child_bblocks:
+            if filter_id is not None and building_block.identifier != filter_id:
+                continue
+            if building_block.annotated_schema.is_file():
+                try:
+                    written_context = write_jsonld_context(building_block.annotated_schema)
+                    if written_context:
+                        print(f"  - {written_context}", file=sys.stderr)
+                except Exception as e:
+                    if fail_on_error:
+                        raise e
+                    print(f"[Error] Writing context for {building_block.identifier}: {type(e).__name__}: {e}")
 
     # Create super bblock schemas
     # TODO: Do not build super bb's that have children with errors
-    print(f"Generating Super Building Block schemas", file=sys.stderr)
-    try:
-        for super_bblock_schema in write_superbblocks_schemas(super_bblocks, annotated_path):
-            print(f"  - {os.path.relpath(super_bblock_schema, '.')}", file=sys.stderr)
-    except Exception as e:
-        if fail_on_error:
-            raise e
-        print(f"[Error] Writing Super BB schemas: {type(e).__name__}: {e}")
+    if not steps or 'superbb' in steps:
+        print(f"Generating Super Building Block schemas", file=sys.stderr)
+        try:
+            for super_bblock_schema in write_superbblocks_schemas(super_bblocks, annotated_path):
+                print(f"  - {os.path.relpath(super_bblock_schema, '.')}", file=sys.stderr)
+        except Exception as e:
+            if fail_on_error:
+                raise e
+            print(f"[Error] Writing Super BB schemas: {type(e).__name__}: {e}")
 
     output_bblocks = []
     for building_block in itertools.chain(child_bblocks, super_bblocks.values()):
@@ -265,10 +271,11 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         else:
             print(f"{building_block.identifier} failed postprocessing, skipping...", file=sys.stderr)
 
-    print(f"Writing full validation report to {test_outputs_path / 'report.html'}", file=sys.stderr)
-    report_to_html(json_reports=validation_reports, report_fn=test_outputs_path / 'report.html')
+    if not steps or 'tests' in steps:
+        print(f"Writing full validation report to {test_outputs_path / 'report.html'}", file=sys.stderr)
+        report_to_html(json_reports=validation_reports, report_fn=test_outputs_path / 'report.html')
 
-    if output_file:
+    if output_file and (not steps or 'register' in steps):
         output_register_json = {
             'imports': imported_registers or [],
             'bblocks': output_bblocks,

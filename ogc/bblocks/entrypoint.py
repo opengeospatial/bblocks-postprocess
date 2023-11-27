@@ -89,7 +89,13 @@ if __name__ == '__main__':
 
     parser.add_argument(
         '--filter',
-        help='Filter by building block id or file. Sets --clean to false'
+        help='Filter by building block id or file. Forces --clean to false'
+    )
+
+    parser.add_argument(
+        '--steps',
+        help='Comma-separated list of postprocessing steps that will run (annotate,jsonld,superbb,'
+             'tests,transforms,doc,register). Forces --clean to false'
     )
 
     args = parser.parse_args()
@@ -111,6 +117,7 @@ if __name__ == '__main__':
 - test_outputs_path: {args.test_outputs_path}
 - github_base_url: {args.github_base_url}
 - filter: {args.filter}
+- steps: {args.steps}
     """, file=sys.stderr)
 
     register_file = Path(args.register_file)
@@ -121,7 +128,7 @@ if __name__ == '__main__':
     items_dir = Path(args.items_dir)
 
     # Clean old output
-    if clean and not args.filter:
+    if clean and not args.filter and not args.steps:
         for old_file in register_file, register_jsonld_fn, register_ttl_fn:
             print(f"Deleting {old_file}", file=sys.stderr)
             old_file.unlink(missing_ok=True)
@@ -167,6 +174,8 @@ if __name__ == '__main__':
             print('[WARN] Could not autodetect base_url / github_base_url', file=sys.stderr)
             pass
 
+    steps = args.steps.split(',') if args.steps else None
+
     # 1. Postprocess BBs
     print(f"Running postprocess...", file=sys.stderr)
     postprocess(registered_items_path=items_dir,
@@ -180,7 +189,8 @@ if __name__ == '__main__':
                 test_outputs_path=args.test_outputs_path,
                 github_base_url=github_base_url,
                 imported_registers=imported_registers,
-                bb_filter=args.filter)
+                bb_filter=args.filter,
+                steps=steps)
 
     # 2. Uplift register.json
     print(f"Running semantic uplift of {register_file}", file=sys.stderr)
