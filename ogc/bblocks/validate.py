@@ -535,7 +535,8 @@ def _validate_resource(bblock: BuildingBlock,
 
                         report.add_entry(ValidationReportEntry(
                             section=ValidationReportSection.SHACL,
-                            message=f"Validation result for {shacl_file}:\n{shacl_report}",
+                            message=f"Validation result for {shacl_file}:\n"
+                                    f"{re.sub(r'^', '  ', shacl_report, flags=re.M)}",
                             is_error=not shacl_conforms,
                             payload={
                                 'op': 'shacl-report',
@@ -849,7 +850,8 @@ def shacl_validate(g: Graph, s: Graph, ont_graph: Graph | None = None) \
         'advanced': True
     })
     focus_nodes: dict[pyshacl.Shape, Sequence[Node]] = {shape: shape.focus_nodes(g)
-                                                        for shape in validator.shacl_graph.shapes}
+                                                        for shape in validator.shacl_graph.shapes
+                                                        if not shape.is_property_shape}
     conforms, shacl_result, shacl_report = validator.run()
     return conforms, shacl_result, shacl_report, focus_nodes
 
