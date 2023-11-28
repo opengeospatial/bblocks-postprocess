@@ -261,11 +261,10 @@ def _validate_resource(bblock: BuildingBlock,
                        schema_url: str | None = None,
                        jsonld_context: dict | None = None,
                        jsonld_url: str | None = None,
-                       shacl_graph: Graph | None = None,
+                       shacl_graphs: dict[str | Path, Graph] | None = None,
                        json_error: str | None = None,
-                       shacl_error: str | None = None,
+                       shacl_errors: list[str] | None = None,
                        base_uri: str | None = None,
-                       shacl_files: list[Path | str] | None = None,
                        schema_ref: str | None = None,
                        shacl_closure_files: list[str | Path] | None = None,
                        shacl_closure: Graph | None = None) -> ValidationReportItem:
@@ -514,97 +513,93 @@ def _validate_resource(bblock: BuildingBlock,
                     json.dump(json_doc, f, indent=2)
 
         if graph:
-            if shacl_error:
-                report.add_entry(ValidationReportEntry(
-                    section=ValidationReportSection.SHACL,
-                    message=shacl_error,
-                    is_error=True,
-                    is_global=True,
-                ))
-            elif shacl_graph:
-                if shacl_files:
+            if shacl_errors:
+                for shacl_error in shacl_errors:
                     report.add_entry(ValidationReportEntry(
                         section=ValidationReportSection.SHACL,
-                        message='Using SHACL files for validation:\n - ' + '\n - '.join(str(f) for f in shacl_files),
-                        payload={
-                            'op': 'shacl-files',
-                            'files': [str(f) for f in shacl_files],
-                        }
+                        message=shacl_error,
+                        is_error=True,
+                        is_global=True,
                     ))
-                try:
-                    ont_graph = Graph()
-                    if shacl_closure_files:
-                        for c in shacl_closure_files:
-                            ont_graph.parse(c)
-                    if shacl_closure:
-                        copy_triples(shacl_closure, ont_graph)
-                    shacl_conforms, shacl_result, shacl_report, focus_nodes = shacl_validate(
-                        graph, shacl_graph, ont_graph=ont_graph)
-
-                    report.add_entry(ValidationReportEntry(
-                        section=ValidationReportSection.SHACL,
-                        message=shacl_report,
-                        is_error=not shacl_conforms,
-                        payload={
-                            'op': 'shacl-report',
-                            'graph': shacl_result.serialize(),
-                        }
-                    ))
-                    if focus_nodes:
-                        focus_nodes_report = ''
-                        focus_nodes_payload = {}
-                        for shape, shape_focus_nodes in focus_nodes.items():
-                            g = Graph()
-                            for t in shacl_graph.triples((shape.node, None, None)):
-                                g.add(t)
-                            focus_nodes_str = '/'.join(format_node(shacl_graph, n)
-                                                       for n in
-                                                       (find_closest_uri(shacl_graph, shape.node) or (shape.node,)))
-                            focus_nodes_payload[focus_nodes_str] = {
-                                'nodes': [],
-                            }
-                            focus_nodes_report += f" - Shape {focus_nodes_str}"
-                            shape_path = shape.path()
-                            if shape_path:
-                                shape_path = format_node(shacl_graph, shape_path)
-                                focus_nodes_report += f" (path {shape_path})"
-                                focus_nodes_payload[focus_nodes_str]['path'] = shape_path
-                            focus_nodes_report += ": "
-                            if not shape_focus_nodes:
-                                focus_nodes_report += '*none*'
-                            else:
-                                fmt_shape_focus_nodes = ['/'.join(format_node(graph, n)
-                                                                  for n in (find_closest_uri(graph, fn) or (fn,)))
-                                                         for fn in shape_focus_nodes]
-                                focus_nodes_report += ','.join(fmt_shape_focus_nodes)
-                                focus_nodes_payload[focus_nodes_str]['nodes'] = fmt_shape_focus_nodes
-                            focus_nodes_report += "\n"
+            elif shacl_graphs:
+                for shacl_file, shacl_graph in shacl_graphs.items():
+                    try:
+                        ont_graph = Graph()
+                        if shacl_closure_files:
+                            for c in shacl_closure_files:
+                                ont_graph.parse(c)
+                        if shacl_closure:
+                            copy_triples(shacl_closure, ont_graph)
+                        shacl_conforms, shacl_result, shacl_report, focus_nodes = shacl_validate(
+                            graph, shacl_graph, ont_graph=ont_graph)
 
                         report.add_entry(ValidationReportEntry(
                             section=ValidationReportSection.SHACL,
-                            message=f"Focus nodes:\n{focus_nodes_report}",
+                            message=f"Validation result for {shacl_file}:\n{shacl_report}",
+                            is_error=not shacl_conforms,
                             payload={
-                                'focusNodes': focus_nodes_payload,
+                                'op': 'shacl-report',
+                                'shaclFile': str(shacl_file),
+                                'graph': shacl_result.serialize(),
                             }
                         ))
-                except ParseBaseException as e:
-                    if e.args:
-                        query_lines = e.args[0].splitlines()
-                        max_line_digits = len(str(len(query_lines)))
-                        query_error = '\nfor SPARQL query\n' + '\n'.join(f"{str(i + 1).rjust(max_line_digits)}: {line}"
-                                                                         for i, line in enumerate(query_lines))
-                    else:
-                        query_error = ''
-                    report.add_entry(ValidationReportEntry(
-                        section=ValidationReportSection.SHACL,
-                        message=f"Error parsing SHACL validator: {e}{query_error}",
-                        is_error=True,
-                        is_global=True,
-                        payload={
-                            'exception': e.__class__.__qualname__,
-                            'errorMessage': query_error,
-                        }
-                    ))
+                        if focus_nodes:
+                            focus_nodes_report = ''
+                            focus_nodes_payload = {}
+                            for shape, shape_focus_nodes in focus_nodes.items():
+                                g = Graph()
+                                for t in shacl_graph.triples((shape.node, None, None)):
+                                    g.add(t)
+                                focus_nodes_str = '/'.join(format_node(shacl_graph, n)
+                                                           for n in
+                                                           (find_closest_uri(shacl_graph, shape.node) or (shape.node,)))
+                                focus_nodes_payload[focus_nodes_str] = {
+                                    'nodes': [],
+                                }
+                                focus_nodes_report += f" - Shape {focus_nodes_str}"
+                                shape_path = shape.path()
+                                if shape_path:
+                                    shape_path = format_node(shacl_graph, shape_path)
+                                    focus_nodes_report += f" (path {shape_path})"
+                                    focus_nodes_payload[focus_nodes_str]['path'] = shape_path
+                                focus_nodes_report += ": "
+                                if not shape_focus_nodes:
+                                    focus_nodes_report += '*none*'
+                                else:
+                                    fmt_shape_focus_nodes = ['/'.join(format_node(graph, n)
+                                                                      for n in (find_closest_uri(graph, fn) or (fn,)))
+                                                             for fn in shape_focus_nodes]
+                                    focus_nodes_report += ','.join(fmt_shape_focus_nodes)
+                                    focus_nodes_payload[focus_nodes_str]['nodes'] = fmt_shape_focus_nodes
+                                focus_nodes_report += "\n"
+
+                            report.add_entry(ValidationReportEntry(
+                                section=ValidationReportSection.SHACL,
+                                message=f"Focus nodes for {shacl_file}:\n{focus_nodes_report}",
+                                payload={
+                                    'shaclFile': str(shacl_file),
+                                    'focusNodes': focus_nodes_payload,
+                                }
+                            ))
+                    except ParseBaseException as e:
+                        if e.args:
+                            query_lines = e.args[0].splitlines()
+                            max_line_digits = len(str(len(query_lines)))
+                            query_error = '\nfor SPARQL query\n' + '\n'.join(f"{str(i + 1).rjust(max_line_digits)}: {line}"
+                                                                             for i, line in enumerate(query_lines))
+                        else:
+                            query_error = ''
+                        report.add_entry(ValidationReportEntry(
+                            section=ValidationReportSection.SHACL,
+                            message=f"Error parsing SHACL validator for {shacl_file}: {e}{query_error}",
+                            is_error=True,
+                            is_global=True,
+                            payload={
+                                'exception': e.__class__.__qualname__,
+                                'errorMessage': query_error,
+                                'shaclFile': str(shacl_file),
+                            }
+                        ))
 
     try:
         validate_inner()
@@ -645,30 +640,33 @@ def validate_test_resources(bblock: BuildingBlock,
     final_result = True
     test_count = 0
 
-    shacl_graph = Graph()
+    shacl_graphs: dict[str | Path, Graph] = {}
     bblock_shacl_closure = Graph()
-    shacl_error = None
+    shacl_errors = []
 
-    all_shacl_files = []
     inherited_shacl_rules = bblocks_register.get_inherited_shacl_rules(bblock.identifier)
-    try:
-        for shacl_bblock in list(inherited_shacl_rules.keys()):
-            bblock_shacl_files = set()
-            for shacl_file in inherited_shacl_rules[shacl_bblock]:
-                if isinstance(shacl_file, Path) or (isinstance(shacl_file, str) and not is_url(shacl_file)):
-                    # assume file
-                    shacl_file = os.path.relpath(bblock.files_path / shacl_file)
-                bblock_shacl_files.add(shacl_file)
-                all_shacl_files.append(shacl_file)
-                shacl_graph.parse(shacl_file, format='turtle')
-            inherited_shacl_rules[shacl_bblock] = bblock_shacl_files
+    for shacl_bblock in list(inherited_shacl_rules.keys()):
+        bblock_shacl_files = set()
+        for shacl_file in inherited_shacl_rules[shacl_bblock]:
+            if isinstance(shacl_file, Path) or (isinstance(shacl_file, str) and not is_url(shacl_file)):
+                # assume file
+                shacl_file = os.path.relpath(bblock.files_path / shacl_file)
+            bblock_shacl_files.add(shacl_file)
+            try:
+                shacl_graphs[shacl_file] = Graph().parse(shacl_file, format='turtle')
+            except HTTPError as e:
+                shacl_errors.append(f"Error retrieving {e.url}: {e}")
+            except Exception as e:
+                shacl_errors.append(str(e))
+        inherited_shacl_rules[shacl_bblock] = bblock_shacl_files
 
-        for sc in bblock.shaclClosures or ():
+    for sc in bblock.shaclClosures or ():
+        try:
             bblock_shacl_closure.parse(bblock.resolve_file(sc), format='turtle')
-    except HTTPError as e:
-        shacl_error = f"Error retrieving {e.url}: {e}"
-    except Exception as e:
-        shacl_error = str(e)
+        except HTTPError as e:
+            shacl_errors.append(f"Error retrieving {e.url}: {e}")
+        except Exception as e:
+            shacl_errors.append(str(e))
     bblock.metadata['shaclRules'] = inherited_shacl_rules
 
     if not bblock.tests_dir.is_dir() and not bblock.examples:
@@ -710,10 +708,9 @@ def validate_test_resources(bblock: BuildingBlock,
                 schema_validator=schema_validator,
                 jsonld_context=jsonld_context,
                 jsonld_url=jsonld_url,
-                shacl_graph=shacl_graph,
+                shacl_graphs=shacl_graphs,
                 json_error=json_error,
-                shacl_error=shacl_error,
-                shacl_files=all_shacl_files,
+                shacl_errors=shacl_errors,
                 shacl_closure=bblock_shacl_closure)
             all_results.append(test_result)
             final_result = not test_result.failed and final_result
@@ -776,11 +773,10 @@ def validate_test_resources(bblock: BuildingBlock,
                         schema_validator=snippet_schema_validator,
                         jsonld_context=jsonld_context,
                         jsonld_url=jsonld_url,
-                        shacl_graph=shacl_graph,
+                        shacl_graphs=shacl_graphs,
                         json_error=json_error,
-                        shacl_error=shacl_error,
+                        shacl_errors=shacl_errors,
                         base_uri=snippet.get('base-uri', example_base_uri),
-                        shacl_files=all_shacl_files,
                         schema_ref=snippet.get('schema-ref'),
                         shacl_closure_files=snippet_shacl_closure,
                         shacl_closure=bblock_shacl_closure)
