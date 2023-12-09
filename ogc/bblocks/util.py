@@ -766,7 +766,8 @@ def to_oas30(schema_fn: Path, schema_url: str, bbr: BuildingBlockRegister) -> di
             if add_nullable:
                 parent['nullable'] = True
 
-    def walk(subschema, schema_id: str | Path, is_properties: bool = False) -> tuple[dict, str, str | Path]:
+    def walk(subschema: dict | list, schema_id: str | Path, is_properties: bool = False) \
+            -> tuple[dict | list, str | None, str | Path]:
         schema_version = None
         if isinstance(subschema, list):
             for item in subschema:
@@ -778,7 +779,7 @@ def to_oas30(schema_fn: Path, schema_url: str, bbr: BuildingBlockRegister) -> di
 
             schema_version = subschema.pop('$schema', None)
             schema_id = subschema.pop('$id', schema_id)
-            if isinstance(subschema.get('$ref'), str):
+            if isinstance(schema_id, str) and isinstance(subschema.get('$ref'), str):
 
                 ref = f"{schema_url}#/x-defs/{get_ref_mapping(schema_id, subschema.pop('$ref'))}"
 
