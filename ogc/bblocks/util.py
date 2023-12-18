@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import dataclasses
 import functools
 import hashlib
@@ -472,6 +473,11 @@ def write_jsonld_context(annotated_schema: Path) -> Path | None:
     context_fn = annotated_schema.parent / 'context.jsonld'
     with open(context_fn, 'w') as f:
         json.dump(ctx_builder.context, f, indent=2)
+    with open(context_fn.parent / '_visited_properties.tsv', 'w', newline='') as f:
+        writer = csv.writer(f, delimiter='\t')
+        writer.writerow(['path', '@id'])
+        for e in ctx_builder.visited_properties.items():
+            writer.writerow(e)
     return context_fn
 
 
