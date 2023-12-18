@@ -85,10 +85,6 @@ ${'#'} Examples
 
 ${'##'} ${example.get('title', f"Example {loop.index + 1}")}
 
-    % if example.get('content'):
-${example['content'].replace('@@assets@@', assets_rel or '')}
-
-    %endif
     % for snippet in example.get('snippets', []):
 % if snippet.get('code', '').strip():
 
@@ -118,6 +114,10 @@ ${snippet['code']}
 % endif
 
     % endfor
+    % if example.get('content'):
+${example['content'].replace('@@assets@@', assets_rel or '')}
+
+    %endif
   % endfor
 % endif
 % if bblock.schema.is_file():
