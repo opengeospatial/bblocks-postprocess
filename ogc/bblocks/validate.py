@@ -269,12 +269,12 @@ def _validate_resource(bblock: BuildingBlock,
                        shacl_closure_files: list[str | Path] | None = None,
                        shacl_closure: Graph | None = None) -> ValidationReportItem:
 
-    require_fail = filename.stem.endswith('-fail')
+    require_fail = filename.stem.endswith('-fail') and not resource_contents
     if resource_contents:
         example_idx, snippet_idx = re.match(r'example_(\d+)_(\d+).*', filename.name).groups()
         source = ValidationItemSource(
             type=ValidationItemSourceType.EXAMPLE,
-            filename=filename,
+            filename=output_filename,
             example_index=int(example_idx),
             snippet_index=int(snippet_idx),
             language=filename.suffix[1:],
@@ -296,9 +296,13 @@ def _validate_resource(bblock: BuildingBlock,
             try:
                 if resource_contents:
                     json_doc = load_yaml(content=resource_contents)
+                    if filename.name == output_filename.name:
+                        using_fn = filename.name
+                    else:
+                        using_fn = f"{output_filename.name} ({filename.stem})"
                     report.add_entry(ValidationReportEntry(
                         section=ValidationReportSection.FILES,
-                        message=f'Using {filename.name} from examples',
+                        message=f'Using {using_fn} from examples',
                     ))
                 else:
                     json_doc = load_yaml(filename=filename)
