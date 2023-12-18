@@ -100,7 +100,7 @@ class ValidationReportItem:
 
     def add_entry(self, entry: ValidationReportEntry):
         self._sections.setdefault(entry.section, []).append(entry)
-        if entry.is_error:
+        if entry.is_error and (not entry.payload or entry.payload.get('op') != 'require-fail'):
             self._has_errors = True
             if entry.is_global:
                 self._has_general_errors = True
