@@ -28,7 +28,7 @@ from rdflib import Graph
 from rdflib.term import Node, URIRef, BNode
 from yaml import MarkedYAMLError
 
-from ogc.bblocks.util import BuildingBlock, BuildingBlockRegister
+from ogc.bblocks.util import BuildingBlock, BuildingBlockRegister, sanitize_filename
 import traceback
 import pyshacl
 import jsonref
@@ -697,12 +697,16 @@ def validate_test_resources(bblock: BuildingBlock,
     output_dir.mkdir(parents=True, exist_ok=True)
 
     all_results: list[ValidationReportItem] = []
+
+    output_base_filenames = set()
+
     # Test resources
     if bblock.tests_dir.is_dir():
         for fn in sorted(bblock.tests_dir.resolve().iterdir()):
             if fn.suffix not in ('.json', '.jsonld', '.ttl'):
                 continue
             output_fn = output_dir / fn.name
+            output_base_filenames.add(fn.stem)
 
             test_result = _validate_resource(
                 bblock, fn, output_fn,
@@ -755,7 +759,12 @@ def validate_test_resources(bblock: BuildingBlock,
                 if code and lang in ('json', 'jsonld', 'ttl', 'json-ld', 'turtle'):
                     fn = bblock.files_path / (f"example_{example_id + 1}_{snippet_id + 1}"
                                               f".{FORMAT_ALIASES.get(snippet['language'], snippet['language'])}")
-                    output_fn = output_dir / fn.name
+
+                    output_fn = output_dir / sanitize_filename(example.get('base-output-filename', fn.name))
+                    i = 0
+                    while output_fn.stem in output_base_filenames:
+                        i += 1
+                        output_fn = output_fn.with_stem(f"{output_fn.stem}-{i}")
 
                     with open(output_fn, 'w') as f:
                         f.write(code)

@@ -16,6 +16,7 @@ from urllib.parse import urljoin
 
 import jsonschema
 import networkx as nx
+import pathvalidate
 import requests
 from ogc.na.annotate_schema import SchemaAnnotator, ContextBuilder
 from ogc.na.util import load_yaml, dump_yaml, is_url
@@ -835,3 +836,7 @@ def to_oas30(schema_fn: Path, schema_url: str, bbr: BuildingBlockRegister) -> di
             {'$ref': f"{schema_url}#/x-defs/{root_ref_id}"}
         ]
     }
+
+
+def sanitize_filename(fn: str):
+    return pathvalidate.sanitize_filename(fn)

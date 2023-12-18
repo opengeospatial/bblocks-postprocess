@@ -21,6 +21,10 @@ items:
     base-uri:
       description: Base URI that will be used for semantic uplift (JSON -> JSON-LD -> Turtle).
       type: string
+    base-output-filename:
+      description: |
+        Base filename that will be used for writing this example to its own file. Extension, if any, will be discarded.
+      type: string
     snippets:
       description: |
         Collection of snippets to illustrate this example. Preferably, only one snippet per language
