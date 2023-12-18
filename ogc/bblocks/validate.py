@@ -699,7 +699,7 @@ def validate_test_resources(bblock: BuildingBlock,
     all_results: list[ValidationReportItem] = []
     # Test resources
     if bblock.tests_dir.is_dir():
-        for fn in bblock.tests_dir.resolve().iterdir():
+        for fn in sorted(bblock.tests_dir.resolve().iterdir()):
             if fn.suffix not in ('.json', '.jsonld', '.ttl'):
                 continue
             output_fn = output_dir / fn.name
