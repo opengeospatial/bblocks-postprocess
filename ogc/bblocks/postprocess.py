@@ -35,7 +35,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 github_base_url: str | None = None,
                 imported_registers: list[str] | None = None,
                 bb_filter: str | None = None,
-                steps: list[str] | None = None) -> list[BuildingBlock]:
+                steps: list[str] | None = None) -> list[dict]:
 
     cwd = Path().resolve()
 
@@ -124,7 +124,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         if base_url:
             bblock.metadata['sourceFiles'] = f"{base_url}{rel_files_path}/"
         else:
-            bblock.metadata['sourceFiles'] = f"./{os.path.relpath(rel_files_path, output_file_root)}/"
+            bblock.metadata['sourceFiles'] = f"./{os.path.relpath(str(rel_files_path), str(output_file_root))}/"
 
         if not light:
             if not steps or 'tests' in steps:
@@ -169,9 +169,6 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             print(f"  > Generating documentation for {bblock.identifier}", file=sys.stderr)
             doc_generator.generate_doc(bblock)
         return True
-
-    if not isinstance(registered_items_path, Path):
-        registered_items_path = Path(registered_items_path)
 
     filter_id = None
     if bb_filter:
@@ -243,6 +240,19 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 try:
                     written_context = write_jsonld_context(building_block.annotated_schema)
                     if written_context:
+                        try:
+                            nodejsrun = subprocess.run([
+                                'node',
+                                str(Path(__file__).parent.joinpath('validation/validate-jsonld.js')),
+                                str(written_context),
+                            ], capture_output=True)
+                            if nodejsrun.returncode == 26:  # validation error
+                                raise ValueError(nodejsrun.stdout.decode())
+                            elif nodejsrun.returncode == 0:
+                                written_context = f"{written_context} (validated)"
+                        except FileNotFoundError:
+                            # node not installed
+                            pass
                         print(f"  - {written_context}", file=sys.stderr)
                 except Exception as e:
                     if fail_on_error:
