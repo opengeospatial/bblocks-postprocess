@@ -89,6 +89,7 @@ class BuildingBlock:
             except Exception as e:
                 raise BuildingBlockError('Error validating building block metadata') from e
 
+            self.metadata.pop('itemIdentifier', None)
             self.metadata: dict[str, Any] = {
                 'itemIdentifier': identifier,
                 **self.metadata,
