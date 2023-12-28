@@ -35,9 +35,13 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 github_base_url: str | None = None,
                 imported_registers: list[str] | None = None,
                 bb_filter: str | None = None,
-                steps: list[str] | None = None) -> list[dict]:
+                steps: list[str] | None = None,
+                bbr_config: dict | None = None) -> list[dict]:
 
     cwd = Path().resolve()
+
+    if bbr_config is None:
+        bbr_config = {}
 
     if not isinstance(test_outputs_path, Path):
         test_outputs_path = Path(test_outputs_path)
@@ -281,8 +285,11 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         else:
             print(f"{building_block.identifier} failed postprocessing, skipping...", file=sys.stderr)
 
+    full_validation_report_url = None
     if not steps or 'tests' in steps:
         print(f"Writing full validation report to {test_outputs_path / 'report.html'}", file=sys.stderr)
+        if test_outputs_base_url:
+            full_validation_report_url = test_outputs_base_url + 'report.html'
         report_to_html(json_reports=validation_reports, report_fn=test_outputs_path / 'report.html')
 
     if output_file and (not steps or 'register' in steps):
@@ -290,6 +297,12 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             'imports': imported_registers or [],
             'bblocks': output_bblocks,
         }
+        if bbr_config.get('name'):
+            output_register_json['name'] = bbr_config['name']
+        if base_url:
+            output_register_json['baseURL'] = base_url
+        if full_validation_report_url:
+            output_register_json['validationReport'] = full_validation_report_url
         if output_file == '-':
             print(json.dumps(output_register_json, indent=2, cls=CustomJSONEncoder))
         else:
