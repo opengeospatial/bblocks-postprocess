@@ -133,8 +133,17 @@ properties:
   successor:
     description: Identifier or URI of the predecessor of this Building Block.
     type: string
+  isProfileOf:
+    description: |
+      Identifier of another Building Block that this Building Block is a profile of, or list thereof.
+      Profiling in this context is akin to inheritance.
+    oneOf:
+      - type: string
+      - type: array
+        items:
+          type: string
   dependsOn:
-    description: Identifier or URI of other Building Blocks that this Building Blocks depends on
+    description: Identifiers of other Building Blocks that this Building Block depends on
     type: array
     items:
       type: string
