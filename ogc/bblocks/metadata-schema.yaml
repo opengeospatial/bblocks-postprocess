@@ -92,6 +92,28 @@ properties:
     description: Link to a website or additional documentation for this Building Block.
     type: string
     format: uri
+  links:
+    description: List of links to websites or additional documentation for this Building Block.
+    type: array
+    items:
+      type: object
+      required:
+        - title
+        - href
+      properties:
+        title:
+          description: Title for the link
+          type: string
+        href:
+          description: URL for the link
+          type: string
+          format: uri
+        rel:
+          description: Relationship to the linked document
+          type: string
+        notes:
+          description: Additional notes or comments
+          type: string
   tags:
     description: List of tags attached to this Building Block.
     type: array
