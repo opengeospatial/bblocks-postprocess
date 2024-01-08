@@ -141,8 +141,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 validation_reports.append(json_report)
 
                 bblock.metadata['validationPassed'] = validation_passed
-                if not validation_passed:
-                    bblock.metadata['status'] = 'invalid'
+                # if not validation_passed:
+                #     bblock.metadata['status'] = 'invalid'
                 if test_count and test_outputs_base_url:
                     bblock.metadata['testOutputs'] = f"{test_outputs_base_url}{bblock.subdirs}/"
 
