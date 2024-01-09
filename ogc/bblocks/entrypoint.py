@@ -158,10 +158,12 @@ if __name__ == '__main__':
 
     base_url = args.base_url
     github_base_url = args.github_base_url
+    git_repo_path = None
     if not base_url or not github_base_url:
         try:
             import git
             repo = git.Repo()
+            git_repo_path = Path(repo.working_dir)
             remote_branch = repo.active_branch.tracking_branch()
             remote = repo.remote(remote_branch.remote_name)
             remote_url = next(remote.urls)
@@ -190,7 +192,8 @@ if __name__ == '__main__':
                 github_base_url=github_base_url,
                 imported_registers=imported_registers,
                 bb_filter=args.filter,
-                steps=steps)
+                steps=steps,
+                git_repo_path=git_repo_path)
 
     # 2. Uplift register.json
     print(f"Running semantic uplift of {register_file}", file=sys.stderr)

@@ -36,7 +36,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 imported_registers: list[str] | None = None,
                 bb_filter: str | None = None,
                 steps: list[str] | None = None,
-                bbr_config: dict | None = None) -> list[dict]:
+                bbr_config: dict | None = None,
+                git_repo_path: Path | None = None) -> list[dict]:
 
     cwd = Path().resolve()
 
@@ -299,6 +300,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         }
         if bbr_config.get('name'):
             output_register_json['name'] = bbr_config['name']
+        elif git_repo_path:
+            output_register_json['name'] = git_repo_path.name
         if base_url:
             output_register_json['baseURL'] = base_url
         if full_validation_report_url:
