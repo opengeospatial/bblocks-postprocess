@@ -57,11 +57,20 @@ on:
         type: boolean
         description: Whether to skip the GH pages build part of the process
         default: false
+      deploy-viewer:
+        type: boolean
+        description: Whether to use the new building blocks viewer
+        default: false
+
 
 permissions:
   contents: write
   pages: write
   id-token: write
+
+concurrency:
+  group: bblocks
+  cancel-in-progress: true
 
 jobs:
   validate-and-process:
@@ -107,7 +116,7 @@ jobs:
           sudo find "${{ inputs.annotated_path }}" -name _visited_properties.tsv -delete
           sudo find "${{ inputs.annotated_path }}" -name _visited_properties.tsv.gz -delete
       - name: Create GH Pages index
-        if: ${{ github.event.repository.has_pages && !inputs.skip-pages }}
+        if: ${{ !inputs.deploy-viewer && github.event.repository.has_pages && !inputs.skip-pages }}
         shell: python
         run: |
           import json
@@ -133,6 +142,14 @@ jobs:
               else:
                 f.write(f'<li class="validation-{validation}"><tt>{identifier}</tt> - {name}</li>')
             f.write('</ul><p style="margin-top:1em"><a href="${{ inputs.test_outputs_path }}/report.html">Validation report</a></p></body></html>')
+      - name: Deploy Building Blocks viewer
+        if: ${{ inputs.deploy-viewer && github.event.repository.has_pages && !inputs.skip-pages }}
+        run: |
+          wget -q -O - https://github.com/ogcincubator/bblocks-viewer/archive/refs/heads/dist.tar.gz | tar zx --strip-components=1
+          sed -i -r 's,@BASE_URL@,/${{ github.event.repository.name }}/,' index.html 404.html assets/*.js assets/*.css
+          cat << EOF > config.js
+          window.bblocksRegisters = ['${{ format('https://{0}.github.io/{1}', github.repository_owner, github.event.repository.name) }}'];
+          EOF
       - name: Setup Pages
         if: ${{ github.event.repository.has_pages && !inputs.skip-pages }}
         uses: actions/configure-pages@v3
