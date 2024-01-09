@@ -95,7 +95,7 @@ jobs:
           github_base_url: ${{ inputs.github_base_url }}
       - name: Compress large _visited_properties.tsv
         run: |
-          find "${{ inputs.annotated_path }}" -size +10M -name _visited_properties.tsv \
+          sudo find "${{ inputs.annotated_path }}" -size +10M -name _visited_properties.tsv \
             -exec gzip \{\} \;
       - name: Add & Commit
         if: ${{ !endsWith(github.repository, '/bblock-template') && !inputs.skip-build }}
@@ -104,7 +104,8 @@ jobs:
           message: Building blocks postprocessing
       - name: Remove _visited_properties.tsv from pages
         run: |
-          find "${{ inputs.annotated_path }}" -name _visited_properties.tsv -delete
+          sudo find "${{ inputs.annotated_path }}" -name _visited_properties.tsv -delete
+          sudo find "${{ inputs.annotated_path }}" -name _visited_properties.tsv.gz -delete
       - name: Create GH Pages index
         if: ${{ github.event.repository.has_pages && !inputs.skip-pages }}
         shell: python
