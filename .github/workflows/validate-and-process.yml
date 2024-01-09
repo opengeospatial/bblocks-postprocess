@@ -98,6 +98,9 @@ jobs:
         uses: EndBug/add-and-commit@v9
         with:
           message: Building blocks postprocessing
+      - name: Remove _visited_properties.tsv from pages
+        run: |
+          find "${{ inputs.annotated_path }}" -name _visited_properties.tsv -delete
       - name: Create GH Pages index
         if: ${{ github.event.repository.has_pages && !inputs.skip-pages }}
         shell: python
