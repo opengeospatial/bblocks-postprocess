@@ -289,8 +289,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
     full_validation_report_url = None
     if not steps or 'tests' in steps:
         print(f"Writing full validation report to {test_outputs_path / 'report.html'}", file=sys.stderr)
-        if test_outputs_base_url:
-            full_validation_report_url = test_outputs_base_url + 'report.html'
+        if base_url:
+            full_validation_report_url = f"{base_url}{os.path.relpath(Path(test_outputs_path).resolve(), cwd)}/report.html"
         report_to_html(json_reports=validation_reports, report_fn=test_outputs_path / 'report.html')
 
     if output_file and (not steps or 'register' in steps):

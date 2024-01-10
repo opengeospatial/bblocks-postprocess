@@ -151,7 +151,7 @@ jobs:
           cat << EOF > config.js
           window.bblocksRegisters = ['${{ format('https://{0}.github.io/{1}/{2}', github.repository_owner, github.event.repository.name, inputs.register_file) }}'];
           window.bblocksViewer = {
-            title: $(jq '.name // "${{ github.event.repository.name }}" ' < "${{ inputs.register_file }}"),
+            title: $(jq '.name // "${{ github.event.repository.name }}"' < "${{ inputs.register_file }}"),
           };
           EOF
       - name: Setup Pages
