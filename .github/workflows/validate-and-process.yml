@@ -146,9 +146,9 @@ jobs:
         if: ${{ inputs.deploy-viewer && github.event.repository.has_pages && !inputs.skip-pages }}
         run: |
           wget -q -O - https://github.com/ogcincubator/bblocks-viewer/archive/refs/heads/dist.tar.gz | tar zx --strip-components=1
-          sed -i -r 's,@BASE_URL@,/${{ github.event.repository.name }}/,' index.html 404.html assets/*.js assets/*.css
+          sed -i -r 's,/@BASE_URL@/,/${{ github.event.repository.name }}/,g' index.html 404.html assets/*.js assets/*.css
           cat << EOF > config.js
-          window.bblocksRegisters = ['${{ format('https://{0}.github.io/{1}', github.repository_owner, github.event.repository.name) }}'];
+          window.bblocksRegisters = ['${{ format('https://{0}.github.io/{1}/{2}', github.repository_owner, github.event.repository.name, inputs.register_file) }}'];
           EOF
       - name: Setup Pages
         if: ${{ github.event.repository.has_pages && !inputs.skip-pages }}
