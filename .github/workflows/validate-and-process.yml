@@ -60,7 +60,7 @@ on:
       deploy-viewer:
         type: boolean
         description: Whether to use the new building blocks viewer
-        default: false
+        default: true
 
 
 permissions:
