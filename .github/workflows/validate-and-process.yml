@@ -102,10 +102,11 @@ jobs:
           config_file: ${{ inputs.config_file }}
           test_outputs_path: ${{ inputs.test_outputs_path }}
           github_base_url: ${{ inputs.github_base_url }}
-      - name: Compress large _visited_properties.tsv
+      - name: Compress large _visited_properties.tsv and git pull
         run: |
           sudo find "${{ inputs.annotated_path }}" -size +10M -name _visited_properties.tsv \
             -exec gzip \{\} \;
+          git pull
       - name: Add & Commit
         if: ${{ !endsWith(github.repository, '/bblock-template') && !inputs.skip-build }}
         uses: EndBug/add-and-commit@v9
