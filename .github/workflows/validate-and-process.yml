@@ -150,6 +150,9 @@ jobs:
           sed -i -r 's,/@BASE_URL@/,/${{ github.event.repository.name }}/,g' index.html 404.html assets/*.js assets/*.css
           cat << EOF > config.js
           window.bblocksRegisters = ['${{ format('https://{0}.github.io/{1}/{2}', github.repository_owner, github.event.repository.name, inputs.register_file) }}'];
+          window.bblocksViewer = {
+            title: $(jq '.name // "${{ github.event.repository.name }}" ' < "${{ inputs.register_file }}"),
+          };
           EOF
       - name: Setup Pages
         if: ${{ github.event.repository.has_pages && !inputs.skip-pages }}
