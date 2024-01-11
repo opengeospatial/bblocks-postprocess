@@ -217,3 +217,8 @@ properties:
               Property path where the schema for this Building Block will be inserted, in the format "a.b.c.d".
               If a property is an array, "prop[]" notation can be used (e.g., "a.b[].c.d[]").
             type: string
+  highlighted:
+    description: |
+      Whether this Building Block should be "highlighted" or "featured" within the register, potentially
+      used as an entry point for the collection
+    type: boolean
