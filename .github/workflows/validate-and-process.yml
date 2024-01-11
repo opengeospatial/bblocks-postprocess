@@ -156,8 +156,17 @@ jobs:
             mkdir -p "${{ inputs.viewer_path }}"
             cd "${{ inputs.viewer_path }}"
           fi
+          
+          # If viewer path is '.' or './', clear it.
+          # Otherwise, remove any leading './'
+          BASE_URL="${{ inputs.viewer_path }}"
+          if [[ "${BASE_URL}" =~ ^\./?$ ]]; then
+            BASE_URL=
+          else
+            BASE_URL=${BASE_URL#./}
+          fi
           wget -q -O - https://github.com/ogcincubator/bblocks-viewer/archive/refs/heads/dist.tar.gz | tar zx --strip-components=1
-          sed -i -r 's,/@BASE_URL@/,/${{ github.event.repository.name }}/,g' index.html 404.html assets/*.js assets/*.css
+          sed -i -r "s,/@BASE_URL@/,/${{ github.event.repository.name }}/${BASE_URL},g" index.html 404.html assets/*.js assets/*.css
           cat << EOF > config.js
           window.bblocksRegisters = ['${{ format('https://{0}.github.io/{1}/{2}', github.repository_owner, github.event.repository.name, inputs.register_file) }}'];
           window.bblocksViewer = {
