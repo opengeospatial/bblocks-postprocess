@@ -37,7 +37,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 bb_filter: str | None = None,
                 steps: list[str] | None = None,
                 bbr_config: dict | None = None,
-                git_repo_path: Path | None = None) -> list[dict]:
+                git_repo_path: Path | None = None,
+                viewer_path: str | Path | None = None) -> list[dict]:
 
     cwd = Path().resolve()
 
@@ -169,6 +170,13 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 for transform in bblock.transforms:
                     transform['ref'] = urljoin(bblock.metadata['sourceFiles'], transform['ref'])
                     bblock.metadata['transforms'].append({k: v for k, v in transform.items() if k != 'code'})
+
+            if viewer_path:
+                bblock.metadata.setdefault('links', []).append({
+                    'title': 'Building Blocks Viewer',
+                    'href': urljoin(base_url, f"{viewer_path}/bblocks/{bblock.identifier}"),
+                    'rel': 'bblocks-viewer',
+                })
 
         if not light and (not steps or 'doc' in steps):
             print(f"  > Generating documentation for {bblock.identifier}", file=sys.stderr)
@@ -304,6 +312,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             output_register_json['name'] = git_repo_path.name
         if base_url:
             output_register_json['baseURL'] = base_url
+            if viewer_path:
+                output_register_json['viewerURL'] = urljoin(base_url, viewer_path)
         if full_validation_report_url:
             output_register_json['validationReport'] = full_validation_report_url
         if output_file == '-':

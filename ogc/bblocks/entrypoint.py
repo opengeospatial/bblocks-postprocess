@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import re
 import shutil
 import subprocess
 import sys
@@ -98,10 +97,22 @@ if __name__ == '__main__':
              'tests,transforms,doc,register). Forces --clean to false'
     )
 
+    parser.add_argument(
+        '--deploy-viewer',
+        help='Whether the javascript bblocks viewer will be deployed'
+    )
+
+    parser.add_argument(
+        '--viewer-path',
+        help='Path where the viewer will be deployed',
+        default='.'
+    )
+
     args = parser.parse_args()
 
-    fail_on_error = args.fail_on_error in ('true', 'on', 'yes')
-    clean = args.clean in ('true', 'on', 'yes')
+    fail_on_error = args.fail_on_error in ('true', 'on', 'yes', '1')
+    clean = args.clean in ('true', 'on', 'yes', '1')
+    deploy_viewer = args.deploy_viewer in ('true', 'on', 'yes', '1')
     bb_config_file = Path(args.config_file) if args.config_file else None
 
     print(f"""Running with the following configuration:
@@ -118,6 +129,8 @@ if __name__ == '__main__':
 - github_base_url: {args.github_base_url}
 - filter: {args.filter}
 - steps: {args.steps}
+- deploy_viewer: {deploy_viewer}
+- viewer_path: {args.viewer_path}
     """, file=sys.stderr)
 
     register_file = Path(args.register_file)
@@ -193,7 +206,8 @@ if __name__ == '__main__':
                 imported_registers=imported_registers,
                 bb_filter=args.filter,
                 steps=steps,
-                git_repo_path=git_repo_path)
+                git_repo_path=git_repo_path,
+                viewer_path=(args.viewer_path or '.') if deploy_viewer else None)
 
     # 2. Uplift register.json
     print(f"Running semantic uplift of {register_file}", file=sys.stderr)

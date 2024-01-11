@@ -52,6 +52,8 @@ runs:
         config_file: ${{ inputs.config_file }}
         test_outputs_path: ${{ inputs.test_outputs_path }}
         github_base_url: ${{ inputs.github_base_url }}
+        deploy_viewer: "${{ inputs.deploy-viewer }}"
+        viewer_path: ${{ inputs.viewer-path }}
     - name: Generate Slate documentation
       continue-on-error: true
       run: |
