@@ -171,16 +171,17 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                     transform['ref'] = urljoin(bblock.metadata['sourceFiles'], transform['ref'])
                     bblock.metadata['transforms'].append({k: v for k, v in transform.items() if k != 'code'})
 
-            if viewer_path:
-                bblock.metadata.setdefault('links', []).append({
-                    'title': 'Building Blocks Viewer',
-                    'href': urljoin(base_url, f"{viewer_path}/bblocks/{bblock.identifier}"),
-                    'rel': 'bblocks-viewer',
-                })
-
         if not light and (not steps or 'doc' in steps):
             print(f"  > Generating documentation for {bblock.identifier}", file=sys.stderr)
             doc_generator.generate_doc(bblock)
+
+        if base_url:
+            if viewer_path:
+                bblock.metadata.setdefault('documentation', {})['bblocks-viewer'] = {
+                    'mediatype': 'text/html',
+                    'url': urljoin(base_url, f"{viewer_path}/bblock/{bblock.identifier}"),
+                }
+
         return True
 
     filter_id = None
