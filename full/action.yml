@@ -35,6 +35,12 @@ inputs:
   github_base_url:
     description: Base URL for linking to GitHub content
     default: https://github.com/${{github.repository}}/blob/${{github.ref_name}}/
+  deploy_viewer:
+    description: Whether to use the new building blocks viewer
+    default: 'true'
+  viewer_path:
+    description: Path where to deploy the viewer
+    default: '.'
 
 runs:
   using: composite
@@ -52,8 +58,8 @@ runs:
         config_file: ${{ inputs.config_file }}
         test_outputs_path: ${{ inputs.test_outputs_path }}
         github_base_url: ${{ inputs.github_base_url }}
-        deploy_viewer: "${{ inputs.deploy-viewer }}"
-        viewer_path: ${{ inputs.viewer-path }}
+        deploy_viewer: ${{ inputs.deploy_viewer }}
+        viewer_path: ${{ inputs.viewer_path }}
     - name: Generate Slate documentation
       continue-on-error: true
       run: |

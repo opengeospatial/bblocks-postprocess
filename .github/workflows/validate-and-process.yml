@@ -57,11 +57,11 @@ on:
         type: boolean
         description: Whether to skip the GH pages build part of the process
         default: false
-      deploy-viewer:
+      deploy_viewer:
         type: boolean
         description: Whether to use the new building blocks viewer
         default: true
-      viewer-path:
+      viewer_path:
         type: string
         description: Path where to deploy the viewer
         default: '.'
@@ -106,8 +106,8 @@ jobs:
           config_file: ${{ inputs.config_file }}
           test_outputs_path: ${{ inputs.test_outputs_path }}
           github_base_url: ${{ inputs.github_base_url }}
-          deploy_viewer: "${{ inputs.deploy-viewer }}"
-          viewer_path: ${{ inputs.viewer-path }}
+          deploy_viewer: ${{ inputs.deploy_viewer && 'true' || 'false' }}
+          viewer_path: ${{ inputs.viewer_path }}
       - name: Compress large _visited_properties.tsv and git pull
         run: |
           sudo find "${{ inputs.annotated_path }}" -size +10M -name _visited_properties.tsv \
@@ -123,7 +123,7 @@ jobs:
           sudo find "${{ inputs.annotated_path }}" -name _visited_properties.tsv -delete
           sudo find "${{ inputs.annotated_path }}" -name _visited_properties.tsv.gz -delete
       - name: Create GH Pages index
-        if: ${{ !inputs.deploy-viewer && github.event.repository.has_pages && !inputs.skip-pages }}
+        if: ${{ !inputs.deploy_viewer && github.event.repository.has_pages && !inputs.skip-pages }}
         shell: python
         run: |
           import json
@@ -150,7 +150,7 @@ jobs:
                 f.write(f'<li class="validation-{validation}"><tt>{identifier}</tt> - {name}</li>')
             f.write('</ul><p style="margin-top:1em"><a href="${{ inputs.test_outputs_path }}/report.html">Validation report</a></p></body></html>')
       - name: Deploy Building Blocks viewer
-        if: ${{ inputs.deploy-viewer && github.event.repository.has_pages && !inputs.skip-pages }}
+        if: ${{ inputs.deploy_viewer && github.event.repository.has_pages && !inputs.skip-pages }}
         run: |
           if [ -n "${{ inputs.viewer_path }}" ]; then
             mkdir -p "${{ inputs.viewer_path }}"
