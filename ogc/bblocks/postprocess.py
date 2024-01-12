@@ -118,6 +118,14 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 'application/yaml': schema_url_yaml,
                 'application/json': schema_url_json,
             }
+        if bblock.metadata.get('ldContext'):
+            source_ldcontext = bblock.metadata['ldContext']
+            if not is_url(source_ldcontext):
+                if base_url:
+                    source_ldcontext = f"{base_url}{os.path.relpath(source_ldcontext, cwd)}"
+                else:
+                    source_ldcontext = f"./{os.path.relpath(source_ldcontext, cwd)}"
+            bblock.metadata['sourceLdContext'] = source_ldcontext
         if bblock.jsonld_context.is_file():
             if base_url:
                 rel_context = os.path.relpath(bblock.jsonld_context, cwd)
@@ -230,6 +238,9 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 default_jsonld_context = building_block.files_path / 'context.jsonld'
                 if not default_jsonld_context.is_file():
                     default_jsonld_context = None
+
+            if default_jsonld_context:
+                building_block.metadata['ldContext'] = str(default_jsonld_context)
 
             try:
                 for annotated in annotate_schema(building_block,
