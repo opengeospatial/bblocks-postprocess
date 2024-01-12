@@ -38,7 +38,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 steps: list[str] | None = None,
                 bbr_config: dict | None = None,
                 git_repo_path: Path | None = None,
-                viewer_path: str | Path | None = None) -> list[dict]:
+                viewer_path: str | Path | None = None,
+                additional_metadata: dict | None = None) -> list[dict]:
 
     cwd = Path().resolve()
 
@@ -328,6 +329,12 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 output_register_json['viewerURL'] = urljoin(base_url, viewer_path)
         if full_validation_report_url:
             output_register_json['validationReport'] = full_validation_report_url
+
+        if additional_metadata:
+            for k, v in additional_metadata.items():
+                if k not in output_register_json:
+                    output_register_json[k] = v
+
         if output_file == '-':
             print(json.dumps(output_register_json, indent=2, cls=CustomJSONEncoder))
         else:

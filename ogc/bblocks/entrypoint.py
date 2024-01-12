@@ -157,6 +157,7 @@ if __name__ == '__main__':
     id_prefix = 'ogc.'
     annotated_path = Path(args.annotated_path)
     imported_registers = []
+    register_additional_metadata = {}
     if bb_config_file and bb_config_file.is_file():
         bb_config = load_yaml(filename=bb_config_file)
         id_prefix = bb_config.get('identifier-prefix', id_prefix)
@@ -168,6 +169,13 @@ if __name__ == '__main__':
             imported_registers = [MAIN_BBR]
         else:
             imported_registers = [ir if ir != DEFAULT_IMPORT_MARKER else MAIN_BBR for ir in imported_registers if ir]
+
+        register_abstract = bb_config.get('abstract')
+        if register_abstract:
+            register_additional_metadata['abstract'] = register_abstract
+        register_description = bb_config.get('description')
+        if register_description:
+            register_additional_metadata['description'] = register_description
 
     base_url = args.base_url
     github_base_url = args.github_base_url
@@ -207,7 +215,8 @@ if __name__ == '__main__':
                 bb_filter=args.filter,
                 steps=steps,
                 git_repo_path=git_repo_path,
-                viewer_path=(args.viewer_path or '.') if deploy_viewer else None)
+                viewer_path=(args.viewer_path or '.') if deploy_viewer else None,
+                additional_metadata=register_additional_metadata)
 
     # 2. Uplift register.json
     print(f"Running semantic uplift of {register_file}", file=sys.stderr)
