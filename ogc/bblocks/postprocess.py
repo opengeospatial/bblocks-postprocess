@@ -319,14 +319,15 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             'imports': imported_registers or [],
             'bblocks': output_bblocks,
         }
-        if bbr_config.get('name'):
-            output_register_json['name'] = bbr_config['name']
-        elif git_repo_path:
+
+        if 'name' not in additional_metadata and git_repo_path:
             output_register_json['name'] = git_repo_path.name
+
         if base_url:
             output_register_json['baseURL'] = base_url
             if viewer_path:
                 output_register_json['viewerURL'] = urljoin(base_url, viewer_path)
+
         if full_validation_report_url:
             output_register_json['validationReport'] = full_validation_report_url
 

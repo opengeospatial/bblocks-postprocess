@@ -176,6 +176,9 @@ if __name__ == '__main__':
         register_description = bb_config.get('description')
         if register_description:
             register_additional_metadata['description'] = register_description
+        register_name = bb_config.get('name')
+        if register_name:
+            register_additional_metadata['name'] = register_name
 
     base_url = args.base_url
     github_base_url = args.github_base_url
