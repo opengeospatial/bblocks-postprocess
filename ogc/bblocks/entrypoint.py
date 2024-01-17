@@ -251,7 +251,6 @@ if __name__ == '__main__':
     # 4. Push to triplestore
     sparql_gsp = sparql_conf.get('push')
     if sparql_gsp:
-        print(os.environ.items())
         if os.environ.get('SPARQL_USERNAME'):
             auth = (os.environ['SPARQL_USERNAME'], os.environ.get('SPARQL_PASSWORD'))
             print(f"Pushing {register_ttl_fn} to SPARQL GSP at {sparql_gsp} (user {auth[0]})", file=sys.stderr)
