@@ -232,11 +232,14 @@ if __name__ == '__main__':
     print(f" - {register_jsonld_fn}", file=sys.stderr)
     print(f" - {register_ttl_fn}", file=sys.stderr)
     # TODO: Entailments
+    uplift_args = register_additional_metadata.copy()
+    uplift_args.setdefault('baseUrl', base_url or 'https://www.opengis.net/def/bblocks/')
     ingest_json.process_file(register_file,
                              context_fn=uplift_context_file,
                              jsonld_fn=register_jsonld_fn,
                              ttl_fn=register_ttl_fn,
-                             provenance_base_uri=args.base_url)
+                             provenance_base_uri=args.base_url,
+                             transform_args=uplift_args)
 
     # 3. Copy Slate assets
     # Run rsync -rlt /src/ogc/bblocks/slate-assets/ "${GENERATED_DOCS_PATH}/slate/"
@@ -258,9 +261,12 @@ if __name__ == '__main__':
             auth = None
             print(f"Pushing {register_ttl_fn} to SPARQL GSP at {sparql_gsp}", file=sys.stderr)
         sparql_graph = sparql_conf.get('graph') or base_url
-        update_vocabs.load_vocab(register_ttl_fn,
-                                 graph_store=sparql_gsp,
-                                 graph_uri=sparql_graph,
-                                 auth_details=auth)
+        try:
+            update_vocabs.load_vocab(register_ttl_fn,
+                                     graph_store=sparql_gsp,
+                                     graph_uri=sparql_graph,
+                                     auth_details=auth)
+        except Exception as e:
+            print(f" !! Error uploading to SPARQL GSP: {e}", file=sys.stderr)
 
     print(f"Finished Building Blocks postprocessing", file=sys.stderr)
