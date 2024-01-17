@@ -41,6 +41,12 @@ inputs:
   viewer_path:
     description: Path where to deploy the viewer
     default: '.'
+  sparql_username:
+    description: SPARQL GSP push user name
+    default: ''
+  sparql_password:
+    description: SPARQL GSP push password
+    default: ''
 
 runs:
   using: composite
@@ -60,6 +66,8 @@ runs:
         github_base_url: ${{ inputs.github_base_url }}
         deploy_viewer: ${{ inputs.deploy_viewer }}
         viewer_path: ${{ inputs.viewer_path }}
+        sparql_username: ${{ inputs.sparql_username }}
+        sparql_password: ${{ inputs.sparql_password }}
     - name: Generate Slate documentation
       continue-on-error: true
       run: |

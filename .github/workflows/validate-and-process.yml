@@ -65,6 +65,13 @@ on:
         type: string
         description: Path where to deploy the viewer
         default: '.'
+    secrets:
+      sparql_username:
+        description: SPARQL Graph Store Protocol user name for push authentication
+        required: false
+      sparql_password:
+        description: SPARQL Graph Store Protocol password for push authentication
+        required: false
 
 
 permissions:
@@ -108,6 +115,8 @@ jobs:
           github_base_url: ${{ inputs.github_base_url }}
           deploy_viewer: ${{ inputs.deploy_viewer && 'true' || 'false' }}
           viewer_path: ${{ inputs.viewer_path }}
+          sparql_username: ${{ secrets.sparql_username }}
+          sparql_password: ${{ secrets.sparql_password }}
       - name: Compress large _visited_properties.tsv and git pull
         run: |
           sudo find "${{ inputs.annotated_path }}" -size +10M -name _visited_properties.tsv \
@@ -152,6 +161,8 @@ jobs:
       - name: Deploy Building Blocks viewer
         if: ${{ inputs.deploy_viewer && github.event.repository.has_pages && !inputs.skip-pages }}
         run: |
+          OLD_WD="$(pwd)"
+          REGISTER_FILE="$(realpath "${{ inputs.register_file }}")"
           if [ -n "${{ inputs.viewer_path }}" ]; then
             mkdir -p "${{ inputs.viewer_path }}"
             cd "${{ inputs.viewer_path }}"
@@ -170,9 +181,10 @@ jobs:
           cat << EOF > config.js
           window.bblocksRegisters = ['${{ format('https://{0}.github.io/{1}/{2}', github.repository_owner, github.event.repository.name, inputs.register_file) }}'];
           window.bblocksViewer = {
-            title: $(jq '.name // "${{ github.event.repository.name }}"' < "${{ inputs.register_file }}"),
+            title: $(jq '.name // "${{ github.event.repository.name }}"' < "$REGISTER_FILE"),
           };
           EOF
+          cd "$OLD_WD"
       - name: Setup Pages
         if: ${{ github.event.repository.has_pages && !inputs.skip-pages }}
         uses: actions/configure-pages@v3

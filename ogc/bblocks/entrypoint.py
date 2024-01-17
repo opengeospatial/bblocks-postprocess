@@ -182,7 +182,7 @@ if __name__ == '__main__':
         if register_name:
             register_additional_metadata['name'] = register_name
 
-        sparql_conf = bb_config.get('sparql')
+        sparql_conf = bb_config.get('sparql', {})
 
     base_url = args.base_url
     github_base_url = args.github_base_url
@@ -249,11 +249,13 @@ if __name__ == '__main__':
     # 4. Push to triplestore
     sparql_gsp = sparql_conf.get('push')
     if sparql_gsp:
-        print(f"Pushing {register_ttl_fn} to SPARQL GSP at {sparql_gsp}", file=sys.stderr)
+        print(os.environ.items())
         if os.environ.get('SPARQL_USERNAME'):
             auth = (os.environ['SPARQL_USERNAME'], os.environ.get('SPARQL_PASSWORD'))
+            print(f"Pushing {register_ttl_fn} to SPARQL GSP at {sparql_gsp} (user {auth[0]})", file=sys.stderr)
         else:
             auth = None
+            print(f"Pushing {register_ttl_fn} to SPARQL GSP at {sparql_gsp}", file=sys.stderr)
         sparql_graph = sparql_conf.get('graph') or base_url
         update_vocabs.load_vocab(register_ttl_fn,
                                  graph_store=sparql_gsp,

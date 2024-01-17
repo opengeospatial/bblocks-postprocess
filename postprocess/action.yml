@@ -41,10 +41,19 @@ inputs:
   viewer_path:
     description: Path where to deploy the viewer
     default: '.'
+  sparql_username:
+    description: SPARQL GSP push user name
+    default: ''
+  sparql_password:
+    description: SPARQL GSP push password
+    default: ''
 
 runs:
   using: docker
   image: docker://ghcr.io/opengeospatial/bblocks-postprocess
+  env:
+    SPARQL_USERNAME: ${{ inputs.sparql_username }}
+    SPARQL_PASSWORD: ${{ inputs.sparql_password }}
   args:
     - '--register-file'
     - ${{ inputs.register_file }}
