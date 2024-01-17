@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 import shutil
 import subprocess
 import sys
@@ -8,7 +9,7 @@ from pathlib import Path
 from ogc.na.util import load_yaml
 
 from ogc.bblocks.postprocess import postprocess
-from ogc.na import ingest_json
+from ogc.na import ingest_json, update_vocabs
 
 from ogc.bblocks.util import get_github_repo
 
@@ -158,6 +159,7 @@ if __name__ == '__main__':
     annotated_path = Path(args.annotated_path)
     imported_registers = []
     register_additional_metadata = {}
+    sparql_conf = {}
     if bb_config_file and bb_config_file.is_file():
         bb_config = load_yaml(filename=bb_config_file)
         id_prefix = bb_config.get('identifier-prefix', id_prefix)
@@ -179,6 +181,8 @@ if __name__ == '__main__':
         register_name = bb_config.get('name')
         if register_name:
             register_additional_metadata['name'] = register_name
+
+        sparql_conf = bb_config.get('sparql')
 
     base_url = args.base_url
     github_base_url = args.github_base_url
@@ -225,6 +229,7 @@ if __name__ == '__main__':
     print(f"Running semantic uplift of {register_file}", file=sys.stderr)
     print(f" - {register_jsonld_fn}", file=sys.stderr)
     print(f" - {register_ttl_fn}", file=sys.stderr)
+    # TODO: Entailments
     ingest_json.process_file(register_file,
                              context_fn=uplift_context_file,
                              jsonld_fn=register_jsonld_fn,
@@ -240,5 +245,19 @@ if __name__ == '__main__':
         str(Path(__file__).parent / 'slate-assets') + '/',
         f"{args.generated_docs_path}/slate/",
     ])
+
+    # 4. Push to triplestore
+    sparql_gsp = sparql_conf.get('push')
+    if sparql_gsp:
+        print(f"Pushing {register_ttl_fn} to SPARQL GSP at {sparql_gsp}", file=sys.stderr)
+        if os.environ.get('SPARQL_USERNAME'):
+            auth = (os.environ['SPARQL_USERNAME'], os.environ.get('SPARQL_PASSWORD'))
+        else:
+            auth = None
+        sparql_graph = sparql_conf.get('graph') or base_url
+        update_vocabs.load_vocab(register_ttl_fn,
+                                 graph_store=sparql_gsp,
+                                 graph_uri=sparql_graph,
+                                 auth_details=auth)
 
     print(f"Finished Building Blocks postprocessing", file=sys.stderr)
