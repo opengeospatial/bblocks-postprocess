@@ -182,7 +182,9 @@ if __name__ == '__main__':
         if register_name:
             register_additional_metadata['name'] = register_name
 
-        sparql_conf = bb_config.get('sparql', {})
+        sparql_conf = bb_config.get('sparql', {}) or {}
+        if sparql_conf and sparql_conf.get('query'):
+            register_additional_metadata['sparqlEndpoint'] = sparql_conf['query']
 
     base_url = args.base_url
     github_base_url = args.github_base_url
