@@ -13,7 +13,7 @@ from ogc.na import ingest_json, update_vocabs
 
 from ogc.bblocks.util import get_github_repo
 
-MAIN_BBR = 'https://blocks.ogc.org/register.json'
+MAIN_BBR = 'https://opengeospatial.github.io/bblocks/register.json'
 DEFAULT_IMPORT_MARKER = 'default'
 
 templates_dir = Path(__file__).parent / 'templates'
