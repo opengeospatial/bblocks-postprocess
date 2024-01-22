@@ -788,8 +788,10 @@ def to_oas30(schema_fn: Path, schema_url: str, bbr: BuildingBlockRegister) -> di
                 apply_fixes(subschema)
 
             schema_version = subschema.pop('$schema', None)
-            schema_id = subschema.pop('$id', schema_id)
-            if isinstance(schema_id, str) and isinstance(subschema.get('$ref'), str):
+            schema_declared_id = subschema.pop('$id', None)
+            if schema_declared_id:
+                schema_id = schema_declared_id
+            if isinstance(schema_id, (str, Path)) and isinstance(subschema.get('$ref'), str):
 
                 ref = f"{schema_url}#/x-defs/{get_ref_mapping(schema_id, subschema.pop('$ref'))}"
 
