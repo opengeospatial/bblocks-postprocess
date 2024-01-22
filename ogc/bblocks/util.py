@@ -146,6 +146,8 @@ class BuildingBlock:
         examples = None
         if self.examples_file.is_file():
             examples = load_yaml(self.examples_file)
+            if not examples:
+                return None
             try:
                 jsonschema.validate(examples, get_schema('examples'))
             except Exception as e:
@@ -203,6 +205,8 @@ class BuildingBlock:
         extra_tests_file = self.files_path / 'tests.yaml'
         if extra_tests_file.is_file():
             extra_tests: list[dict] = cast(list[dict], load_yaml(extra_tests_file))
+            if not extra_tests:
+                return
             try:
                 jsonschema.validate(extra_tests, get_schema('extra-tests'))
             except Exception as e:
