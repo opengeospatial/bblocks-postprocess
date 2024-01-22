@@ -11,8 +11,8 @@ import sys
 from collections import deque
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Sequence, Callable, AnyStr
-from urllib.parse import urljoin
+from typing import Any, Sequence, Callable, AnyStr, Generator, cast
+from urllib.parse import urljoin, urlparse
 
 import jsonschema
 import networkx as nx
@@ -149,7 +149,7 @@ class BuildingBlock:
             try:
                 jsonschema.validate(examples, get_schema('examples'))
             except Exception as e:
-                raise BuildingBlockError('Error validating building block examples') from e
+                raise BuildingBlockError('Error validating building block examples (examples.yaml)') from e
 
             for example in examples:
                 for snippet in example.get('snippets', ()):
@@ -198,6 +198,26 @@ class BuildingBlock:
                 return None
             self._lazy_properties['jsonld_context_contents'] = load_file(self.jsonld_context)
         return self._lazy_properties['jsonld_context_contents']
+
+    def get_extra_test_resources(self) -> Generator[dict, None, None]:
+        extra_tests_file = self.files_path / 'tests.yaml'
+        if extra_tests_file.is_file():
+            extra_tests: list[dict] = cast(list[dict], load_yaml(extra_tests_file))
+            try:
+                jsonschema.validate(extra_tests, get_schema('extra-tests'))
+            except Exception as e:
+                raise BuildingBlockError('Error validating extra tests (tests.yaml)') from e
+
+            for test in extra_tests:
+                ref = self.resolve_file(test['ref'])
+                test['ref'] = ref
+                test['contents'] = load_file(ref)
+                if not test.get('output-filename'):
+                    if isinstance(ref, Path):
+                        test['output-filename'] = ref.name
+                    else:
+                        test['output-filename'] = os.path.basename(urlparse(ref).path)
+                yield test
 
     def resolve_file(self, fn_or_url):
         if isinstance(fn_or_url, Path) or (isinstance(fn_or_url, str) and not is_url(fn_or_url)):

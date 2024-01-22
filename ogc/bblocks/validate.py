@@ -76,6 +76,7 @@ class ValidationItemSource:
     snippet_index: int | None = None
     language: str | None = None
     require_fail: bool = False
+    source_url: str | None = None
 
 
 @dataclasses.dataclass
@@ -180,6 +181,8 @@ def report_to_dict(bblock: BuildingBlock,
                     source['snippetIndex'] = item.source.snippet_index
             if item.source.language:
                 source['language'] = item.source.language
+            if item.source.source_url:
+                source['sourceUrl'] = item.source.source_url
 
             sections = []
             for section_enum, entries in item.sections.items():
@@ -267,10 +270,18 @@ def _validate_resource(bblock: BuildingBlock,
                        base_uri: str | None = None,
                        schema_ref: str | None = None,
                        shacl_closure_files: list[str | Path] | None = None,
-                       shacl_closure: Graph | None = None) -> ValidationReportItem:
+                       shacl_closure: Graph | None = None,
+                       require_fail: bool | None = None,
+                       resource_url: str | None = None,
+                       example_index: tuple[int, int] | None = None) -> ValidationReportItem:
 
-    require_fail = filename.stem.endswith('-fail') and not resource_contents
-    if resource_contents:
+    if require_fail is None:
+        require_fail = filename.stem.endswith('-fail') and not example_index
+
+    if resource_url and not is_url(resource_url):
+        resource_url = None
+
+    if example_index:
         example_idx, snippet_idx = re.match(r'example_(\d+)_(\d+).*', filename.name).groups()
         source = ValidationItemSource(
             type=ValidationItemSourceType.EXAMPLE,
@@ -278,13 +289,15 @@ def _validate_resource(bblock: BuildingBlock,
             example_index=int(example_idx),
             snippet_index=int(snippet_idx),
             language=filename.suffix[1:],
+            source_url=resource_url,
         )
     else:
         source = ValidationItemSource(
             type=ValidationItemSourceType.TEST_RESOURCE,
             filename=filename,
             language=filename.suffix[1:],
-            require_fail=filename.stem.endswith('-fail'),
+            require_fail=require_fail,
+            source_url=resource_url,
         )
     report = ValidationReportItem(source)
 
@@ -292,10 +305,13 @@ def _validate_resource(bblock: BuildingBlock,
         json_doc = None
         graph = None
 
-        if filename.suffix in ('.json', '.jsonld'):
+        if filename.suffix in ('.json', '.jsonld', '.yaml', '.yml'):
             try:
                 if resource_contents:
-                    json_doc = load_yaml(content=resource_contents)
+                    if filename.suffix.startswith('.json'):
+                        json_doc = json.loads(resource_contents)
+                    else:
+                        json_doc = load_yaml(content=resource_contents)
                     if filename.name == output_filename.name:
                         using_fn = filename.name
                     else:
@@ -314,7 +330,7 @@ def _validate_resource(bblock: BuildingBlock,
             except MarkedYAMLError as e:
                 report.add_entry(ValidationReportEntry(
                     section=ValidationReportSection.JSON_SCHEMA,
-                    message=f"Error parsing JSON example: {str(e)} "
+                    message=f"Error parsing YAML example: {str(e)} "
                             f"on or near line {e.context_mark.line + 1} "
                             f"column {e.context_mark.column + 1}",
                     is_error=True,
@@ -322,6 +338,20 @@ def _validate_resource(bblock: BuildingBlock,
                         'exception': e.__class__.__qualname__,
                         'line': e.context_mark.line + 1,
                         'col': e.context_mark.column + 1,
+                    }
+                ))
+                return
+            except JSONDecodeError as e:
+                report.add_entry(ValidationReportEntry(
+                    section=ValidationReportSection.JSON_SCHEMA,
+                    message=f"Error parsing JSON example: {str(e)} "
+                            f"on or near line {e.lineno} "
+                            f"column {e.colno}",
+                    is_error=True,
+                    payload={
+                        'exception': e.__class__.__qualname__,
+                        'line': e.lineno,
+                        'col': e.colno,
                     }
                 ))
                 return
@@ -420,7 +450,7 @@ def _validate_resource(bblock: BuildingBlock,
 
         elif filename.suffix == '.ttl':
             try:
-                if resource_contents:
+                if example_index:
                     report.add_entry(ValidationReportEntry(
                         section=ValidationReportSection.FILES,
                         message=f'Using {filename.name} from examples',
@@ -512,7 +542,7 @@ def _validate_resource(bblock: BuildingBlock,
                 json_doc = {'$schema': schema_url, **json_doc}
 
             if resource_contents:
-                # This is an example, write it to disk
+                # This is an example or a ref, write it to disk
                 with open(output_filename, 'w') as f:
                     json.dump(json_doc, f, indent=2)
 
@@ -725,6 +755,30 @@ def validate_test_resources(bblock: BuildingBlock,
             final_result = not test_result.failed and final_result
             test_count += 1
 
+    for extra_test_resource in bblock.get_extra_test_resources():
+        if not re.search(r'\.(json(ld)?|ttl)$', extra_test_resource['output-filename']):
+            continue
+        fn = bblock.files_path / 'tests' / extra_test_resource['output-filename']
+        output_fn = output_dir / fn.name
+        output_base_filenames.add(fn.stem)
+
+        test_result = _validate_resource(
+            bblock, fn, output_fn,
+            resource_contents=extra_test_resource['contents'],
+            schema_validator=schema_validator,
+            jsonld_context=jsonld_context,
+            jsonld_url=jsonld_url,
+            shacl_graphs=shacl_graphs,
+            json_error=json_error,
+            shacl_errors=shacl_errors,
+            shacl_closure=bblock_shacl_closure,
+            require_fail=extra_test_resource.get('require-fail', False),
+            resource_url=extra_test_resource['ref'] if isinstance(extra_test_resource['ref'], str) else None,
+        )
+        all_results.append(test_result)
+        final_result = not test_result.failed and final_result
+        test_count += 1
+
     # Examples
     if bblock.examples:
         for example_id, example in enumerate(bblock.examples):
@@ -778,11 +832,12 @@ def validate_test_resources(bblock: BuildingBlock,
                     snippet_shacl_closure: list[str | Path] = snippet.get('shacl-closure')
                     if snippet_shacl_closure:
                         snippet_shacl_closure = [c if is_url(c) else bblock.files_path.joinpath(c)
-                                         for c in snippet_shacl_closure]
+                                                 for c in snippet_shacl_closure]
 
                     example_result = _validate_resource(
                         bblock, fn, output_fn,
                         resource_contents=code,
+                        example_index=(example_id + 1, snippet_id + 1),
                         schema_url=schema_url,
                         schema_validator=snippet_schema_validator,
                         jsonld_context=jsonld_context,
@@ -793,7 +848,9 @@ def validate_test_resources(bblock: BuildingBlock,
                         base_uri=snippet.get('base-uri', example_base_uri),
                         schema_ref=snippet.get('schema-ref'),
                         shacl_closure_files=snippet_shacl_closure,
-                        shacl_closure=bblock_shacl_closure)
+                        shacl_closure=bblock_shacl_closure,
+                        resource_url=snippet.get('ref'),
+                    )
                     all_results.append(example_result)
                     final_result = final_result and not example_result.failed
                     for file_format, file_data in example_result.uplifted_files.items():

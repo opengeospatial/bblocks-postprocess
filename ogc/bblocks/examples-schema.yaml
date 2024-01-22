@@ -1,5 +1,5 @@
 "$schema": https://json-schema.org/draft/2020-12/schema
-title: OGC Building Blocks Register metadata schema
+title: OGC Building Blocks examples schema
 type: array
 items:
   type: object

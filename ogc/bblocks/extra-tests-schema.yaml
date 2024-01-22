@@ -1,0 +1,23 @@
+"$schema": https://json-schema.org/draft/2020-12/schema
+title: OGC Building Blocks extra tests schema
+type: array
+items:
+  type: object
+  required:
+    - ref
+  properties:
+    ref:
+      description: |
+        A reference to a URL or to a filename (relative to the examples.yaml file) with the contents of
+        this test, as an alternative to inlining them in the 'code' property.
+      type: string
+      format: uri-reference
+    require-fail:
+      description: Whether this test should return an error in order to succeed
+      type: boolean
+      default: false
+    output-filename:
+      description: |
+        Name for the output file name that will be used when generating uplifted versions of the test resource.
+        If not provided, the file name from "ref" will be used.
+      type: string
