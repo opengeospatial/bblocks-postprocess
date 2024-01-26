@@ -184,6 +184,12 @@ jobs:
             title: $(jq '.name // "${{ github.event.repository.name }}"' < "$REGISTER_FILE"),
           };
           EOF
+          if [ -f GIT_INFO ]; then
+            TEMPFILE="$(mktemp)"
+            jq -s '.[0].tooling."bblocks-viewer" = .[1] | .[0]' "$REGISTER_FILE" GIT_INFO > "$TEMPFILE"
+            mv "$TEMPFILE" "$REGISTER_FILE"
+            unlink "$TEMPFILE"
+          fi
           cd "$OLD_WD"
       - name: Setup Pages
         if: ${{ github.event.repository.has_pages && !inputs.skip-pages }}
