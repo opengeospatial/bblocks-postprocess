@@ -188,7 +188,7 @@ jobs:
             TEMPFILE="$(mktemp)"
             jq -s '.[0].tooling."bblocks-viewer" = .[1] | .[0]' "$REGISTER_FILE" GIT_INFO > "$TEMPFILE"
             mv "$TEMPFILE" "$REGISTER_FILE"
-            unlink "$TEMPFILE"
+            rm -f "$TEMPFILE"
           fi
           cd "$OLD_WD"
       - name: Setup Pages

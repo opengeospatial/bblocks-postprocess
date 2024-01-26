@@ -315,10 +315,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         report_to_html(json_reports=validation_reports, report_fn=test_outputs_path / 'report.html')
 
     if output_file and (not steps or 'register' in steps):
-        output_register_json = {
-            'imports': imported_registers or [],
-            'bblocks': output_bblocks,
-        }
+
+        output_register_json = {}
 
         if 'name' not in additional_metadata and git_repo_path:
             output_register_json['name'] = git_repo_path.name
@@ -332,9 +330,13 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             output_register_json['validationReport'] = full_validation_report_url
 
         if additional_metadata:
-            for k, v in additional_metadata.items():
-                if k not in output_register_json:
-                    output_register_json[k] = v
+            output_register_json = {
+                **additional_metadata,
+                **output_register_json,
+            }
+
+        output_register_json['imports'] = imported_registers or []
+        output_register_json['bblocks'] = output_bblocks
 
         if output_file == '-':
             print(json.dumps(output_register_json, indent=2, cls=CustomJSONEncoder))

@@ -1,5 +1,7 @@
 FROM python:3.10-alpine
 
+ARG BBP_GIT_INFO=""
+
 WORKDIR /src
 COPY requirements.txt /
 
@@ -8,13 +10,15 @@ RUN apk update && \
     python -m venv /venv && \
     /venv/bin/python -m pip install --upgrade pip && \
     git config --global --add safe.directory '*' && \
-    npm install jsonld
+    npm install jsonld && \
+    echo "$BBP_GIT_INFO" > /GIT_INFO
 
 RUN /venv/bin/python -m pip install -r /requirements.txt
 
 ENV PYTHONPATH /src/
 ENV PYTHONUNBUFFERED 1
 ENV NODE_PATH=/src/node_modules
+ENV BBP_GIT_INFO_FILE=/GIT_INFO
 
 COPY ogc/ /src/ogc/
 

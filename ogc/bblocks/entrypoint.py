@@ -172,19 +172,26 @@ if __name__ == '__main__':
         else:
             imported_registers = [ir if ir != DEFAULT_IMPORT_MARKER else MAIN_BBR for ir in imported_registers if ir]
 
-        register_abstract = bb_config.get('abstract')
-        if register_abstract:
-            register_additional_metadata['abstract'] = register_abstract
-        register_description = bb_config.get('description')
-        if register_description:
-            register_additional_metadata['description'] = register_description
-        register_name = bb_config.get('name')
-        if register_name:
-            register_additional_metadata['name'] = register_name
+        for p in ('name', 'abstract', 'description'):
+            v = bb_config.get(p)
+            if v:
+                register_additional_metadata[p] = v
 
         sparql_conf = bb_config.get('sparql', {}) or {}
         if sparql_conf and sparql_conf.get('query'):
             register_additional_metadata['sparqlEndpoint'] = sparql_conf['query']
+
+    if os.environ.get('BBP_GIT_INFO_FILE'):
+        with open(os.environ['BBP_GIT_INFO_FILE']) as f:
+            git_info = f.readline().strip()
+        if git_info:
+            commit_id, timestamp = git_info.split(' ', 1)
+            tooling = register_additional_metadata.setdefault('tooling', {})
+            tooling['bblocks-postprocess'] = {
+                'commitId': commit_id,
+                'shortCommitId': commit_id[0:7],
+                'date': timestamp,
+            }
 
     base_url = args.base_url
     github_base_url = args.github_base_url
