@@ -11,7 +11,8 @@ RUN apk update && \
     /venv/bin/python -m pip install --upgrade pip && \
     git config --global --add safe.directory '*' && \
     npm install jsonld && \
-    echo "$BBP_GIT_INFO" > /GIT_INFO
+    echo "$BBP_GIT_INFO" > /GIT_INFO && \
+    git config --system --add safe.directory '*'
 
 RUN /venv/bin/python -m pip install -r /requirements.txt
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import datetime
 import os
 import shutil
 import subprocess
@@ -154,6 +155,12 @@ if __name__ == '__main__':
                 print(f"Deleting {old_dir} recursively", file=sys.stderr)
                 shutil.rmtree(old_dir, ignore_errors=True)
 
+    # Fix git config
+    try:
+        subprocess.run(['git', 'config', '--global', '--add', 'safe.directory', '*'])
+    except Exception as e:
+        print(f"Error configuring git safe.directory: {e}", file=sys.stderr)
+
     # Read local bblocks-config.yaml, if present
     id_prefix = 'ogc.'
     annotated_path = Path(args.annotated_path)
@@ -181,6 +188,8 @@ if __name__ == '__main__':
         if sparql_conf and sparql_conf.get('query'):
             register_additional_metadata['sparqlEndpoint'] = sparql_conf['query']
 
+    register_additional_metadata['modified'] = datetime.datetime.now().isoformat()
+
     if os.environ.get('BBP_GIT_INFO_FILE'):
         with open(os.environ['BBP_GIT_INFO_FILE']) as f:
             git_info = f.readline().strip()
@@ -196,22 +205,29 @@ if __name__ == '__main__':
     base_url = args.base_url
     github_base_url = args.github_base_url
     git_repo_path = None
-    if not base_url or not github_base_url:
-        try:
-            import git
-            repo = git.Repo()
-            git_repo_path = Path(repo.working_dir)
-            remote_branch = repo.active_branch.tracking_branch()
-            remote = repo.remote(remote_branch.remote_name)
-            remote_url = next(remote.urls)
-            gh_repo = get_github_repo(remote_url)
-            if gh_repo:
+    try:
+        import git
+        repo = git.Repo()
+        git_repo_path = Path(repo.working_dir)
+        remote_branch = repo.active_branch.tracking_branch()
+        remote = repo.remote(remote_branch.remote_name)
+        remote_url = next(remote.urls)
+        if remote_url:
+            register_additional_metadata['gitRepository'] = remote_url
+
+        gh_repo = get_github_repo(remote_url)
+        if gh_repo:
+            if not base_url:
                 base_url = f"https://{gh_repo[0]}.github.io/{gh_repo[1]}/"
+            if not github_base_url:
                 github_base_url = f"https://github.com/{gh_repo[0]}/{gh_repo[1]}/"
-                print(f"Autodetected GitHub repo {gh_repo[0]}/{gh_repo[1]}")
-        except:
-            print('[WARN] Could not autodetect base_url / github_base_url', file=sys.stderr)
-            pass
+            print(f"Autodetected GitHub repo {gh_repo[0]}/{gh_repo[1]}")
+
+        if github_base_url:
+            register_additional_metadata['gitHubRepository'] = github_base_url
+    except Exception as e:
+        print(f"[WARN] Could not autodetect base_url / github_base_url ({e})", file=sys.stderr)
+        pass
 
     steps = args.steps.split(',') if args.steps else None
 
