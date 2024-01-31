@@ -96,7 +96,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--steps',
         help='Comma-separated list of postprocessing steps that will run (annotate,jsonld,superbb,'
-             'tests,transforms,doc,register,sparql). Forces --clean to false'
+             'tests,transforms,doc,register). Forces --clean to false'
     )
 
     parser.add_argument(
@@ -108,6 +108,12 @@ if __name__ == '__main__':
         '--viewer-path',
         help='Path where the viewer will be deployed',
         default='.'
+    )
+
+    parser.add_argument(
+        '--enable-sparql',
+        help='Enable SPARQL push, if configured',
+        action='store_true',
     )
 
     args = parser.parse_args()
@@ -275,7 +281,7 @@ if __name__ == '__main__':
     ])
 
     # 4. Push to triplestore
-    if not steps or 'sparql' in steps:
+    if args.enable_sparql:
         sparql_gsp = sparql_conf.get('push')
         if sparql_gsp:
             if os.environ.get('SPARQL_USERNAME'):

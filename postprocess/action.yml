@@ -79,3 +79,4 @@ runs:
     - ${{ inputs.deploy_viewer }}
     - '--viewer-path'
     - ${{ inputs.viewer_path }}
+    - '--enable-sparql'
