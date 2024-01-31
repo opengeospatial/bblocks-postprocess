@@ -423,7 +423,6 @@ class TransformMetadata:
 
 def write_superbblocks_schemas(super_bblocks: dict[Path, BuildingBlock],
                                annotated_path: Path | None = None) -> list[Path]:
-
     def process_sbb(sbb_dir: Path, sbb: BuildingBlock, skip_dirs) -> dict:
         any_of = []
         parsed = set()
@@ -554,26 +553,20 @@ def annotate_schema(bblock: BuildingBlock,
     if not schema_fn and not schema_url:
         return result
 
-    ref_mapper = functools.partial(resolve_schema_reference,
-                                   bblocks_register=bblocks_register,
-                                   from_bblock=bblock)
+    override_schema = load_yaml(filename=schema_fn, url=schema_url)
+    override_schema = resolve_all_schema_references(override_schema, bblocks_register, bblock)
 
-    annotator = SchemaAnnotator(
-        ref_mapper=ref_mapper,
-    )
+    annotator = SchemaAnnotator()
 
     bb_extends = bblock.extends
-    override_schema = None
     if bb_extends:
         bb_path = None
         if isinstance(bb_extends, dict):
             bb_path = bb_extends.get('path')
             bb_extends = bb_extends['itemIdentifier']
 
-        original_schema = load_yaml(filename=schema_fn, url=schema_url)
-        original_schema.pop('$schema', None)
         if bb_path in (None, '', '.', '$'):
-            inserted_schema = original_schema
+            inserted_schema = override_schema
         else:
             bb_path = re.split(r'\.(?=(?:[^"]*"[^"]*")*[^"]*$)',
                                re.sub(r'^[.$]', '', bb_path.strip()))
@@ -592,7 +585,7 @@ def annotate_schema(bblock: BuildingBlock,
                     inner_schema = inner_schema['properties'][p]['items']
                 else:
                     inner_schema = inner_schema['properties'].setdefault(p, {})
-            for k, v in original_schema.items():
+            for k, v in override_schema.items():
                 if k != '$schema' and not k.startswith('x-jsonld-'):
                     inner_schema[k] = v
 
@@ -602,7 +595,7 @@ def annotate_schema(bblock: BuildingBlock,
                 {'$ref': f"bblocks://{bb_extends}"},
                 inserted_schema,
             ],
-            **{k: v for k, v in original_schema.items() if k.startswith('x-jsonld-')}
+            **{k: v for k, v in override_schema.items() if k.startswith('x-jsonld-')}
         }
 
     annotated_schema = annotator.process_schema(schema_url or schema_fn, context, override_schema)
@@ -650,11 +643,30 @@ def annotate_schema(bblock: BuildingBlock,
     return result
 
 
+def resolve_all_schema_references(schema: Any,
+                                  bblocks_register: BuildingBlockRegister,
+                                  from_bblock: BuildingBlock | None = None) -> Any:
+    def walk(subschema):
+        if isinstance(subschema, dict):
+            if '$ref' in subschema:
+                subschema['$ref'] = resolve_schema_reference(subschema['$ref'],
+                                                             subschema,
+                                                             bblocks_register,
+                                                             from_bblock)
+            for v in subschema.values():
+                walk(v)
+        elif isinstance(subschema, list):
+            for item in subschema:
+                walk(item)
+        return subschema
+
+    return walk(schema)
+
+
 def resolve_schema_reference(ref: str,
                              schema: Any,
                              bblocks_register: BuildingBlockRegister,
                              from_bblock: BuildingBlock | None = None) -> str:
-
     ref = schema.pop(BBLOCKS_REF_ANNOTATION, ref)
 
     if ref[0] != '#' and (from_bblock.schema.is_file() or from_bblock.metadata.get('schema')) and not is_url(ref):
