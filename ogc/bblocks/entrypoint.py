@@ -96,7 +96,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--steps',
         help='Comma-separated list of postprocessing steps that will run (annotate,jsonld,superbb,'
-             'tests,transforms,doc,register). Forces --clean to false'
+             'tests,transforms,doc,register,sparql). Forces --clean to false'
     )
 
     parser.add_argument(
@@ -275,21 +275,22 @@ if __name__ == '__main__':
     ])
 
     # 4. Push to triplestore
-    sparql_gsp = sparql_conf.get('push')
-    if sparql_gsp:
-        if os.environ.get('SPARQL_USERNAME'):
-            auth = (os.environ['SPARQL_USERNAME'], os.environ.get('SPARQL_PASSWORD'))
-            print(f"Pushing {register_ttl_fn} to SPARQL GSP at {sparql_gsp} (user {auth[0]})", file=sys.stderr)
-        else:
-            auth = None
-            print(f"Pushing {register_ttl_fn} to SPARQL GSP at {sparql_gsp}", file=sys.stderr)
-        sparql_graph = sparql_conf.get('graph') or base_url
-        try:
-            update_vocabs.load_vocab(register_ttl_fn,
-                                     graph_store=sparql_gsp,
-                                     graph_uri=sparql_graph,
-                                     auth_details=auth)
-        except Exception as e:
-            print(f" !! Error uploading to SPARQL GSP: {e}", file=sys.stderr)
+    if not steps or 'sparql' in steps:
+        sparql_gsp = sparql_conf.get('push')
+        if sparql_gsp:
+            if os.environ.get('SPARQL_USERNAME'):
+                auth = (os.environ['SPARQL_USERNAME'], os.environ.get('SPARQL_PASSWORD'))
+                print(f"Pushing {register_ttl_fn} to SPARQL GSP at {sparql_gsp} (user {auth[0]})", file=sys.stderr)
+            else:
+                auth = None
+                print(f"Pushing {register_ttl_fn} to SPARQL GSP at {sparql_gsp}", file=sys.stderr)
+            sparql_graph = sparql_conf.get('graph') or base_url
+            try:
+                update_vocabs.load_vocab(register_ttl_fn,
+                                         graph_store=sparql_gsp,
+                                         graph_uri=sparql_graph,
+                                         auth_details=auth)
+            except Exception as e:
+                print(f" !! Error uploading to SPARQL GSP: {e}", file=sys.stderr)
 
     print(f"Finished Building Blocks postprocessing", file=sys.stderr)
