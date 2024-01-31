@@ -340,11 +340,15 @@ class BuildingBlockRegister:
                 ref = schema.get(BBLOCKS_REF_ANNOTATION, schema.get('$ref'))
                 if isinstance(ref, str):
                     ref = re.sub(r'#.*$', '', ref)
-                    if ref.startswith('bblocks://'):
+                    if ref == f"bblocks://{bblock.identifier}":
+                        # A self-reference is not a dependency
+                        pass
+                    elif ref.startswith('bblocks://'):
                         # Get id directly from bblocks:// URI
                         deps.add(ref[len('bblocks://'):])
                     elif ref in self.imported_bblock_schemas:
-                        deps.add(self.imported_bblock_schemas[ref])
+                        if self.imported_bblock_schemas[ref] != bblock.identifier:
+                            deps.add(self.imported_bblock_schemas[ref])
                     else:
                         ref_parent_path = bblock.schema.parent.joinpath(ref).resolve().parent
                         ref_bblock = self.bblock_paths.get(ref_parent_path)
@@ -367,6 +371,7 @@ class BuildingBlockRegister:
             elif isinstance(extends, dict):
                 deps.add(extends['itemIdentifier'])
 
+        deps.discard(bblock.identifier)
         return deps
 
     @lru_cache
