@@ -179,7 +179,7 @@ jobs:
           wget -q -O - https://github.com/ogcincubator/bblocks-viewer/archive/refs/heads/dist.tar.gz | tar zx --strip-components=1
           sed -i -r "s,/@BASE_URL@/,/${{ github.event.repository.name }}/${BASE_URL},g" index.html 404.html assets/*.js assets/*.css
           cat << EOF > config.js
-          window.bblocksRegisters = ['${{ format('https://{0}.github.io/{1}/{2}', github.repository_owner, github.event.repository.name, inputs.register_file) }}'];
+          window.bblocksRegister = '${{ format('https://{0}.github.io/{1}/{2}', github.repository_owner, github.event.repository.name, inputs.register_file) }}';
           window.bblocksViewer = {
             title: $(jq '.name // "${{ github.event.repository.name }}"' < "$REGISTER_FILE"),
           };
