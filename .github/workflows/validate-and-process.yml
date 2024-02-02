@@ -191,6 +191,10 @@ jobs:
             rm -f "$TEMPFILE"
           fi
           cd "$OLD_WD"
+          
+          if [ ! -z "404.html" ]; then
+            cp "${{ inputs.viewer_path }}/404.html" .
+          fi
       - name: Setup Pages
         if: ${{ github.event.repository.has_pages && !inputs.skip-pages }}
         uses: actions/configure-pages@v3
