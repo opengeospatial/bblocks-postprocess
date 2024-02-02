@@ -135,6 +135,14 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 ld_context_url = './' + os.path.relpath(bblock.jsonld_context, output_file_root)
             bblock.metadata['ldContext'] = ld_context_url
 
+        if isinstance(bblock, str) and is_url(bblock.schema):
+            bblock.metadata['sourceSchema'] = bblock.schema
+        elif bblock.schema.is_file():
+            if base_url:
+                bblock.metadata['sourceSchema'] = f"{base_url}{os.path.relpath(bblock.schema, cwd)}"
+            else:
+                bblock.metadata['sourceSchema'] = f"./{os.path.relpath(bblock.schema, cwd)}"
+
         rel_files_path = os.path.relpath(bblock.files_path)
         if base_url:
             bblock.metadata['sourceFiles'] = f"{base_url}{rel_files_path}/"
