@@ -117,8 +117,9 @@ jobs:
           viewer_path: ${{ inputs.viewer_path }}
           sparql_username: ${{ secrets.sparql_username }}
           sparql_password: ${{ secrets.sparql_password }}
-      - name: Compress large _visited_properties.tsv and git pull
+      - name: Fix permissions, compress large _visited_properties.tsv, git pull
         run: |
+          sudo chown -R $UID:$(id -g) . 
           sudo find "${{ inputs.annotated_path }}" -size +10M -name _visited_properties.tsv \
             -exec gzip \{\} \;
           git pull
@@ -192,7 +193,7 @@ jobs:
           fi
           cd "$OLD_WD"
           
-          if [ ! -z "404.html" ]; then
+          if [ ! -f "404.html" ]; then
             cp "${{ inputs.viewer_path }}/404.html" .
           fi
       - name: Setup Pages
