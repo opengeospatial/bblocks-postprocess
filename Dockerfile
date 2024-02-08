@@ -16,6 +16,9 @@ RUN apk update && \
 
 RUN /venv/bin/python -m pip install -r /requirements.txt
 
+# Apply rdflib fixes
+RUN /venv/bin/python -m pip install git+https://github.com/avillar/rdflib.git@6.x
+
 ENV PYTHONPATH /src/
 ENV PYTHONUNBUFFERED 1
 ENV NODE_PATH=/src/node_modules
