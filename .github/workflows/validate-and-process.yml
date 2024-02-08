@@ -65,6 +65,12 @@ on:
         type: string
         description: Path where to deploy the viewer
         default: '.'
+      viewer_show_imported:
+        type: boolean
+        description: |
+          Whether the deployed building blocks viewer will show imported building 
+          blocks as well as local ones
+        default: false
     secrets:
       sparql_username:
         description: SPARQL Graph Store Protocol user name for push authentication
@@ -183,6 +189,7 @@ jobs:
           window.bblocksRegister = '${{ format('https://{0}.github.io/{1}/{2}', github.repository_owner, github.event.repository.name, inputs.register_file) }}';
           window.bblocksViewer = {
             title: $(jq '.name // "${{ github.event.repository.name }}"' < "$REGISTER_FILE"),
+            showImported: ${{ inputs.viewer_show_imported && 'true' || 'false' }},
           };
           EOF
           if [ -f GIT_INFO ]; then
