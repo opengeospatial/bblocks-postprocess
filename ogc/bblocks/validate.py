@@ -795,13 +795,13 @@ def validate_test_resources(bblock: BuildingBlock,
                 else:
                     schema_ref = snippet['schema-ref']
                     random_fn = f"example.{time()}.{random.randint(0,1000)}.yaml"
-                    schema_uri = bblock.schema.with_name(random_fn).as_uri()
+                    schema_uri = bblock.schema.with_name(random_fn).resolve().as_uri()
                     if schema_ref.startswith('#/'):
-                        schema_ref = f"{bblock.schema}{schema_ref}"
+                        schema_ref = f"{bblock.annotated_schema.resolve()}{schema_ref}"
                     elif not is_url(schema_ref):
                         if '#' in schema_ref:
                             path, fragment = schema_ref.split('#', 1)
-                            schema_ref = f"{bblock.schema.parent.joinpath(path)}#{fragment}"
+                            schema_ref = f"{bblock.annotated_schema.parent.resolve().joinpath(path)}#{fragment}"
                             schema_uri = (f"{bblock.schema.parent.joinpath(path).with_name(random_fn).as_uri()}"
                                           f"#{fragment}")
                         else:
