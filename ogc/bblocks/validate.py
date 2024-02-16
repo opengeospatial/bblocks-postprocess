@@ -22,6 +22,7 @@ import jsonschema
 from mako import exceptions as mako_exceptions, template as mako_template
 import requests
 from jsonschema.validators import validator_for
+from ogc.na.annotate_schema import SchemaResolver
 from ogc.na.util import load_yaml, is_url, copy_triples
 from pyparsing import ParseBaseException
 from rdflib import Graph
@@ -717,7 +718,8 @@ def validate_test_resources(bblock: BuildingBlock,
     try:
         if bblock.annotated_schema:
             schema_validator = get_json_validator(bblock.annotated_schema_contents,
-                                                  bblock.annotated_schema.resolve().as_uri())
+                                                  bblock.annotated_schema.resolve().as_uri(),
+                                                  bblocks_register)
         if bblock.jsonld_context.is_file():
             jsonld_context = load_yaml(filename=bblock.jsonld_context)
     except Exception as e:
@@ -795,7 +797,10 @@ def validate_test_resources(bblock: BuildingBlock,
                 else:
                     schema_ref = snippet['schema-ref']
                     random_fn = f"example.{time()}.{random.randint(0,1000)}.yaml"
-                    schema_uri = bblock.schema.with_name(random_fn).resolve().as_uri()
+                    if bblock.schema.is_path:
+                        schema_uri = bblock.schema.value.with_name(random_fn).as_uri()
+                    else:
+                        schema_url = urljoin(bblock.schema.value, random_fn)
                     if schema_ref.startswith('#/'):
                         schema_ref = f"{bblock.annotated_schema.resolve()}{schema_ref}"
                     elif not is_url(schema_ref):
@@ -805,10 +810,11 @@ def validate_test_resources(bblock: BuildingBlock,
                             schema_uri = (f"{bblock.schema.parent.joinpath(path).with_name(random_fn).as_uri()}"
                                           f"#{fragment}")
                         else:
-                            schema_uri = bblock.schema.parent.joinpath(schema_ref).with_name(random_fn).as_uri()
+                            schema_uri = bblock.schema.parent.resolve_ref(schema_ref).with_name(random_fn).as_uri()
                     snippet_schema = {'$ref': schema_ref}
                     snippet_schema_validator = get_json_validator(snippet_schema,
-                                                                  schema_uri)
+                                                                  schema_uri,
+                                                                  bblocks_register)
 
                 if isinstance(add_snippets_formats, str):
                     add_snippets_formats = [add_snippets_formats]
@@ -877,7 +883,16 @@ def validate_test_resources(bblock: BuildingBlock,
 
 class RefResolver(jsonschema.validators.RefResolver):
 
+    def __init__(self, bblocks_register: BuildingBlockRegister, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.bblocks_register = bblocks_register
+
     def resolve_remote(self, uri):
+        if uri in self.bblocks_register.local_bblock_schemas:
+            bblock_id = self.bblocks_register.local_bblock_schemas[uri]
+            bblock = self.bblocks_register.bblocks[bblock_id]
+            return load_yaml(content=bblock.annotated_schema_contents)
+
         scheme = urlsplit(uri).scheme
 
         if scheme in self.handlers:
@@ -894,7 +909,7 @@ class RefResolver(jsonschema.validators.RefResolver):
         return result
 
 
-def get_json_validator(contents, base_uri) -> jsonschema.Validator:
+def get_json_validator(contents, base_uri, bblocks_register: BuildingBlockRegister) -> jsonschema.Validator:
     if isinstance(contents, dict):
         schema = contents
     else:
@@ -902,6 +917,7 @@ def get_json_validator(contents, base_uri) -> jsonschema.Validator:
     resolver = RefResolver(
         base_uri=base_uri,
         referrer=schema,
+        bblocks_register=bblocks_register,
     )
     validator_cls = validator_for(schema)
     validator_cls.check_schema(schema)

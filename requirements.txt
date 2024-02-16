@@ -6,8 +6,22 @@ ogc-na @ git+https://github.com/opengeospatial/ogc-na-tools@main#egg=ogc-na
 requests~=2.31.0
 pyparsing~=3.0.9
 pyshacl~=0.21.0
-rdflib~=6.3.2
+# Includes rdflib fixes
+rdflib @ git+https://github.com/avillar/rdflib.git@6.x
 jsonref~=1.1.0
 networkx~=3.1
 jq~=1.6
 pathvalidate==3.2.0
+
+# mkdocs
+mkdocs>=1.4.2
+mkdocs-autorefs
+mkdocs-gen-files
+mkdocs-literate-nav
+mkdocs-material
+mkdocs-material-extensions
+mkdocs-pymdownx-material-extras
+mkdocs-section-index
+mkdocstrings
+mkdocstrings-python
+mkdocs-markdownextradata-plugin

@@ -70,7 +70,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                                 fail_on_error=fail_on_error,
                                 prefix=id_prefix,
                                 annotated_path=annotated_path,
-                                imported_bblocks=imported_bblocks)
+                                imported_bblocks=imported_bblocks,
+                                base_url=base_url)
 
     doc_generator = DocGenerator(base_url=base_url,
                                  output_dir=generated_docs_path,
@@ -135,13 +136,13 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 ld_context_url = './' + os.path.relpath(bblock.jsonld_context, output_file_root)
             bblock.metadata['ldContext'] = ld_context_url
 
-        if isinstance(bblock.schema, str) and is_url(bblock.schema):
+        if bblock.schema.is_url:
             bblock.metadata['sourceSchema'] = bblock.schema
-        elif bblock.schema.is_file():
+        elif bblock.schema.exists:
             if base_url:
-                bblock.metadata['sourceSchema'] = f"{base_url}{os.path.relpath(bblock.schema, cwd)}"
+                bblock.metadata['sourceSchema'] = bblock.schema.to_url(base_url)
             else:
-                bblock.metadata['sourceSchema'] = f"./{os.path.relpath(bblock.schema, cwd)}"
+                bblock.metadata['sourceSchema'] = f"./{os.path.relpath(str(bblock.schema), cwd)}"
 
         rel_files_path = os.path.relpath(bblock.files_path)
         if base_url:
@@ -210,7 +211,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             for p in itertools.chain((filter_p,), filter_p.parents):
                 p = p.resolve()
                 for bb in bbr.bblocks.values():
-                    if p in (bb.files_path, bb.tests_dir.resolve(), bb.annotated_path.resolve()):
+                    if p in (bb.files_path, bb.tests_dir.resolve(), bb.annotated_path.resolve_ref()):
                         filter_id = bb.identifier
                         break
                 if filter_id:
@@ -272,7 +273,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 continue
             if building_block.annotated_schema.is_file():
                 try:
-                    written_context = write_jsonld_context(building_block.annotated_schema)
+                    written_context = write_jsonld_context(building_block.annotated_schema, bbr)
                     if written_context:
                         try:
                             nodejsrun = subprocess.run([
@@ -287,7 +288,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                         except FileNotFoundError:
                             # node not installed
                             pass
-                        print(f"  - {written_context}", file=sys.stderr)
+                        print(f"  - {os.path.relpath(written_context)}", file=sys.stderr)
                 except Exception as e:
                     if fail_on_error:
                         raise e
@@ -298,7 +299,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
     if not steps or 'superbb' in steps:
         print(f"Generating Super Building Block schemas", file=sys.stderr)
         try:
-            for super_bblock_schema in write_superbblocks_schemas(super_bblocks, annotated_path):
+            for super_bblock_schema in write_superbblocks_schemas(super_bblocks, bbr, annotated_path):
                 print(f"  - {os.path.relpath(super_bblock_schema, '.')}", file=sys.stderr)
         except Exception as e:
             if fail_on_error:

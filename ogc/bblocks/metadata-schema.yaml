@@ -3,13 +3,11 @@ title: OGC Building Blocks Register metadata schema
 type: object
 required:
   - name
-  - abstract
   - status
   - dateTimeAddition
   - itemClass
   - version
   - dateOfLastChange
-  - scope
 properties:
   itemIdentifier:
     description: Unique identifier for this Building Block.

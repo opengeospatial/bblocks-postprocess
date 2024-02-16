@@ -12,13 +12,13 @@ from collections import deque
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Sequence, Callable, AnyStr, Generator, cast
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, urlunparse
 
 import jsonschema
 import networkx as nx
 import pathvalidate
 import requests
-from ogc.na.annotate_schema import SchemaAnnotator, ContextBuilder
+from ogc.na.annotate_schema import SchemaAnnotator, ContextBuilder, SchemaResolver
 from ogc.na.util import load_yaml, dump_yaml, is_url
 
 BBLOCK_METADATA_FILE = 'bblock.json'
@@ -28,9 +28,14 @@ loaded_schemas: dict[str, dict] = {}
 
 
 class CustomJSONEncoder(json.JSONEncoder):
+
     def default(self, obj):
         if isinstance(obj, set):
             return list(obj)
+        elif isinstance(obj, Path):
+            return os.path.relpath(obj.resolve())
+        elif isinstance(obj, PathOrUrl):
+            return obj.url if obj.is_url else os.path.relpath(obj.resolve())
         else:
             return json.JSONEncoder.default(self, obj)
 
@@ -41,6 +46,8 @@ def load_file_cached(fn):
 
 
 def load_file(fn):
+    if isinstance(fn, PathOrUrl):
+        fn = fn.value
     if isinstance(fn, str) and is_url(fn):
         r = requests.get(fn)
         r.raise_for_status()
@@ -64,12 +71,137 @@ def get_bblock_identifier(metadata_file: Path, root_path: Path = Path(),
     return identifier, Path(*rel_parts)
 
 
+def pathify(v: str | Path):
+    if not v:
+        return Path(v)
+    if isinstance(v, Path):
+        return v
+    return v if is_url(v) else Path(v)
+
+
 def get_bblock_subdirs(identifier: str) -> Path:
     return Path(*(identifier.split('.')[1:]))
 
 
 class BuildingBlockError(Exception):
     pass
+
+
+class PathOrUrl:
+
+    def __init__(self, value: str | Path):
+        if not value:
+            raise ValueError('Empty value provided')
+        self.value: [str | Path] = value
+        self.is_path = isinstance(value, Path) or not is_url(value)
+        if self.is_path:
+            self.value = Path(value).resolve()
+            self.path = self.value
+        else:
+            self.url = self.value
+        self.is_url = not self.is_path
+        self.exists = self.is_url or value.is_file()
+        self.parsed_url = None if self.is_path else urlparse(self.value)
+
+    def __str__(self) -> str:
+        return str(self.value)
+
+    def resolve(self) -> str | Path:
+        """
+        Emulates Path.resolve()
+        :return: the wrapped value if this is a URL, or the resolved path
+        """
+        if self.is_url:
+            return self.url
+        return self.path.resolve()
+
+    def resolve_ref(self, ref: str | Path) -> PathOrUrl | None:
+        """
+        Resolves a (relative, absolute or full URL) reference from the wrapped value
+        :param ref:
+        :return:
+        """
+        ref = pathify(ref)
+        if isinstance(ref, str):
+            return PathOrUrl(ref)
+        if self.is_url:
+            return PathOrUrl(urljoin(self.url, str(ref)))
+        else:
+            return PathOrUrl(self.path / ref)
+
+    def as_uri(self):
+        if self.is_path:
+            return self.value.as_uri()
+        return self.value
+
+    def with_name(self, name: str):
+        if self.is_path:
+            return self.value.with_name(name)
+        if self.parsed_url.path:
+            newpath = Path(self.parsed_url.path).with_name(name)
+        else:
+            newpath = name
+        return urlunparse(self.parsed_url[0:2] + (str(newpath),) + self.parsed_url[3:])
+
+    @functools.cache
+    def to_url(self, base: str):
+        if self.is_url:
+            return self.value
+        return urljoin(base, os.path.relpath(self.value))
+
+    @property
+    def parent(self):
+        """
+        Emulates Path.parent
+        :return:
+        """
+        if self.is_path:
+            return PathOrUrl(self.value.parent)
+        elif self.parsed_url.path:
+            parsed_path = Path(self.parsed_url.path)
+            return PathOrUrl(urlunparse(self.parsed_url[0:2] + (str(parsed_path.parent),) + self.parsed_url[3:]))
+        else:
+            return self
+
+    def is_file(self):
+        return self.exists
+
+    @functools.cache
+    def load_yaml(self):
+        if self.is_url:
+            return load_yaml(url=self.url)
+        else:
+            return load_yaml(filename=self.path)
+
+
+class RegisterSchemaResolver(SchemaResolver):
+    """
+    Overrides load_contents to read annotated versions of the local and
+    imported bblock schemas.
+    """
+
+    def __init__(self, register: BuildingBlockRegister, working_directory=Path()):
+        super().__init__(working_directory=working_directory)
+        self.register = register
+
+    def find_schema(self, s: str | Path):
+        if isinstance(s, Path):
+            s = os.path.relpath(s)
+        if s in self.register.local_bblock_schemas:
+            bblock_id = self.register.local_bblock_schemas[s]
+            bblock = self.register.bblocks[bblock_id]
+            if bblock.annotated_schema.is_file():
+                # NOTE: Only change it if it exists, otherwise the first time reading
+                # the source schema (to begin the annotation) will fail
+                s = bblock.annotated_schema
+        elif s in self.register.imported_bblock_schemas:
+            bblock_id = self.register.imported_bblock_schemas[s]
+            bblock = self.register.imported_bblocks[bblock_id]
+            s = bblock['schema']['application/yaml']
+        return s
+
+    def load_contents(self, s: str | Path) -> tuple[dict, bool]:
+        return super().load_contents(self.find_schema(s))
 
 
 class BuildingBlock:
@@ -107,13 +239,16 @@ class BuildingBlock:
         self.files_path = fp
 
         metadata_schema = self.metadata.get('schema')
-        if metadata_schema and not is_url(metadata_schema):
-            schema = self.files_path.joinpath(metadata_schema).resolve()
+        if metadata_schema:
+            if not is_url(metadata_schema):
+                schema = self.files_path.joinpath(metadata_schema).resolve()
+            else:
+                schema = metadata_schema
         else:
             schema = fp / 'schema.yaml'
             if not schema.is_file():
                 schema = fp / 'schema.json'
-        self.schema = schema
+        self.schema = PathOrUrl(schema)
 
         ap = fp / 'assets'
         self.assets_path = ap if ap.is_dir() else None
@@ -169,9 +304,9 @@ class BuildingBlock:
     @property
     def schema_contents(self):
         if 'schema_contents' not in self._lazy_properties:
-            if not self.schema.exists():
+            if not self.schema.exists:
                 return None
-            self._lazy_properties['schema_contents'] = load_file(self.schema)
+            self._lazy_properties['schema_contents'] = load_file(self.schema.value)
         return self._lazy_properties['schema_contents']
 
     @property
@@ -268,14 +403,17 @@ class BuildingBlockRegister:
                  annotated_path: Path = Path(),
                  fail_on_error: bool = False,
                  prefix: str = 'ogc.',
-                 find_dependencies=True,
-                 imported_bblocks: ImportedBuildingBlocks | None = None):
+                 imported_bblocks: ImportedBuildingBlocks | None = None,
+                 base_url: str | None = None):
 
         self.registered_items_path = registered_items_path
         self.annotated_path = annotated_path
         self.prefix = prefix
         self.bblocks: dict[str, BuildingBlock] = {}
         self.imported_bblocks = imported_bblocks.bblocks if imported_bblocks else {}
+
+        # Map of schema paths and URLs for local bblocks, including source and annotated ones
+        self.local_bblock_schemas: dict[str, str] = {}
 
         self.bblock_paths: dict[Path, BuildingBlock] = {}
 
@@ -289,6 +427,22 @@ class BuildingBlockRegister:
                                        annotated_path=annotated_path)
                 self.bblocks[bblock_id] = bblock
                 self.bblock_paths[bblock.files_path] = bblock
+
+                if bblock.schema.exists:
+                    if bblock.schema.is_url:
+                        self.local_bblock_schemas[bblock.schema.url] = bblock_id
+                    else:
+                        rel = os.path.relpath(bblock.schema.path)
+                        self.local_bblock_schemas[rel] = bblock_id
+                        if base_url:
+                            self.local_bblock_schemas[f"{base_url}{rel}"] = bblock_id
+
+                    for s in (bblock.annotated_schema, bblock.annotated_schema.with_suffix('.json')):
+                        rel = os.path.relpath(s)
+                        self.local_bblock_schemas[rel] = bblock_id
+                        if base_url:
+                            self.local_bblock_schemas[f"{base_url}{rel}"] = bblock_id
+
             except Exception as e:
                 if fail_on_error:
                     raise
@@ -297,41 +451,51 @@ class BuildingBlockRegister:
                 traceback.print_exception(e, file=sys.stderr)
                 print('=========', file=sys.stderr)
 
+        # Map of schema URLs for imported bblocks, including source and annotated ones
         self.imported_bblock_schemas: dict[str, str] = {}
-        if find_dependencies:
-            dep_graph = nx.DiGraph()
+        dep_graph = nx.DiGraph()
+        for identifier, imported_bblock in self.imported_bblocks.items():
+            dep_graph.add_node(identifier)
+            dep_graph.add_edges_from([(d, identifier) for d in imported_bblock.get('dependsOn', ())])
+            imported_bblock.get('dependsOn', [])
+            for schema_url in imported_bblock.get('schema', {}).values():
+                self.imported_bblock_schemas[schema_url] = identifier
+            source_schema = imported_bblock.get('sourceSchema')
+            if source_schema:
+                self.imported_bblock_schemas[source_schema] = identifier
 
-            for identifier, imported_bblock in self.imported_bblocks.items():
-                dep_graph.add_node(identifier)
-                dep_graph.add_edges_from([(d, identifier) for d in imported_bblock.get('dependsOn', ())])
-                imported_bblock.get('dependsOn', [])
-                for schema_url in imported_bblock.get('schema', {}).values():
-                    self.imported_bblock_schemas[schema_url] = identifier
+        for bblock in self.bblocks.values():
+            found_deps = self._resolve_bblock_schema_deps(bblock)
+            deps = bblock.metadata.get('dependsOn')
+            if isinstance(deps, str):
+                found_deps.add(deps)
+            elif isinstance(deps, list):
+                found_deps.update(deps)
+            if found_deps:
+                bblock.metadata['dependsOn'] = list(found_deps)
+            dep_graph.add_node(bblock.identifier)
+            dep_graph.add_edges_from([(d, bblock.identifier) for d in bblock.metadata.get('dependsOn', ())])
 
-            for bblock in self.bblocks.values():
-                found_deps = self._resolve_bblock_deps(bblock)
-                deps = bblock.metadata.get('dependsOn')
-                if isinstance(deps, str):
-                    found_deps.add(deps)
-                elif isinstance(deps, list):
-                    found_deps.update(deps)
-                if found_deps:
-                    bblock.metadata['dependsOn'] = list(found_deps)
-                dep_graph.add_node(bblock.identifier)
-                dep_graph.add_edges_from([(d, bblock.identifier) for d in bblock.metadata.get('dependsOn', ())])
-            cycles = list(nx.simple_cycles(dep_graph))
-            if cycles:
-                cycles_str = '\n - '.join(' -> '.join(reversed(c)) + ' -> ' + c[-1] for c in cycles)
-                raise BuildingBlockError(f"Circular dependencies found: \n - {cycles_str}")
-            self.bblocks: dict[str, BuildingBlock] = {b: self.bblocks[b]
-                                                      for b in nx.topological_sort(dep_graph)
-                                                      if b in self.bblocks}
-            self.dep_graph = dep_graph
+        cycles = list(nx.simple_cycles(dep_graph))
+        if cycles:
+            cycles_str = '\n - '.join(' -> '.join(reversed(c)) + ' -> ' + c[-1] for c in cycles)
+            raise BuildingBlockError(f"Circular dependencies found: \n - {cycles_str}")
+        self.bblocks: dict[str, BuildingBlock] = {b: self.bblocks[b]
+                                                  for b in nx.topological_sort(dep_graph)
+                                                  if b in self.bblocks}
+        self.dep_graph = dep_graph
+        self.schema_resolver = RegisterSchemaResolver(self)
 
-    def _resolve_bblock_deps(self, bblock: BuildingBlock) -> set[str]:
-        if not bblock.schema.is_file():
+    def _resolve_bblock_schema_deps(self, bblock: BuildingBlock) -> set[str]:
+        """
+        Walks this bblock's schema to find dependencies to other bblocks.
+
+        :param bblock: the bblock
+        :return: a `set` of dependencies (bblock identifiers)
+        """
+        if not bblock.schema.exists:
             return set()
-        bblock_schema = load_yaml(filename=bblock.schema)
+        bblock_schema = bblock.schema.load_yaml()
 
         deps = set()
 
@@ -339,6 +503,7 @@ class BuildingBlockRegister:
             if isinstance(schema, dict):
                 ref = schema.get(BBLOCKS_REF_ANNOTATION, schema.get('$ref'))
                 if isinstance(ref, str):
+                    # Remove fragment
                     ref = re.sub(r'#.*$', '', ref)
                     if ref == f"bblocks://{bblock.identifier}":
                         # A self-reference is not a dependency
@@ -347,13 +512,20 @@ class BuildingBlockRegister:
                         # Get id directly from bblocks:// URI
                         deps.add(ref[len('bblocks://'):])
                     elif ref in self.imported_bblock_schemas:
-                        if self.imported_bblock_schemas[ref] != bblock.identifier:
-                            deps.add(self.imported_bblock_schemas[ref])
+                        # Import bblock schema URL
+                        deps.add(self.imported_bblock_schemas[ref])
+                    elif ref in self.local_bblock_schemas:
+                        # Local bblock schema URL, most likely
+                        deps.add(self.local_bblock_schemas[ref])
                     else:
-                        ref_parent_path = bblock.schema.parent.joinpath(ref).resolve().parent
-                        ref_bblock = self.bblock_paths.get(ref_parent_path)
-                        if ref_bblock:
-                            deps.add(ref_bblock.identifier)
+                        if bblock.schema.is_path:
+                            # Check if target path in local bblock schemas
+                            rel_ref = os.path.relpath(bblock.schema.parent.resolve_ref(ref).resolve())
+                        else:
+                            # Check if target URL in local bblock schemas
+                            rel_ref = urljoin(bblock.schema.url, ref)
+                        if rel_ref in self.local_bblock_schemas:
+                            deps.add(self.local_bblock_schemas[rel_ref])
 
                 for prop, val in schema.items():
                     if prop not in (BBLOCKS_REF_ANNOTATION, '$ref') or not isinstance(val, str):
@@ -422,6 +594,7 @@ class TransformMetadata:
 
 
 def write_superbblocks_schemas(super_bblocks: dict[Path, BuildingBlock],
+                               bblocks_register: BuildingBlockRegister,
                                annotated_path: Path | None = None) -> list[Path]:
     def process_sbb(sbb_dir: Path, sbb: BuildingBlock, skip_dirs) -> dict:
         any_of = []
@@ -489,27 +662,32 @@ def write_superbblocks_schemas(super_bblocks: dict[Path, BuildingBlock],
         with open(annotated_output_file.with_suffix('.json'), 'w') as f:
             json.dump(super_schema_annotated, f, indent=2)
 
-        jsonld_context = write_jsonld_context(annotated_output_file)
+        jsonld_context = write_jsonld_context(annotated_output_file, bblocks_register)
         if jsonld_context:
             result.append(jsonld_context)
 
     return result
 
 
-def write_jsonld_context(annotated_schema: Path | str) -> Path | None:
+def write_jsonld_context(annotated_schema: Path | str, bblocks_register: BuildingBlockRegister) -> Path | None:
     if not isinstance(annotated_schema, Path):
         annotated_schema = Path(annotated_schema)
-    ctx_builder = ContextBuilder(annotated_schema)
+    ctx_builder = ContextBuilder(annotated_schema, schema_resolver=bblocks_register.schema_resolver)
     if not ctx_builder.context.get('@context'):
         return None
     context_fn = annotated_schema.resolve().parent / 'context.jsonld'
     with open(context_fn, 'w') as f:
         json.dump(ctx_builder.context, f, indent=2)
-    with open(context_fn.parent / '_visited_properties.tsv', 'w', newline='') as f:
+    with open(context_fn.parent / '_visited_properties.tsv', 'w', newline='') as f, \
+            open(context_fn.parent / '_empty_properties.tsv', 'w', newline='') as fe:
         writer = csv.writer(f, delimiter='\t')
         writer.writerow(['path', '@id'])
+        fe.write('path\n')
+
         for e in ctx_builder.visited_properties.items():
             writer.writerow(e)
+            if not e[1]:
+                fe.write(f"{e[0]}\n")
     return context_fn
 
 
@@ -547,16 +725,18 @@ def annotate_schema(bblock: BuildingBlock,
             schema_url = ref_schema
         else:
             schema_fn = bblock.files_path.joinpath(ref_schema).resolve()
-    elif bblock.schema.is_file():
-        schema_fn = bblock.schema
+    elif bblock.schema.is_url:
+        schema_url = bblock.schema.value
+    elif bblock.schema.exists:
+        schema_fn = bblock.schema.value
 
     if not schema_fn and not schema_url:
         return result
 
     override_schema = load_yaml(filename=schema_fn, url=schema_url)
-    override_schema = resolve_all_schema_references(override_schema, bblocks_register, bblock)
+    override_schema = resolve_all_schema_references(override_schema, bblocks_register, bblock, base_url)
 
-    annotator = SchemaAnnotator()
+    annotator = SchemaAnnotator(schema_resolver=bblocks_register.schema_resolver)
 
     bb_extends = bblock.extends
     if bb_extends:
@@ -604,8 +784,8 @@ def annotate_schema(bblock: BuildingBlock,
         return result
 
     annotated_schema = annotated_schema.schema
-    if schema_url and '$id' not in annotated_schema:
-        annotated_schema['$id'] = schema_url
+    # if schema_url and '$id' not in annotated_schema:
+    #      annotated_schema['$id'] = schema_url
 
     result = []
 
@@ -616,8 +796,15 @@ def annotate_schema(bblock: BuildingBlock,
     result.append(annotated_schema_fn)
 
     def update_json_ref(ref):
-        if ref in bblocks_register.imported_bblock_schemas or not is_url(ref):
-            return re.sub(r'\.yaml(#.*)?$', r'.json\1', ref)
+        if ref[0] == '#' or not is_url(ref):
+            return ref
+        if '#' in ref:
+            ref, fragment = ref.split('#', 1)
+            fragment = '#' + fragment
+        else:
+            fragment = ''
+        if ref in bblocks_register.local_bblock_schemas or ref in bblocks_register.imported_bblock_schemas:
+            return re.sub(r'\.yaml$', r'.json', ref) + fragment
         return ref
 
     # JSON
@@ -645,14 +832,16 @@ def annotate_schema(bblock: BuildingBlock,
 
 def resolve_all_schema_references(schema: Any,
                                   bblocks_register: BuildingBlockRegister,
-                                  from_bblock: BuildingBlock | None = None) -> Any:
+                                  from_bblock: BuildingBlock,
+                                  base_url: str | None = None) -> Any:
     def walk(subschema):
         if isinstance(subschema, dict):
-            if '$ref' in subschema:
+            if isinstance(subschema.get('$ref'), str):
                 subschema['$ref'] = resolve_schema_reference(subschema['$ref'],
                                                              subschema,
                                                              bblocks_register,
-                                                             from_bblock)
+                                                             from_bblock,
+                                                             base_url)
             for v in subschema.values():
                 walk(v)
         elif isinstance(subschema, list):
@@ -666,48 +855,76 @@ def resolve_all_schema_references(schema: Any,
 def resolve_schema_reference(ref: str,
                              schema: Any,
                              bblocks_register: BuildingBlockRegister,
-                             from_bblock: BuildingBlock | None = None) -> str:
+                             from_bblock: BuildingBlock,
+                             base_url: str | None = None) -> str:
     ref = schema.pop(BBLOCKS_REF_ANNOTATION, ref)
 
-    if ref[0] != '#' and (from_bblock.schema.is_file() or from_bblock.metadata.get('schema')) and not is_url(ref):
-        if '#' in ref:
-            ref, fragment = ref.split('#', 1)
-        else:
-            fragment = ''
-        # Update local $ref if not to another bblock schema
-        if from_bblock.schema.is_file():
-            original = from_bblock.schema.parent / ref
-        else:
-            original = from_bblock.files_path / ref
-        original = original.resolve()
-        if (original.stem != 'schema' or original.suffix not in ('.json', '.yaml')
-                or not original.parent.joinpath('bblock.json').is_file()):
-            # $ref is to non-bblock canonical schema.json/schema.yaml -> update
-            ref = os.path.relpath(str(original).split('#', 1)[0], from_bblock.annotated_path)
-        return ref if not fragment else f"{ref}#{fragment}"
-
-    if not ref.startswith('bblocks://'):
+    if ref[0] == '#':
+        # Local $ref -> returned as is
         return ref
 
-    # Process bblocks:// URIs
-    target_id = ref[len('bblocks://'):]
-    fragment = ''
-    if '#' in target_id:
-        target_id, fragment = target_id.split('#', 1)
-        if fragment:
-            fragment = '#' + fragment
-
-    target_bb = bblocks_register.bblocks.get(target_id)
-    if target_bb:
-        if from_bblock:
-            return os.path.relpath(target_bb.annotated_schema, from_bblock.annotated_path)
-        else:
-            return ref
+    if '#' in ref:
+        ref, fragment = ref.split('#', 1)
+        fragment = '#' + fragment
     else:
-        target_bb = bblocks_register.imported_bblocks.get(target_id)
-        if not target_bb or not target_bb.get('schema'):
-            raise ValueError(f'Error replacing dependency {target_id}. Is an import missing?')
-        return f"{target_bb['schema']['application/yaml']}{fragment}"
+        fragment = ''
+
+    # Find bblock id for ref
+    target_bblock_id = None
+    if ref.startswith('bblocks://'):
+        target_bblock_id = ref[len('bblocks://'):]
+    elif not is_url(ref):
+        # Relative ref -> search in local bblock schemas, both as .yaml and as .json
+
+        if from_bblock.schema.is_url:
+            # Reference to a remote schema
+            check_refs = {from_bblock.schema.resolve_ref(ref).value}
+        else:
+            # Reference to a local schema (same repo)
+            # First make ref relative to cwd
+            rel_ref = os.path.relpath(from_bblock.files_path.joinpath(ref))
+
+            # Then check json/yaml variants
+            check_refs = {rel_ref,
+                          re.sub(r'\.json$', '.yaml', rel_ref),
+                          re.sub(r'\.ya?ml', '.json', rel_ref)}
+        for check_ref in check_refs:
+            if check_ref in bblocks_register.local_bblock_schemas:
+                target_bblock_id = bblocks_register.local_bblock_schemas[check_ref]
+        if not target_bblock_id:
+            if base_url:
+                # Return the URL to the $ref
+                return f"{base_url}{os.path.relpath(str(from_bblock.schema.parent.resolve_ref(ref).value))}{fragment}"
+            else:
+                # Relativize from annotated schema path
+                return os.path.relpath(from_bblock.schema.parent.resolve_ref(ref).resolve(),
+                                       from_bblock.annotated_schema.parent) + fragment
+    else:
+        # URL -> search in both local and imported bblock schemas
+        target_bblock_id = bblocks_register.local_bblock_schemas.get(
+            ref,
+            bblocks_register.imported_bblock_schemas.get(ref)
+        )
+
+    if target_bblock_id:
+        # Search local
+        target_bblock = bblocks_register.bblocks.get(target_bblock_id)
+        if target_bblock:
+            if base_url:
+                # If we have a base_url, we return the full URL
+                return f"{base_url}{os.path.relpath(target_bblock.annotated_schema)}{fragment}"
+            else:
+                # Otherwise, the local relative path
+                return os.path.relpath(target_bblock.annotated_schema, from_bblock.annotated_path) + fragment
+        else:
+            target_bblock = bblocks_register.imported_bblocks.get(target_bblock_id)
+            if target_bblock and target_bblock.get('schema'):
+                return f"{target_bblock['schema']['application/yaml']}{fragment}"
+
+        raise ValueError(f'Error replacing dependency {target_bblock_id}. Is an import missing?')
+
+    # If we're here, ref is unknown -> return the original value
+    return f"{ref}{fragment}"
 
 
 def get_github_repo(url: str) -> tuple[str, str] | None:
@@ -861,6 +1078,8 @@ def to_oas30(schema_fn: Path, schema_url: str, bbr: BuildingBlockRegister) -> di
         cur_ref_id = mapped_refs[cur_ref]
         if root_ref_id == cur_ref_id:
             ref_schema = load_yaml(content=load_file_cached(schema_fn))
+        elif cur_ref in bbr.local_bblock_schemas:
+            ref_schema = load_yaml(content=bbr.bblocks[bbr.local_bblock_schemas[cur_ref]].annotated_schema_contents)
         else:
             ref_schema = load_yaml(content=load_file_cached(cur_ref))
         ref_schema, ref_version, ref_id = walk(ref_schema, cur_ref)
