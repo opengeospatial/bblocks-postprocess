@@ -678,16 +678,15 @@ def write_jsonld_context(annotated_schema: Path | str, bblocks_register: Buildin
     context_fn = annotated_schema.resolve().parent / 'context.jsonld'
     with open(context_fn, 'w') as f:
         json.dump(ctx_builder.context, f, indent=2)
-    with open(context_fn.parent / '_visited_properties.tsv', 'w', newline='') as f, \
-            open(context_fn.parent / '_empty_properties.tsv', 'w', newline='') as fe:
+    with open(context_fn.parent / '_visited_properties.tsv', 'w', newline='') as f:
         writer = csv.writer(f, delimiter='\t')
         writer.writerow(['path', '@id'])
-        fe.write('path\n')
-
         for e in ctx_builder.visited_properties.items():
             writer.writerow(e)
-            if not e[1]:
-                fe.write(f"{e[0]}\n")
+    with open(context_fn.parent / '_missed_properties.tsv', 'w', newline='') as fm:
+        fm.write('path\n')
+        for mp in ctx_builder.missed_properties:
+            fm.write(f"{mp}\n")
     return context_fn
 
 

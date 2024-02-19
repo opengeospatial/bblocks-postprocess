@@ -211,7 +211,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             for p in itertools.chain((filter_p,), filter_p.parents):
                 p = p.resolve()
                 for bb in bbr.bblocks.values():
-                    if p in (bb.files_path, bb.tests_dir.resolve(), bb.annotated_path.resolve_ref()):
+                    if p in (bb.files_path, bb.tests_dir.resolve(), bb.annotated_path.resolve()):
                         filter_id = bb.identifier
                         break
                 if filter_id:
