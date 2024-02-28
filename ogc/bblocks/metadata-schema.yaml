@@ -220,3 +220,10 @@ properties:
       Whether this Building Block should be "highlighted" or "featured" within the register, potentially
       used as an entry point for the collection
     type: boolean
+  conformanceClasses:
+    description: |
+      List of conformance classes (URIs) that this building block refers to.
+    type: array
+    items:
+      type: string
+      pattern: '^https?://.*'

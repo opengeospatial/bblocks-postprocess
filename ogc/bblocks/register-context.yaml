@@ -10,7 +10,8 @@ transform:
         "hasConcepts": .
       } else . + {
         "@type": ["skos:ConceptScheme", "dcat:Catalog"],
-        "skos:prefLabel": .name,
+        "name": "Building Blocks - \(.name)",
+        "skos:prefLabel": "Building Blocks - \(.name)",
         "hasConcepts": .bblocks
       } | del(.bblocks) end
   - '{ "@context": { "@base": ($baseUrl // "https://www.opengis.net/def/bblocks/") } } + .'
@@ -25,6 +26,7 @@ context:
     xsd: http://www.w3.org/2001/XMLSchema#
     prof: http://www.w3.org/ns/dx/prof/
     dcat: http://www.w3.org/ns/dcat#
+    modspec: http://www.opengis.net/def/ont/modspec/
 
     itemIdentifier: '@id'
     baseURL: '@id'
@@ -96,4 +98,7 @@ context:
       '@type': '@id'
     imports:
       '@id': bblocks:imports
+      '@type': '@id'
+    conformanceClasses:
+      '@id': modspec:class
       '@type': '@id'
