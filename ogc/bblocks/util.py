@@ -510,7 +510,24 @@ class BuildingBlockRegister:
                         pass
                     elif ref.startswith('bblocks://'):
                         # Get id directly from bblocks:// URI
-                        deps.add(ref[len('bblocks://'):])
+                        bblock_ref = ref[len('bblocks://'):]
+                        ref_bblock_has_schema = True
+                        if bblock_ref in self.bblocks:
+                            ref_bblock_has_schema = self.bblocks[bblock_ref].schema.exists
+                        elif bblock_ref in self.imported_bblocks:
+                            ref_bblock_has_schema = bool(self.imported_bblocks[bblock_ref].get('schema'))
+                        else:
+                            # Unknown bblock!
+                            raise ValueError(f'Invalid reference to bblock schema {bblock_ref}'
+                                             f' from {bblock.identifier} ({bblock.schema}) - the bblock does not exist'
+                                             f' - perhaps an import is missing?')
+
+                        if not ref_bblock_has_schema:
+                            # Referenced bblock has no schema!
+                            raise ValueError(f'Invalid reference to bblock schema {bblock_ref}'
+                                             f' from {bblock.identifier} ({bblock.schema}) - the bblock has no schema')
+
+                        deps.add(bblock_ref)
                     elif ref in self.imported_bblock_schemas:
                         # Import bblock schema URL
                         deps.add(self.imported_bblock_schemas[ref])
