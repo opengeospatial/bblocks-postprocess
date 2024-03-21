@@ -139,33 +139,6 @@ jobs:
         run: |
           sudo find "${{ inputs.annotated_path }}" -name _visited_properties.tsv -delete
           sudo find "${{ inputs.annotated_path }}" -name _visited_properties.tsv.gz -delete
-      - name: Create GH Pages index
-        if: ${{ !inputs.deploy_viewer && github.event.repository.has_pages && !inputs.skip-pages }}
-        shell: python
-        run: |
-          import json
-          
-          with open('${{ inputs.register_file }}') as f:
-            bblocks = json.load(f)
-            if isinstance(bblocks, dict):
-              bblocks = bblocks.get('bblocks', ())
-          
-          with open('index.html', 'w') as f:
-            f.write('<!doctype html><html><head><meta charset="utf-8"/><title>')
-            f.write('${{ github.repository }}')
-            f.write(' - Building Blocks</title><style>.validation-failed::before{color:red;content:"❌ "}.validation-passed::before{color:green;content:"✅️ "}</style></head><body><h1>')
-            f.write('${{ github.repository }}')
-            f.write('</h1><ul>')
-            for bblock in sorted(bblocks, key=lambda x: x['itemIdentifier']):
-              link = bblock.get('documentation', {}).get('slate', {}).get('url')
-              name = bblock['name']
-              identifier = bblock['itemIdentifier']
-              validation = 'passed' if bblock.get('validationPassed', True) else 'failed'
-              if link:
-                f.write(f'<li class="validation-{validation}"><a href="{link}"><tt>{identifier}</tt> - {name}</a></li>')
-              else:
-                f.write(f'<li class="validation-{validation}"><tt>{identifier}</tt> - {name}</li>')
-            f.write('</ul><p style="margin-top:1em"><a href="${{ inputs.test_outputs_path }}/report.html">Validation report</a></p></body></html>')
       - name: Deploy Building Blocks viewer
         if: ${{ inputs.deploy_viewer && github.event.repository.has_pages && !inputs.skip-pages }}
         run: |
@@ -184,25 +157,49 @@ jobs:
           else
             BASE_URL=${BASE_URL#./}
           fi
-          wget -q -O - https://github.com/ogcincubator/bblocks-viewer/archive/refs/heads/dist.tar.gz | tar zx --strip-components=1
-          sed -i -r "s,/@BASE_URL@/,/${{ github.event.repository.name }}/${BASE_URL},g" index.html 404.html assets/*.js assets/*.css
+          # Add trailing slash to BASE_URL if not empty
+          if [[ "${BASE_URL}" =~ [^/]$ ]]; then
+            BASE_URL="${BASE_URL}/"
+          fi
+          
+          cat << EOF > index.html
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8" />
+            <link rel="icon" href="https://ogcincubator.github.io/bblocks-viewer/favicon.ico" />
+            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+            <title>OGC Location Building Blocks</title>
+            <script src="/${{ github.event.repository.name }}/${BASE_URL}config.js"></script>
+            <script type="module" crossorigin src="https://ogcincubator.github.io/bblocks-viewer/assets/index.js"></script>
+            <link rel="stylesheet" href="https://ogcincubator.github.io/bblocks-viewer/assets/index.css">
+          </head>
+          <body>
+            <div id="app"></div>
+          </body>
+          </html>
+          EOF
+          
           cat << EOF > config.js
           window.bblocksRegister = '${{ format('https://{0}.github.io/{1}/{2}', github.repository_owner, github.event.repository.name, inputs.register_file) }}';
           window.bblocksViewer = {
             title: $(jq '.name // "${{ github.event.repository.name }}"' < "$REGISTER_FILE"),
             showImported: ${{ inputs.viewer_show_imported }},
+            baseUrl: '/${{ github.event.repository.name }}/${BASE_URL}',
           };
           EOF
+          
           if [ -f GIT_INFO ]; then
             TEMPFILE="$(mktemp)"
             jq -s '.[0].tooling."bblocks-viewer" = .[1] | .[0]' "$REGISTER_FILE" GIT_INFO > "$TEMPFILE"
             mv "$TEMPFILE" "$REGISTER_FILE"
             rm -f "$TEMPFILE"
           fi
+          
           cd "$OLD_WD"
           
           if [ ! -f "404.html" ]; then
-            cp "${{ inputs.viewer_path }}/404.html" .
+            cp "${{ inputs.viewer_path }}/index.html" 404.html
           fi
       - name: Setup Pages
         if: ${{ github.event.repository.has_pages && !inputs.skip-pages }}
