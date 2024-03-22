@@ -302,6 +302,8 @@ def _validate_resource(bblock: BuildingBlock,
         )
     report = ValidationReportItem(source)
 
+    file_from = 'examples' if example_index else 'test resources'
+
     def validate_inner():
         json_doc = None
         graph = None
@@ -319,13 +321,13 @@ def _validate_resource(bblock: BuildingBlock,
                         using_fn = f"{output_filename.name} ({filename.stem})"
                     report.add_entry(ValidationReportEntry(
                         section=ValidationReportSection.FILES,
-                        message=f'Using {using_fn} from examples',
+                        message=f'Using {using_fn} from {file_from}',
                     ))
                 else:
                     json_doc = load_yaml(filename=filename)
                     report.add_entry(ValidationReportEntry(
                         section=ValidationReportSection.FILES,
-                        message=f'Using {filename.name} from test resources',
+                        message=f'Using {filename.name} from {file_from}',
                     ))
                 json_doc = jsonref.replace_refs(json_doc, base_uri=filename.as_uri(), merge_props=True, proxies=False)
             except MarkedYAMLError as e:
@@ -451,17 +453,17 @@ def _validate_resource(bblock: BuildingBlock,
 
         elif filename.suffix == '.ttl':
             try:
-                if example_index:
+                if resource_contents:
+                    graph = Graph().parse(data=resource_contents, format='ttl')
                     report.add_entry(ValidationReportEntry(
                         section=ValidationReportSection.FILES,
-                        message=f'Using {filename.name} from examples',
+                        message=f'Using {filename.name} from {file_from}',
                     ))
-                    graph = Graph().parse(data=resource_contents, format='ttl')
                 else:
                     graph = Graph().parse(filename)
                     report.add_entry(ValidationReportEntry(
                         section=ValidationReportSection.FILES,
-                        message=f'Using {filename.name} from test resources',
+                        message=f'Using {filename.name} from {file_from}',
                     ))
             except (ValueError, SyntaxError) as e:
                 report.add_entry(ValidationReportEntry(
