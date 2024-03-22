@@ -2,7 +2,7 @@
 from html import escape as e
 from datetime import datetime, timezone
 from urllib.parse import urlparse, urljoin
-from os.path import basename
+from os.path import basename, relpath
 from pathlib import Path
 from ogc.na.util import is_url
 import re
@@ -16,6 +16,18 @@ def get_uid():
     last_uid = f"uid-{globals()['uid']}"
     return last_uid
 get_filename = lambda s: basename(urlparse(s).path)
+%>
+<%
+def get_source_url(source):
+    if source.get('sourceUrl'):
+        return source['sourceUrl']
+    source_fn = source['filename']
+    if is_url(source_fn) or not report_fn:
+        return source_fn
+    if report_fn:
+        return os.path.relpath(source_fn, report_fn.resolve().parent)
+    return source.get('url', source_fn)
+
 %>
 <!doctype html>
 <html>
@@ -114,7 +126,7 @@ get_filename = lambda s: basename(urlparse(s).path)
                                                         <i class="bi bi-caret-right-fill caret"></i>
                                                         Details
                                                     </button>
-                                                    <a href="${e(item['source']['filename'])}" target="_blank">${e(re.sub(r'.*/', '', item['source']['filename']))}</a>
+                                                    <a href="${e(get_source_url(item['source']))}" target="_blank">${e(re.sub(r'.*/', '', item['source']['filename']))}</a>
                                                     <span class="badge bg-secondary ${e(item['source']['type'].lower())}">${e(item['source']['type'].replace('_', ' ').capitalize())}</span>
                                                     % if item['source']['requireFail']:
                                                         <span class="badge text-bg-info">Requires fail</span>

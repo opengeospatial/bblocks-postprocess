@@ -22,7 +22,6 @@ import jsonschema
 from mako import exceptions as mako_exceptions, template as mako_template
 import requests
 from jsonschema.validators import validator_for
-from ogc.na.annotate_schema import SchemaResolver
 from ogc.na.util import load_yaml, is_url, copy_triples
 from pyparsing import ParseBaseException
 from rdflib import Graph
@@ -175,7 +174,7 @@ def report_to_dict(bblock: BuildingBlock,
             if item.source.filename:
                 source['filename'] = str(os.path.relpath(item.source.filename, cwd))
                 if base_url:
-                    source['filename'] = urljoin(base_url, source['filename'])
+                    source['url'] = urljoin(base_url, source['filename'])
             if item.source.example_index:
                 source['exampleIndex'] = item.source.example_index
                 if item.source.snippet_index:
@@ -236,6 +235,7 @@ def report_to_dict(bblock: BuildingBlock,
 
 
 def report_to_html(json_reports: list[dict],
+                   base_url: str | None = None,
                    report_fn: Path | None = None) -> str | None:
 
     pass_count = sum(r['result'] for r in json_reports)
@@ -246,7 +246,7 @@ def report_to_html(json_reports: list[dict],
     }
     template = mako_template.Template(filename=str(Path(__file__).parent / 'validation/report.html.mako'))
     try:
-        result = template.render(reports=json_reports, counts=counts)
+        result = template.render(reports=json_reports, counts=counts, report_fn=report_fn, base_url=base_url)
     except:
         raise ValueError(mako_exceptions.text_error_template().render())
 
