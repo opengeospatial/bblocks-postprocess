@@ -86,7 +86,7 @@ def get_source_url(source):
                                         % if report['counts']['total'] > 0:
                                             (${f"{report['counts']['passed'] * 100 / report['counts']['total']:.2f}".rstrip('0').rstrip('.')}% passed)
                                         % else:
-                                            (100%)
+                                            (no tests)
                                         % endif
                                     </span>
                                 </button>
