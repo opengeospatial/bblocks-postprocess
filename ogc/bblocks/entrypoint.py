@@ -19,6 +19,7 @@ DEFAULT_IMPORT_MARKER = 'default'
 
 templates_dir = Path(__file__).parent / 'templates'
 uplift_context_file = Path(__file__).parent / 'register-context.yaml'
+version_file = Path(__file__).parent / '_VERSION'
 
 if __name__ == '__main__':
 
@@ -123,7 +124,13 @@ if __name__ == '__main__':
     deploy_viewer = args.deploy_viewer in ('true', 'on', 'yes', '1')
     bb_config_file = Path(args.config_file) if args.config_file else None
 
-    print(f"""Running with the following configuration:
+    if version_file.is_file():
+        with open(version_file) as f:
+            version = f.readline().strip() + ' '
+    else:
+        version = ''
+
+    print(f"""Running {version}with the following configuration:
 - register_file: {args.register_file}
 - items_dir: {args.items_dir}
 - generated_docs_path: {args.generated_docs_path}

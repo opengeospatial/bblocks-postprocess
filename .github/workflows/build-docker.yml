@@ -23,7 +23,8 @@ jobs:
       - name: Add git environment variables
         id: env-variables
         run: |
-          echo "BBP_GIT_INFO=\"$(git rev-parse HEAD) $(date --iso-8601=seconds)\"" >> "$GITHUB_OUTPUT"  
+          echo "BBP_GIT_INFO=\"$(git rev-parse HEAD) $(date --iso-8601=seconds)\"" >> "$GITHUB_OUTPUT"
+          git rev-parse HEAD > ogc/bblocks/_VERSION
 
       - name: Log in to the Container registry
         if: github.event_name != 'pull_request'
