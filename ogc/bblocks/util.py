@@ -251,7 +251,7 @@ class BuildingBlock:
         self.files_path = fp
 
         self.schema = self._find_path_or_url('schema', ('schema.yaml', 'schema.json'))
-        self.openapi = self._find_path_or_url('openapiDocument', ('openapi.yaml',))
+        self.openapi = self._find_path_or_url('openAPIDocument', ('openapi.yaml',))
 
         ap = fp / 'assets'
         self.assets_path = ap if ap.is_dir() else None
@@ -493,7 +493,7 @@ class BuildingBlockRegister:
             source_schema = imported_bblock.get('sourceSchema')
             if source_schema:
                 self.imported_bblock_files[source_schema] = identifier
-            openapi_doc = imported_bblock.get('openapiDocument')
+            openapi_doc = imported_bblock.get('openAPIDocument')
             if isinstance(openapi_doc, str):
                 self.imported_bblock_files[openapi_doc] = identifier
             elif isinstance(openapi_doc, list):
