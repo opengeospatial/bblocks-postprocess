@@ -752,7 +752,8 @@ def annotate_schema(bblock: BuildingBlock,
         return result
 
     override_schema = load_yaml(filename=schema_fn, url=schema_url)
-    override_schema = resolve_all_schema_references(override_schema, bblocks_register, bblock, base_url)
+    override_schema = resolve_all_schema_references(override_schema, bblocks_register, bblock,
+                                                    bblock.schema, base_url)
 
     annotator = SchemaAnnotator(schema_resolver=bblocks_register.schema_resolver)
 
@@ -854,6 +855,7 @@ def annotate_schema(bblock: BuildingBlock,
 def resolve_all_schema_references(schema: Any,
                                   bblocks_register: BuildingBlockRegister,
                                   from_bblock: BuildingBlock,
+                                  from_document: PathOrUrl,
                                   base_url: str | None = None) -> Any:
     def walk(subschema):
         if isinstance(subschema, dict):
@@ -862,6 +864,7 @@ def resolve_all_schema_references(schema: Any,
                                                              subschema,
                                                              bblocks_register,
                                                              from_bblock,
+                                                             from_document,
                                                              base_url)
             for v in subschema.values():
                 walk(v)
@@ -877,6 +880,7 @@ def resolve_schema_reference(ref: str,
                              schema: Any,
                              bblocks_register: BuildingBlockRegister,
                              from_bblock: BuildingBlock,
+                             from_document: PathOrUrl,
                              base_url: str | None = None) -> str:
     ref = schema.pop(BBLOCKS_REF_ANNOTATION, ref)
 
@@ -897,9 +901,9 @@ def resolve_schema_reference(ref: str,
     elif not is_url(ref):
         # Relative ref -> search in local bblock schemas, both as .yaml and as .json
 
-        if from_bblock.schema.is_url:
+        if from_document.is_url:
             # Reference to a remote schema
-            check_refs = {from_bblock.schema.resolve_ref(ref).url}
+            check_refs = {from_document.resolve_ref(ref).url}
         else:
             # Reference to a local schema (same repo)
             # First make ref relative to cwd
@@ -913,14 +917,15 @@ def resolve_schema_reference(ref: str,
             if check_ref in bblocks_register.local_bblock_files:
                 target_bblock_id = bblocks_register.local_bblock_files[check_ref]
         if not target_bblock_id:
-            if from_bblock.schema.is_url:
-                return f"{from_bblock.schema.parent.resolve_ref(ref).url}{fragment}"
+            if from_document.is_url:
+                return f"{from_document.parent.resolve_ref(ref).url}{fragment}"
             elif base_url:
                 # Return the URL to the $ref
-                return f"{base_url}{os.path.relpath(str(from_bblock.schema.parent.resolve_ref(ref).value))}{fragment}"
+                return f"{base_url}{os.path.relpath(str(from_document.parent.resolve_ref(ref).value))}{fragment}"
             else:
                 # Relativize from annotated schema path
-                return os.path.relpath(from_bblock.schema.parent.resolve_ref(ref).resolve(),
+                # TODO: OpenAPI?
+                return os.path.relpath(from_document.parent.resolve_ref(ref).resolve(),
                                        from_bblock.annotated_schema.parent) + fragment
     else:
         # URL -> search in both local and imported bblock schemas
@@ -933,18 +938,30 @@ def resolve_schema_reference(ref: str,
         # Search local
         target_bblock = bblocks_register.bblocks.get(target_bblock_id)
         if target_bblock:
+            if target_bblock.schema.exists:
+                target_doc = target_bblock.annotated_schema
+            elif target_bblock.openapi.exists:
+                target_doc = target_bblock.output_openapi
+            else:
+                raise ValueError(f"Unknown reference to {target_bblock_id} "
+                                 f" from {from_bblock.identifier} ({from_document})"
+                                 f" - target has no schema or OpenAPI document")
             if base_url:
                 # If we have a base_url, we return the full URL
-                return f"{base_url}{os.path.relpath(target_bblock.annotated_schema)}{fragment}"
+                return f"{base_url}{os.path.relpath(target_doc)}{fragment}"
             else:
                 # Otherwise, the local relative path
-                return os.path.relpath(target_bblock.annotated_schema, from_bblock.annotated_path) + fragment
+                return os.path.relpath(target_doc, from_bblock.annotated_path) + fragment
         else:
             target_bblock = bblocks_register.imported_bblocks.get(target_bblock_id)
-            if target_bblock and target_bblock.get('schema'):
-                return f"{target_bblock['schema']['application/yaml']}{fragment}"
+            if target_bblock:
+                if target_bblock.get('schema'):
+                    return f"{target_bblock['schema']['application/yaml']}{fragment}"
+                if target_bblock.get('openAPIDocument'):
+                    return target_bblock.get('openAPIDocument')
 
-        raise ValueError(f'Error replacing dependency {target_bblock_id}. Is an import missing?')
+        raise ValueError(f'Error replacing dependency {target_bblock_id}'
+                         f' from {from_bblock.identifier} ({from_document}). Is an import missing?')
 
     # If we're here, ref is unknown -> return the original value
     return f"{ref}{fragment}"

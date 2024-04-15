@@ -257,7 +257,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             if building_block.openapi.exists:
                 print(f"Annotating OpenAPI document for {building_block.identifier}", file=sys.stderr)
                 openapi_resolved = resolve_all_schema_references(building_block.openapi.load_yaml(), bbr,
-                                                                 building_block, base_url)
+                                                                 building_block, building_block.openapi, base_url)
                 building_block.output_openapi.parent.mkdir(parents=True, exist_ok=True)
                 dump_yaml(openapi_resolved, building_block.output_openapi)
                 print(f"  - {os.path.relpath(building_block.output_openapi)}", file=sys.stderr)
