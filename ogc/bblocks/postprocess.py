@@ -12,11 +12,12 @@ from pathlib import Path
 import traceback
 from urllib.parse import urljoin
 
-from ogc.na.util import is_url
+from ogc.na.util import is_url, dump_yaml
 
 from ogc.bblocks.generate_docs import DocGenerator
 from ogc.bblocks.util import write_superbblocks_schemas, annotate_schema, BuildingBlock, \
-    write_jsonld_context, BuildingBlockRegister, ImportedBuildingBlocks, CustomJSONEncoder
+    write_jsonld_context, BuildingBlockRegister, ImportedBuildingBlocks, CustomJSONEncoder, \
+    resolve_all_schema_references
 from ogc.bblocks.validate import validate_test_resources, report_to_html
 from ogc.bblocks.transform import apply_transforms, transformers
 
@@ -233,35 +234,43 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
         if (filter_id is None or building_block.identifier == filter_id) and (not steps or 'annotate' in steps):
 
-            # Annotate schema
-            print(f"Annotating schema for {building_block.identifier}", file=sys.stderr)
+            if building_block.schema.exists:
+                # Annotate schema
+                print(f"Annotating schema for {building_block.identifier}", file=sys.stderr)
 
-            if building_block.ldContext:
-                if is_url(building_block.ldContext):
-                    # Use URL directly
-                    default_jsonld_context = building_block.ldContext
+                if building_block.ldContext:
+                    if is_url(building_block.ldContext):
+                        # Use URL directly
+                        default_jsonld_context = building_block.ldContext
+                    else:
+                        # Use path relative to bblock.json
+                        default_jsonld_context = building_block.files_path / building_block.ldContext
                 else:
-                    # Use path relative to bblock.json
-                    default_jsonld_context = building_block.files_path / building_block.ldContext
-            else:
-                # Try local context.jsonld
-                default_jsonld_context = building_block.files_path / 'context.jsonld'
-                if not default_jsonld_context.is_file():
-                    default_jsonld_context = None
+                    # Try local context.jsonld
+                    default_jsonld_context = building_block.files_path / 'context.jsonld'
+                    if not default_jsonld_context.is_file():
+                        default_jsonld_context = None
 
-            if default_jsonld_context:
-                building_block.metadata['ldContext'] = str(default_jsonld_context)
+                if default_jsonld_context:
+                    building_block.metadata['ldContext'] = str(default_jsonld_context)
 
-            try:
-                for annotated in annotate_schema(building_block,
-                                                 bblocks_register=bbr,
-                                                 context=default_jsonld_context,
-                                                 base_url=base_url):
-                    print(f"  - {annotated}", file=sys.stderr)
-            except Exception as e:
-                if fail_on_error:
-                    raise
-                traceback.print_exception(e, file=sys.stderr)
+                try:
+                    for annotated in annotate_schema(building_block,
+                                                     bblocks_register=bbr,
+                                                     context=default_jsonld_context,
+                                                     base_url=base_url):
+                        print(f"  - {annotated}", file=sys.stderr)
+                except Exception as e:
+                    if fail_on_error:
+                        raise
+                    traceback.print_exception(e, file=sys.stderr)
+
+            if building_block.openapi.exists:
+                print(f"Annotating OpenAPI document for {building_block.identifier}", file=sys.stderr)
+                openapi_resolved = resolve_all_schema_references(building_block.openapi.load_yaml(), bbr,
+                                                                 building_block, base_url)
+                dump_yaml(openapi_resolved, building_block.output_openapi)
+                print(f"  - {os.path.relpath(building_block.output_openapi)}", file=sys.stderr)
 
         child_bblocks.append(building_block)
 

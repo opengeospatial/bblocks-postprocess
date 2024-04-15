@@ -890,8 +890,8 @@ class RefResolver(jsonschema.validators.RefResolver):
         self.bblocks_register = bblocks_register
 
     def resolve_remote(self, uri):
-        if uri in self.bblocks_register.local_bblock_schemas:
-            bblock_id = self.bblocks_register.local_bblock_schemas[uri]
+        if uri in self.bblocks_register.local_bblock_files:
+            bblock_id = self.bblocks_register.local_bblock_files[uri]
             bblock = self.bblocks_register.bblocks[bblock_id]
             return load_yaml(content=bblock.annotated_schema_contents)
 
