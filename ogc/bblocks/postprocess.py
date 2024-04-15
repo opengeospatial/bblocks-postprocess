@@ -17,11 +17,9 @@ from ogc.na.util import is_url, dump_yaml
 from ogc.bblocks.generate_docs import DocGenerator
 from ogc.bblocks.util import write_superbblocks_schemas, annotate_schema, BuildingBlock, \
     write_jsonld_context, BuildingBlockRegister, ImportedBuildingBlocks, CustomJSONEncoder, \
-    resolve_all_schema_references
+    resolve_all_schema_references, PathOrUrl
 from ogc.bblocks.validate import validate_test_resources, report_to_html
 from ogc.bblocks.transform import apply_transforms, transformers
-
-ANNOTATED_ITEM_CLASSES = ('schema', 'datatype')
 
 
 def postprocess(registered_items_path: str | Path = 'registereditems',
@@ -111,45 +109,36 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
         output_file_root = Path(output_file).resolve().parent
         if bblock.annotated_schema.is_file():
-            if base_url:
-                rel_annotated = os.path.relpath(bblock.annotated_schema, cwd)
-                schema_url_yaml = f"{base_url}{rel_annotated}"
-            else:
-                schema_url_yaml = './' + os.path.relpath(bblock.annotated_schema, output_file_root)
+            schema_url_yaml = PathOrUrl(bblock.annotated_schema).with_base_url(
+                base_url, cwd if base_url else output_file_root
+            )
             schema_url_json = re.sub(r'\.yaml$', '.json', schema_url_yaml)
             bblock.metadata['schema'] = {
                 'application/yaml': schema_url_yaml,
                 'application/json': schema_url_json,
             }
+            bblock.metadata['sourceSchema'] = bblock.schema.with_base_url(
+                base_url, cwd if base_url else output_file_root
+            )
         if bblock.metadata.get('ldContext'):
-            source_ldcontext = bblock.metadata['ldContext']
-            if not is_url(source_ldcontext):
-                if base_url:
-                    source_ldcontext = f"{base_url}{os.path.relpath(source_ldcontext, cwd)}"
-                else:
-                    source_ldcontext = f"./{os.path.relpath(source_ldcontext, cwd)}"
-            bblock.metadata['sourceLdContext'] = source_ldcontext
+            bblock.metadata['sourceLdContext'] = PathOrUrl(bblock.metadata['ldContext']).with_base_url(
+                base_url, cwd if base_url else output_file_root
+            )
         if bblock.jsonld_context.is_file():
-            if base_url:
-                rel_context = os.path.relpath(bblock.jsonld_context, cwd)
-                ld_context_url = f"{base_url}{rel_context}"
-            else:
-                ld_context_url = './' + os.path.relpath(bblock.jsonld_context, output_file_root)
-            bblock.metadata['ldContext'] = ld_context_url
+            bblock.metadata['ldContext'] = PathOrUrl(bblock.jsonld_context).with_base_url(
+                base_url, cwd if base_url else output_file_root
+            )
+        if bblock.output_openapi.is_file():
+            bblock.metadata['sourceOpenAPIDocument'] = bblock.openapi.with_base_url(
+                base_url, cwd if base_url else output_file_root
+            )
+            bblock.metadata['openAPIDocument'] = PathOrUrl(bblock.output_openapi).with_base_url(
+                base_url, cwd if base_url else output_file_root
+            )
 
-        if bblock.schema.is_url:
-            bblock.metadata['sourceSchema'] = bblock.schema
-        elif bblock.schema.exists:
-            if base_url:
-                bblock.metadata['sourceSchema'] = bblock.schema.to_url(base_url)
-            else:
-                bblock.metadata['sourceSchema'] = f"./{os.path.relpath(str(bblock.schema), cwd)}"
-
-        rel_files_path = os.path.relpath(bblock.files_path)
-        if base_url:
-            bblock.metadata['sourceFiles'] = f"{base_url}{rel_files_path}/"
-        else:
-            bblock.metadata['sourceFiles'] = f"./{os.path.relpath(str(rel_files_path), str(output_file_root))}/"
+        bblock.metadata['sourceFiles'] = PathOrUrl(bblock.files_path).with_base_url(
+            base_url, cwd if base_url else output_file_root
+        ) + '/'
 
         if not light:
             if not steps or 'tests' in steps:
@@ -269,6 +258,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 print(f"Annotating OpenAPI document for {building_block.identifier}", file=sys.stderr)
                 openapi_resolved = resolve_all_schema_references(building_block.openapi.load_yaml(), bbr,
                                                                  building_block, base_url)
+                building_block.output_openapi.parent.mkdir(parents=True, exist_ok=True)
                 dump_yaml(openapi_resolved, building_block.output_openapi)
                 print(f"  - {os.path.relpath(building_block.output_openapi)}", file=sys.stderr)
 

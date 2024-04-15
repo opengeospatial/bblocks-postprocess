@@ -137,9 +137,10 @@ properties:
       - type: array
         items:
           type: string
-          format: uri
       - type: string
-        format: uri
+  openapiDocument:
+    description: URL or path to OpenAPI document
+    type: string
   ldContext:
     description: Link to JSON-LD document with @context for this Building Block.
     type: string

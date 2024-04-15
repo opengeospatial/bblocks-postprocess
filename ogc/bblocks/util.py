@@ -175,6 +175,16 @@ class PathOrUrl:
     def exists(self):
         return self.is_url or self.path.is_file()
 
+    def with_base_url(self, base_url: str | None, from_dir: Path | str | None = None) -> str:
+        if self.is_url:
+            return self.url
+        if not from_dir:
+            from_dir = '.'
+        relpath = os.path.relpath(self.path.resolve(), from_dir)
+        if base_url:
+            return f"{base_url}{relpath}"
+        else:
+            return f"./{relpath}"
 
 class RegisterSchemaResolver(SchemaResolver):
     """
@@ -241,7 +251,7 @@ class BuildingBlock:
         self.files_path = fp
 
         self.schema = self._find_path_or_url('schema', ('schema.yaml', 'schema.json'))
-        self.openapi = self._find_path_or_url('openapi-document', ('openapi.yaml',))
+        self.openapi = self._find_path_or_url('openapiDocument', ('openapi.yaml',))
 
         ap = fp / 'assets'
         self.assets_path = ap if ap.is_dir() else None
@@ -483,7 +493,7 @@ class BuildingBlockRegister:
             source_schema = imported_bblock.get('sourceSchema')
             if source_schema:
                 self.imported_bblock_files[source_schema] = identifier
-            openapi_doc = imported_bblock.get('openapi-document')
+            openapi_doc = imported_bblock.get('openapiDocument')
             if isinstance(openapi_doc, str):
                 self.imported_bblock_files[openapi_doc] = identifier
             elif isinstance(openapi_doc, list):
