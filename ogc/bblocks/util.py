@@ -568,6 +568,10 @@ class BuildingBlockRegister:
                 if source_fn.is_path:
                     # Check if target path in local bblock schemas
                     rel_ref = os.path.relpath(source_fn.parent.resolve_ref(ref).resolve())
+                    if not Path(rel_ref).is_file():
+                        raise ValueError(f"Invalid reference to {rel_ref}"
+                                         f" from {bblock.identifier} ({source_fn}) - target file does not exist"
+                                         f" - check that the file exists (maybe schema.yaml instead of schema.json?)")
                 else:
                     # Check if target URL in local bblock schemas
                     rel_ref = urljoin(source_fn.url, ref)

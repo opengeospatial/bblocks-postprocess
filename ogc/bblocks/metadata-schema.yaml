@@ -59,7 +59,7 @@ properties:
       - parameter # OpenAPI parameter
       - header # OpenAPI header
       - cookie # OpenAPI cookie
-      - api # Partial or full OpenAPI Spec
+      - api # Partial or full OpenAPI document
   register:
     description: Register to which this Building Block belongs.
     type: string
