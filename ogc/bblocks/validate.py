@@ -28,7 +28,8 @@ from rdflib import Graph
 from rdflib.term import Node, URIRef, BNode
 from yaml import MarkedYAMLError
 
-from ogc.bblocks.util import BuildingBlock, BuildingBlockRegister, sanitize_filename
+from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister
+from ogc.bblocks.util import sanitize_filename
 import traceback
 import pyshacl
 import jsonref
@@ -623,8 +624,9 @@ def _validate_resource(bblock: BuildingBlock,
                         if e.args:
                             query_lines = e.args[0].splitlines()
                             max_line_digits = len(str(len(query_lines)))
-                            query_error = '\nfor SPARQL query\n' + '\n'.join(f"{str(i + 1).rjust(max_line_digits)}: {line}"
-                                                                             for i, line in enumerate(query_lines))
+                            query_error = ('\nfor SPARQL query\n'
+                                           + '\n'.join(f"{str(i + 1).rjust(max_line_digits)}: {line}"
+                                                                             for i, line in enumerate(query_lines)))
                         else:
                             query_error = ''
                         report.add_entry(ValidationReportEntry(
@@ -688,7 +690,7 @@ def validate_test_resources(bblock: BuildingBlock,
         for shacl_file in inherited_shacl_rules[shacl_bblock]:
             if isinstance(shacl_file, Path) or (isinstance(shacl_file, str) and not is_url(shacl_file)):
                 # assume file
-                shacl_file = os.path.relpath(bblock.files_path / shacl_file)
+                shacl_file = str(os.path.relpath(bblock.files_path / shacl_file))
             bblock_shacl_files.add(shacl_file)
             try:
                 shacl_graphs[shacl_file] = Graph().parse(shacl_file, format='turtle')

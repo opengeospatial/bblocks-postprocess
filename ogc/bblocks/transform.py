@@ -5,9 +5,7 @@ import shutil
 import traceback
 from pathlib import Path
 
-from ogc.na.util import is_url
-
-from ogc.bblocks.util import BuildingBlock, TransformMetadata
+from ogc.bblocks.models import BuildingBlock, TransformMetadata
 from ogc.bblocks import mimetypes
 from ogc.bblocks import transformers
 

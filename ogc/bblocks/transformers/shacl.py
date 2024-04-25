@@ -2,7 +2,7 @@
 import logging
 from typing import AnyStr
 
-from ogc.bblocks.util import TransformMetadata
+from ogc.bblocks.models import TransformMetadata
 from rdflib import Graph
 import pyshacl
 

@@ -15,9 +15,10 @@ from urllib.parse import urljoin
 from ogc.na.util import is_url, dump_yaml
 
 from ogc.bblocks.generate_docs import DocGenerator
-from ogc.bblocks.util import write_superbblocks_schemas, annotate_schema, BuildingBlock, \
-    write_jsonld_context, BuildingBlockRegister, ImportedBuildingBlocks, CustomJSONEncoder, \
-    resolve_all_schema_references, PathOrUrl
+from ogc.bblocks.util import write_jsonld_context, CustomJSONEncoder, \
+    PathOrUrl
+from ogc.bblocks.schema import annotate_schema, resolve_all_schema_references
+from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister, ImportedBuildingBlocks
 from ogc.bblocks.validate import validate_test_resources, report_to_html
 from ogc.bblocks.transform import apply_transforms, transformers
 
@@ -293,18 +294,6 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                         raise e
                     print(f"[Error] Writing context for {building_block.identifier}: {type(e).__name__}: {e}")
 
-    # Create super bblock schemas
-    # TODO: Do not build super bb's that have children with errors
-    if not steps or 'superbb' in steps:
-        print(f"Generating Super Building Block schemas", file=sys.stderr)
-        try:
-            for super_bblock_schema in write_superbblocks_schemas(super_bblocks, bbr, annotated_path):
-                print(f"  - {os.path.relpath(super_bblock_schema, '.')}", file=sys.stderr)
-        except Exception as e:
-            if fail_on_error:
-                raise e
-            print(f"[Error] Writing Super BB schemas: {type(e).__name__}: {e}")
-
     output_bblocks = []
     for building_block in itertools.chain(child_bblocks, super_bblocks.values()):
         light = filter_id is not None and building_block.identifier != filter_id
@@ -319,7 +308,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
     if not steps or 'tests' in steps:
         print(f"Writing full validation report to {test_outputs_path / 'report.html'}", file=sys.stderr)
         if base_url:
-            full_validation_report_url = f"{base_url}{os.path.relpath(Path(test_outputs_path).resolve(), cwd)}/report.html"
+            full_validation_report_url = (f"{base_url}{os.path.relpath(Path(test_outputs_path).resolve(), cwd)}"
+                                          f"/report.html")
         report_to_html(json_reports=validation_reports,
                        report_fn=test_outputs_path / 'report.html',
                        base_url=base_url)

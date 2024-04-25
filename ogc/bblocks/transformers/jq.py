@@ -2,7 +2,7 @@
 import json
 from typing import AnyStr
 
-from ogc.bblocks.util import TransformMetadata
+from ogc.bblocks.models import TransformMetadata
 import jq
 
 transform_type = 'jq'

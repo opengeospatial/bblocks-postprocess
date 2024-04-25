@@ -14,7 +14,7 @@ from mako.lookup import TemplateLookup
 from mako import exceptions
 
 from ogc.bblocks import util
-from ogc.bblocks.util import BuildingBlock, BuildingBlockRegister
+from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister
 from ogc.na.util import load_yaml
 
 import git
@@ -98,8 +98,8 @@ class DocGenerator:
         for template in self.templates:
             tpl_out = self.output_dir / template.dir_name / bblock.subdirs / template.template_file.name
             tpl_out.parent.mkdir(parents=True, exist_ok=True)
-            bblock_rel = relpath(bblock.files_path, tpl_out.parent)
-            assets_rel = relpath(bblock.assets_path, tpl_out.parent) if bblock.assets_path else None
+            bblock_rel = str(relpath(bblock.files_path, tpl_out.parent))
+            assets_rel = str(relpath(bblock.assets_path, tpl_out.parent)) if bblock.assets_path else None
             if self.base_url:
                 tpl_out_url = urljoin(self.base_url, relpath(tpl_out))
                 bblock_rel = urljoin(tpl_out_url, bblock_rel)

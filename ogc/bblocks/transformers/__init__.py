@@ -5,7 +5,7 @@ import importlib
 from pathlib import Path
 from typing import AnyStr
 
-from ogc.bblocks.util import TransformMetadata
+from ogc.bblocks.models import TransformMetadata
 
 transform_modules = []
 
