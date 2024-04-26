@@ -129,7 +129,8 @@ def annotate_schema(bblock: BuildingBlock,
     dump_yaml(annotated_schema, annotated_schema_fn)
     result.append(annotated_schema_fn)
 
-    def update_json_ref(ref):
+    potential_yaml_refs = {}
+    def update_json_ref(ref: str):
         if ref[0] == '#' or not is_url(ref):
             return ref
         if '#' in ref:
@@ -139,6 +140,8 @@ def annotate_schema(bblock: BuildingBlock,
             fragment = ''
         if ref in bblocks_register.local_bblock_files or ref in bblocks_register.imported_bblock_files:
             return re.sub(r'\.yaml$', r'.json', ref) + fragment
+        elif ref.endswith('.yaml'):
+            potential_yaml_refs[ref] = True
         return ref
 
     # JSON
@@ -147,6 +150,9 @@ def annotate_schema(bblock: BuildingBlock,
     with open(annotated_schema_json_fn, 'w') as f:
         json.dump(annotated_schema, f, indent=2)
     result.append(annotated_schema_json_fn)
+    if potential_yaml_refs:
+        print('\n[WARNING] Potential YAML $ref\'s found in JSON version of schema:\n -',
+              '\n - '.join(potential_yaml_refs.keys()), '\n\n')
 
     # OAS 3.0
     try:
@@ -201,7 +207,7 @@ def resolve_schema_reference(ref: str,
                              base_url: str | None = None) -> str:
     ref = schema.pop(BBLOCKS_REF_ANNOTATION, ref)
 
-    if ref[0] == '#':
+    if not ref or ref[0] == '#':
         # Local $ref -> returned as is
         return ref
 
