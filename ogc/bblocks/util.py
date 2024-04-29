@@ -69,16 +69,20 @@ def pathify(v: str | Path):
 
 class PathOrUrl:
 
-    def __init__(self, value: str | Path):
+    def __init__(self, value: str | Path | PathOrUrl):
         if not value:
             raise ValueError('Empty value provided')
-        self.value: [str | Path] = value
-        self.is_path = isinstance(value, Path) or not is_url(value)
-        if self.is_path:
-            self.value = Path(value).resolve()
-            self.path = self.value
+        if isinstance(value, PathOrUrl):
+            self.value = value.value
+            self.is_path = value.is_path
         else:
-            self.url = self.value
+            self.value: [str | Path] = value
+            self.is_path = isinstance(value, Path) or not is_url(value)
+            if self.is_path:
+                self.value = Path(value).resolve()
+                self.path = self.value
+            else:
+                self.url = self.value
         self.is_url = not self.is_path
         self.parsed_url = None if self.is_path else urlparse(self.value)
 
@@ -106,7 +110,7 @@ class PathOrUrl:
         if self.is_url:
             return PathOrUrl(urljoin(self.url, str(ref)))
         else:
-            return PathOrUrl(self.path / ref)
+            return PathOrUrl(self.path.parent / ref)
 
     def as_uri(self):
         if self.is_path:
@@ -186,7 +190,7 @@ def write_jsonld_context(annotated_schema: Path | str, bblocks_register: Buildin
         writer.writerow(['path', '@id'])
         for e in ctx_builder.visited_properties.items():
             writer.writerow(e)
-    with open(context_fn.parent / '_missed_properties.tsv', 'w', newline='') as fm:
+    with open(context_fn.parent / '_unbound_local_properties.tsv', 'w', newline='') as fm:
         fm.write('path\n')
         for mp in ctx_builder.missed_properties:
             fm.write(f"{mp}\n")

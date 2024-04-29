@@ -216,6 +216,9 @@ class BuildingBlock:
             result.append(self.schema)
             result.append(PathOrUrl(self.annotated_schema))
             result.append(PathOrUrl(self.annotated_schema.with_suffix('.json')))
+            oas30_fn = self.annotated_schema.with_stem('schema-oas3.0')
+            result.append(PathOrUrl(oas30_fn))
+            result.append(PathOrUrl(oas30_fn.with_suffix('.json')))
         if self.openapi.exists:
             result.append(self.openapi)
             result.append(PathOrUrl(self.output_openapi))
@@ -267,6 +270,8 @@ class BuildingBlockRegister:
         self.prefix = prefix
         self.bblocks: dict[str, BuildingBlock] = {}
         self.imported_bblocks = imported_bblocks.bblocks if imported_bblocks else {}
+        self.base_url = base_url
+        self._cwd = Path().resolve()
 
         # Map of file paths and URLs for local bblocks (source and annotated schemas, OpenAPI documents, etc.)
         # that can contain references or be referenced from other files
@@ -441,6 +446,11 @@ class BuildingBlockRegister:
 
     def get(self, identifier: str):
         return self.bblocks.get(identifier, self.imported_bblocks.get(identifier))
+
+    def get_url(self, path: str | Path) -> str:
+        if not isinstance(path, Path):
+            path = Path(path)
+        return f"{self.base_url}{os.path.relpath(Path(path).resolve(), self._cwd)}"
 
 
 @dataclasses.dataclass

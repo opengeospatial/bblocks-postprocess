@@ -130,6 +130,7 @@ def annotate_schema(bblock: BuildingBlock,
     result.append(annotated_schema_fn)
 
     potential_yaml_refs = {}
+
     def update_json_ref(ref: str):
         if ref[0] == '#' or not is_url(ref):
             return ref
@@ -158,16 +159,17 @@ def annotate_schema(bblock: BuildingBlock,
     try:
         if base_url:
             oas30_schema_fn = annotated_schema_fn.with_stem('schema-oas3.0')
-            dump_yaml(oas30.process_schema(annotated_schema_fn, urljoin(base_url, os.path.relpath(oas30_schema_fn)),
-                                           bblocks_register),
+            dump_yaml(oas30.schema_to_oas30(annotated_schema_fn,
+                                            urljoin(base_url, str(os.path.relpath(oas30_schema_fn))),
+                                            bblocks_register),
                       oas30_schema_fn)
             result.append(oas30_schema_fn)
 
             oas30_schema_json_fn = annotated_schema_json_fn.with_stem('schema-oas3.0')
             with open(oas30_schema_json_fn, 'w') as f:
-                json.dump(oas30.process_schema(annotated_schema_json_fn,
-                                               urljoin(base_url, os.path.relpath(oas30_schema_json_fn)),
-                                               bblocks_register), f, indent=2)
+                json.dump(oas30.schema_to_oas30(annotated_schema_json_fn,
+                                                urljoin(base_url, str(os.path.relpath(oas30_schema_json_fn))),
+                                                bblocks_register), f, indent=2)
             result.append(oas30_schema_json_fn)
     except Exception as e:
         print('Error building OAS 3.0 documents:', e, file=sys.stderr)
@@ -230,7 +232,7 @@ def resolve_schema_reference(ref: str,
         else:
             # Reference to a local schema (same repo)
             # First make ref relative to cwd
-            rel_ref = os.path.relpath(from_bblock.files_path.joinpath(ref))
+            rel_ref = str(os.path.relpath(from_bblock.files_path.joinpath(ref)))
 
             # Then check json/yaml variants
             check_refs = {rel_ref,
