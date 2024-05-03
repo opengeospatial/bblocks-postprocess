@@ -469,6 +469,7 @@ def _validate_resource(bblock: BuildingBlock,
             except (ValueError, SyntaxError) as e:
                 report.add_entry(ValidationReportEntry(
                     section=ValidationReportSection.TURTLE,
+                    is_error=True,
                     message=str(e),
                     payload={
                         'exception': e.__class__.__qualname__,
