@@ -51,6 +51,30 @@ def get_source_url(source):
             *[data-bs-toggle].collapsed .caret {
                 transform: rotate(0deg);
             }
+            .highlighted {
+                animation: highlight-border 3500ms ease-out;
+            }
+            .highlighted h2 button {
+                animation: highlight 3500ms ease-out;
+            }
+            @keyframes highlight {
+                0% {
+                    background: #ffff90;
+                }
+                100% {
+                    background: var(--bs-accordion-active-bg);
+                }
+            }
+            @keyframes highlight-border {
+                0% {
+                    border-color: red;
+                    border-width: 2px;
+                }
+                100% {
+                    border-color: var(--bs-accordion-border-color);
+                    border-width: var(--bs-accordion-border-width);
+                }
+            }
         </style>
     </head>
     <body>
@@ -68,10 +92,12 @@ def get_source_url(source):
             </div>
             % if reports:
                 <div class="accordion mt-2" id="bblock-reports">
-                    % for i, report in enumerate(reports):
-                        <div class="accordion-item bblock-report" data-bblock-id="${e(report['bblockId'])}" id="bblock-${i}">
+                    % for report in reports:
+                        <div class="accordion-item bblock-report" data-bblock-id="${e(report['bblockId'])}" id="bblock-${e(report['bblockId'])}">
                             <h2 class="accordion-header bblock-title">
-                                <button class="accordion-button ${'collapsed' if report['result'] else ''}" type="button" data-bs-toggle="collapse" data-bs-target="#bblock-collapse-${i}">
+                                <button class="accordion-button ${'collapsed' if report['result'] else ''}" type="button"
+                                    data-bs-toggle="collapse"
+                                    data-bs-target="#bblock-collapse-${e(report['bblockId'].replace('.', '\\.'))}">
                                     <div class="flex-fill">
                                         ${e(report['bblockName'])}
                                         <small class="ms-2 bblock-id">${e(report['bblockId'])}</small>
@@ -91,7 +117,7 @@ def get_source_url(source):
                                     </span>
                                 </button>
                             </h2>
-                            <div class="accordion-collapse collapse ${'show' if not report['result'] else ''}" id="bblock-collapse-${i}">
+                            <div class="accordion-collapse collapse ${'show' if not report['result'] else ''}" id="bblock-collapse-${e(report['bblockId'])}">
                                 <div class="accordion-body">
                                     % if report['counts']['total'] > 0:
                                         <p class="summary fw-semibold ${'text-success' if report['counts']['passed'] == report['counts']['total'] else 'text-danger'}">
@@ -181,6 +207,13 @@ def get_source_url(source):
                         accordionEntries.forEach(e => e.classList.remove('show'));
                     }
                 });
+                if (location.hash.startsWith('#bblock-')) {
+                    const highlight = document.querySelector(location.hash.replaceAll('.', '\\.'));
+                    if (highlight) {
+                        highlight.querySelector('.accordion-collapse').classList.add('show');
+                        highlight.classList.add('highlighted');
+                    }
+                }
             });
         </script>
     </body>
