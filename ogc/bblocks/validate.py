@@ -481,25 +481,36 @@ def _validate_resource(bblock: BuildingBlock,
             return
 
         if graph is not None and (resource_contents or filename.suffix != '.ttl'):
-            ttl_fn = output_filename.with_suffix('.ttl')
-            if graph:
-                graph.serialize(ttl_fn, format='ttl')
-            else:
-                with open(ttl_fn, 'w') as f:
-                    f.write('# Empty Turtle file\n')
-            report.add_uplifted_file('ttl', ttl_fn, graph.serialize(format='ttl'))
+            try:
+                ttl_fn = output_filename.with_suffix('.ttl')
+                if graph:
+                    graph.serialize(ttl_fn, format='ttl')
+                else:
+                    with open(ttl_fn, 'w') as f:
+                        f.write('# Empty Turtle file\n')
+                report.add_uplifted_file('ttl', ttl_fn, graph.serialize(format='ttl'))
 
-            report.add_entry(ValidationReportEntry(
-                section=ValidationReportSection.FILES,
-                message=f"{'O' if graph else '**Empty** o'}utput Turtle {ttl_fn.name} created",
-                is_error=not graph,
-                payload={
-                    'op': 'ttl-create',
-                    'empty': not graph,
-                    'filename': ttl_fn.name,
-                    'size': len(graph),
-                }
-            ))
+                report.add_entry(ValidationReportEntry(
+                    section=ValidationReportSection.FILES,
+                    message=f"{'O' if graph else '**Empty** o'}utput Turtle {ttl_fn.name} created",
+                    is_error=not graph,
+                    payload={
+                        'op': 'ttl-create',
+                        'empty': not graph,
+                        'filename': ttl_fn.name,
+                        'size': len(graph),
+                    }
+                ))
+            except Exception as e:
+                report.add_entry(ValidationReportEntry(
+                    section=ValidationReportSection.TURTLE,
+                    is_error=True,
+                    message=str(e),
+                    payload={
+                        'exception': e.__class__.__qualname__,
+                    }
+                ))
+                return
 
         if json_doc:
             if schema_ref:
