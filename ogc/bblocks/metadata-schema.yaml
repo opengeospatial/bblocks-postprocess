@@ -60,6 +60,7 @@ properties:
       - header # OpenAPI header
       - cookie # OpenAPI cookie
       - api # Partial or full OpenAPI document
+      - model # Ontology or data model
   register:
     description: Register to which this Building Block belongs.
     type: string
