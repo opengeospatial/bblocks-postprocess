@@ -15,6 +15,7 @@ import jsonschema
 import networkx as nx
 import requests
 from ogc.na.util import is_url, load_yaml
+from rdflib import Graph
 
 from ogc.bblocks.util import get_schema, PathOrUrl, load_file, find_references_yaml, \
     find_references_xml
@@ -95,6 +96,10 @@ class BuildingBlock:
         if default_shacl_rules.is_file():
             shacl_rules.append('rules.shacl')
         self.shacl_rules = set(r if is_url(r) else fp / r for r in shacl_rules)
+
+        self.ontology = self._find_path_or_url('ontology',
+                                               ('ontology.ttl', 'ontology.owl'))
+        self.output_ontology = self.annotated_path / 'ontology.ttl'
 
     def _find_path_or_url(self, metadata_property: str, default_filenames: tuple[str, ...]):
         ref = self.metadata.get(metadata_property)
@@ -180,6 +185,14 @@ class BuildingBlock:
                 return None
             self._lazy_properties['jsonld_context_contents'] = load_file(self.jsonld_context)
         return self._lazy_properties['jsonld_context_contents']
+
+    @property
+    def ontology_graph(self) -> Graph | None:
+        if 'ontology_graph' not in self._lazy_properties:
+            if not self.ontology.exists:
+                return None
+            self._lazy_properties['ontology_graph'] = Graph().parse(self.ontology.value)
+        return self._lazy_properties['ontology_graph']
 
     def get_extra_test_resources(self) -> Generator[dict, None, None]:
         extra_tests_file = self.files_path / 'tests.yaml'

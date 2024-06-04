@@ -146,6 +146,10 @@ properties:
     description: Link to JSON-LD document with @context for this Building Block.
     type: string
     format: uri
+  ontology:
+    description: Link to RDF document containing the ontology for this Building Block
+    type: string
+    format: uri
   examples:
     description: List of examples showing how to use this Building Block.
     type: array
