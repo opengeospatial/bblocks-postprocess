@@ -6,7 +6,7 @@ import re
 from builtins import isinstance
 from collections import deque
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Unpack
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 from jsonpointer import resolve_pointer
@@ -15,6 +15,7 @@ from ogc.na.util import is_url, load_yaml
 from ogc.bblocks.util import load_file_cached, PathOrUrl
 
 if TYPE_CHECKING:
+    from typing import Any, Callable, Unpack
     from ogc.bblocks.models import BuildingBlockRegister
 
 OAS_OPERATION_KEYS = [
