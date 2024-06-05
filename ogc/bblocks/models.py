@@ -89,6 +89,7 @@ class BuildingBlock:
         self.annotated_schema = self.annotated_path / 'schema.yaml'
         self.jsonld_context = self.annotated_path / 'context.jsonld'
         self.output_openapi = self.annotated_path / 'openapi.yaml'
+        self.output_openapi_30 = self.output_openapi.with_stem(f"{self.output_openapi.stem}-oas30")
 
         shacl_rules = self.metadata.setdefault('shaclRules', [])
         default_shacl_rules = fp / 'rules.shacl'
@@ -180,6 +181,16 @@ class BuildingBlock:
                 return None
             self._lazy_properties['jsonld_context_contents'] = load_file(self.jsonld_context)
         return self._lazy_properties['jsonld_context_contents']
+
+    @property
+    def output_openapi_contents(self):
+        # We try to read it each time until we succeed, since it could
+        # be created later during the postprocessing
+        if 'output_openapi_contents' not in self._lazy_properties:
+            if not self.output_openapi.is_file():
+                return None
+            self._lazy_properties['output_openapi_contents'] = load_file(self.output_openapi)
+        return self._lazy_properties['output_openapi_contents']
 
     def get_extra_test_resources(self) -> Generator[dict, None, None]:
         extra_tests_file = self.files_path / 'tests.yaml'
