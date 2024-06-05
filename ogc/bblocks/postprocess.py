@@ -15,6 +15,7 @@ from urllib.parse import urljoin
 from ogc.na.util import is_url, dump_yaml
 
 from ogc.bblocks.generate_docs import DocGenerator
+from ogc.bblocks.oas30 import oas31_to_oas30
 from ogc.bblocks.util import write_jsonld_context, CustomJSONEncoder, \
     PathOrUrl
 from ogc.bblocks.schema import annotate_schema, resolve_all_schema_references
@@ -136,6 +137,10 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             bblock.metadata['openAPIDocument'] = PathOrUrl(bblock.output_openapi).with_base_url(
                 base_url, cwd if base_url else output_file_root
             )
+            if bblock.output_openapi_30.is_file():
+                bblock.metadata['openAPI30DowncompiledDocument'] = PathOrUrl(bblock.output_openapi_30).with_base_url(
+                    base_url, cwd if base_url else output_file_root
+                )
 
         bblock.metadata['sourceFiles'] = PathOrUrl(bblock.files_path).with_base_url(
             base_url, cwd if base_url else output_file_root
@@ -280,6 +285,15 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                         traceback.print_exception(e, file=sys.stderr)
                 elif building_block.ontology.is_url:
                     building_block.metadata['ontology'] = building_block.ontology.value
+
+                if openapi_resolved.get('openapi', '').startswith('3.1'):
+                    print(f"Downcompiling OpenAPI document to 3.0 for {building_block.identifier}", file=sys.stderr)
+                    oas30_doc_fn = building_block.output_openapi_30
+                    oas30_doc = oas31_to_oas30(openapi_resolved,
+                                               PathOrUrl(oas30_doc_fn).with_base_url(base_url),
+                                               bbr)
+                    dump_yaml(oas30_doc, oas30_doc_fn)
+                    print(f"  - {os.path.relpath(oas30_doc_fn)}", file=sys.stderr)
 
         child_bblocks.append(building_block)
 
