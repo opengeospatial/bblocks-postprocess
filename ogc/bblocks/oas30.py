@@ -75,11 +75,17 @@ def deep_extract_refs(root_schema: dict | str | Path,
             if bbr and schema_location in bbr.local_bblock_files:
                 # If local schema, use annotated_schema_contents
                 bblock = bbr.bblocks[bbr.local_bblock_files[schema_location]]
-                subschema = load_yaml(
-                    content=bblock.annotated_schema_contents
-                )
                 extension = re.sub(r'.*\.', '', schema_location)
-                schema_location = bbr.get_url(bblock.annotated_schema.with_suffix('.' + extension))
+                if bblock.output_openapi_contents:
+                    subschema_contents = bblock.output_openapi_contents
+                    subschema_file = bblock.output_openapi
+                else:
+                    subschema_contents = bblock.annotated_schema_contents
+                    subschema_file = bblock.annotated_schema
+                subschema = load_yaml(
+                    content=subschema_contents
+                )
+                schema_location = bbr.get_url(subschema_file.with_suffix('.' + extension))
             else:
                 logging.debug('Loading schema from %s', schema_location)
                 subschema = load_yaml(content=load_file_cached(schema_location))
@@ -112,7 +118,7 @@ def deep_extract_refs(root_schema: dict | str | Path,
                 ref = None
 
             if not is_properties:
-                apply_oas30_property_fixes(subschema)
+                apply_oas30_subschema_fixes(subschema)
 
         if isinstance(ref, str):
             ref_base = ref.split('#', 1)[0]
@@ -180,7 +186,7 @@ def guess_def_name(ref: str | Path | PathOrUrl, bbr: BuildingBlockRegister):
     return clean(ref)
 
 
-def apply_oas30_property_fixes(parent: dict[str, Any]):
+def apply_oas30_subschema_fixes(parent: dict[str, Any]):
     parent.pop('unevaluatedProperties', None)
     const = parent.pop('const', None)
     if const:
@@ -232,7 +238,7 @@ def apply_oas30_schema_fixes(schema: dict[str, Any]):
                 subschema.setdefault('allOf', []).append({'$ref': ref})
                 subschema.pop('$ref')
             if is_properties:
-                apply_oas30_property_fixes(subschema)
+                apply_oas30_subschema_fixes(subschema)
         return {
             'is_properties': not is_properties and property == 'properties'
         }
@@ -395,7 +401,7 @@ def oas31_to_oas30(document: dict, document_location: PathOrUrl | str, bbr: Buil
         def fn(subschema: dict[str, Any], is_properties=False, property=None, **kwargs):
             if isinstance(subschema, dict):
                 # remove $comment to avoid errors
-                comment = subschema.pop('$comment', None)
+                subschema.pop('$comment', None)
 
                 ref = subschema.get('$ref')
                 if isinstance(ref, str):
@@ -403,8 +409,8 @@ def oas31_to_oas30(document: dict, document_location: PathOrUrl | str, bbr: Buil
                     if len(subschema.keys()) > 1:
                         subschema.setdefault('allOf', []).append({'$ref': ref})
                         subschema.pop('$ref')
-                if is_properties:
-                    apply_oas30_property_fixes(subschema)
+                if not is_properties:
+                    apply_oas30_subschema_fixes(subschema)
             return {
                 'is_properties': not is_properties and property == 'properties'
             }
@@ -462,12 +468,17 @@ def oas31_to_oas30(document: dict, document_location: PathOrUrl | str, bbr: Buil
         components = root_schema.setdefault('components', {})
         components.setdefault('schemas', {})
         if components:
-            for schema in components.get('schemas'):
-                process_schema_object(schema, raw_schema=True)
-            for parameter in components.get('parameters', {}).values():
-                resolve_parameter(parameter)
-                process_schema_object(parameter)
-                process_content_object(parameter)
+            component_schemas = components.get('schemas')
+            if component_schemas:
+                for schema_key in list(component_schemas.keys()):
+                    process_schema_object(component_schemas.get(schema_key), raw_schema=True)
+            component_parameters = components.get('parameters')
+            if component_parameters:
+                for parameter_key in list(component_parameters.keys()):
+                    parameter = component_parameters.get(parameter_key)
+                    resolve_parameter(parameter)
+                    process_schema_object(parameter)
+                    process_content_object(parameter)
             for response in components.get('responses', {}).values():
                 process_content_object(response)
                 for header in response.get('headers', {}).values():
