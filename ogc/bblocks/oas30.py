@@ -188,7 +188,8 @@ def guess_def_name(ref: str | Path | PathOrUrl, bbr: BuildingBlockRegister):
 
 
 def apply_oas30_subschema_fixes(parent: dict[str, Any]):
-    parent.pop('unevaluatedProperties', None)
+    for del_prop in ('$id', '$comment', 'unevaluatedProperties', 'patternProperties'):
+        parent.pop(del_prop, None)
     const = parent.pop('const', None)
     if const:
         parent['enum'] = [const]
@@ -402,7 +403,8 @@ def oas31_to_oas30(document: dict, document_location: PathOrUrl | str, bbr: Buil
         def fn(subschema: dict[str, Any], is_properties=False, property=None, **kwargs):
             if isinstance(subschema, dict):
                 # remove $comment to avoid errors
-                subschema.pop('$comment', None)
+                for del_prop in ('$id', '$comment'):
+                    subschema.pop(del_prop, None)
 
                 ref = subschema.get('$ref')
                 if isinstance(ref, str):
