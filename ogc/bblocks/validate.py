@@ -826,7 +826,7 @@ def validate_test_resources(bblock: BuildingBlock,
                             schema_uri = (f"{bblock.schema.parent.joinpath(path).with_name(random_fn).as_uri()}"
                                           f"#{fragment}")
                         else:
-                            schema_uri = bblock.schema.parent.resolve_ref(schema_ref).with_name(random_fn).as_uri()
+                            schema_uri = bblock.schema.resolve_ref(schema_ref).with_name(random_fn).as_uri()
                     snippet_schema = {'$ref': schema_ref}
                     snippet_schema_validator = get_json_validator(snippet_schema,
                                                                   schema_uri,

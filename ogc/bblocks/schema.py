@@ -243,14 +243,14 @@ def resolve_schema_reference(ref: str,
                 target_bblock_id = bblocks_register.local_bblock_files[check_ref]
         if not target_bblock_id:
             if from_document.is_url:
-                return f"{from_document.parent.resolve_ref(ref).url}{fragment}"
+                return f"{from_document.resolve_ref(ref).url}{fragment}"
             elif base_url:
                 # Return the URL to the $ref
-                return f"{base_url}{os.path.relpath(str(from_document.parent.resolve_ref(ref).value))}{fragment}"
+                return f"{base_url}{os.path.relpath(str(from_document.resolve_ref(ref).value))}{fragment}"
             else:
                 # Relativize from annotated schema path
                 # TODO: OpenAPI?
-                return os.path.relpath(from_document.parent.resolve_ref(ref).resolve(),
+                return os.path.relpath(from_document.resolve_ref(ref).resolve(),
                                        from_bblock.annotated_schema.parent) + fragment
     else:
         # URL -> search in both local and imported bblock schemas

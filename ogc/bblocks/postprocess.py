@@ -269,6 +269,18 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                     dump_yaml(openapi_resolved, building_block.output_openapi)
                     print(f"  - {os.path.relpath(building_block.output_openapi)}", file=sys.stderr)
 
+                    try:
+                        if openapi_resolved.get('openapi', '').startswith('3.1'):
+                            print(f"Downcompiling OpenAPI document to 3.0 for {building_block.identifier}", file=sys.stderr)
+                            oas30_doc_fn = building_block.output_openapi_30
+                            oas30_doc = oas31_to_oas30(openapi_resolved,
+                                                       PathOrUrl(oas30_doc_fn).with_base_url(base_url),
+                                                       bbr)
+                            dump_yaml(oas30_doc, oas30_doc_fn)
+                            print(f"  - {os.path.relpath(oas30_doc_fn)}", file=sys.stderr)
+                    except Exception as e:
+                        print(f"WARNING: {type(e).__name__} while downcompiling OpenAPI to 3.0:", e)
+
             if building_block.ontology.exists:
                 building_block.metadata.pop('ontology', None)
                 if building_block.ontology.is_path and building_block.ontology_graph:
@@ -285,15 +297,6 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                         traceback.print_exception(e, file=sys.stderr)
                 elif building_block.ontology.is_url:
                     building_block.metadata['ontology'] = building_block.ontology.value
-
-                if openapi_resolved.get('openapi', '').startswith('3.1'):
-                    print(f"Downcompiling OpenAPI document to 3.0 for {building_block.identifier}", file=sys.stderr)
-                    oas30_doc_fn = building_block.output_openapi_30
-                    oas30_doc = oas31_to_oas30(openapi_resolved,
-                                               PathOrUrl(oas30_doc_fn).with_base_url(base_url),
-                                               bbr)
-                    dump_yaml(oas30_doc, oas30_doc_fn)
-                    print(f"  - {os.path.relpath(oas30_doc_fn)}", file=sys.stderr)
 
         child_bblocks.append(building_block)
 
