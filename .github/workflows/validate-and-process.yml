@@ -72,6 +72,11 @@ on:
           blocks as well as local ones. 0 means "only local", and a negative number means
           "all imports".
         default: 0
+      before_pages:
+        type: string
+        description: |
+          Shell code to run before pushing to GH pages (e.g., for cleanup)
+        default: ''
     secrets:
       sparql_username:
         description: SPARQL Graph Store Protocol user name for push authentication
@@ -201,6 +206,9 @@ jobs:
           if [ ! -f "404.html" ]; then
             cp "${{ inputs.viewer_path }}/index.html" 404.html
           fi
+      - name: Before pages
+        if: ${{inputs.before_pages}}
+        run: ${{inputs.before_pages}}
       - name: Setup Pages
         if: ${{ github.event.repository.has_pages && !inputs.skip-pages }}
         uses: actions/configure-pages@v3
