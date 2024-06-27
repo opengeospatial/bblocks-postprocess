@@ -131,9 +131,9 @@ jobs:
           sparql_password: ${{ secrets.sparql_password }}
       - name: Fix permissions, compress large _visited_properties.tsv, git pull
         run: |
-          sudo chown -R $UID:$(id -g) . 
+          sudo chown -R $UID:$(id -g) . || true
           sudo find "${{ inputs.annotated_path }}" -size +10M -name _visited_properties.tsv \
-            -exec gzip \{\} \;
+            -exec gzip \{\} \; || true
           git pull
       - name: Add & Commit
         if: ${{ !endsWith(github.repository, '/bblock-template') && !inputs.skip-build }}
@@ -142,8 +142,8 @@ jobs:
           message: Building blocks postprocessing
       - name: Remove _visited_properties.tsv from pages
         run: |
-          sudo find "${{ inputs.annotated_path }}" -name _visited_properties.tsv -delete
-          sudo find "${{ inputs.annotated_path }}" -name _visited_properties.tsv.gz -delete
+          sudo find "${{ inputs.annotated_path }}" -name _visited_properties.tsv -delete || true
+          sudo find "${{ inputs.annotated_path }}" -name _visited_properties.tsv.gz -delete || true
       - name: Deploy Building Blocks viewer
         if: ${{ inputs.deploy_viewer && github.event.repository.has_pages && !inputs.skip-pages }}
         run: |
