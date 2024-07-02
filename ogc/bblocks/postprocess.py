@@ -227,10 +227,15 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             super_bblocks[building_block.files_path] = building_block
             continue
 
-        if (filter_id is None or building_block.identifier == filter_id):
+        if filter_id is None or building_block.identifier == filter_id:
             if not steps or 'annotate' in steps:
 
                 if building_block.schema.exists:
+
+                    if building_block.schema.is_url:
+                        # Force caching remote file
+                        building_block.schema_contents
+
                     # Annotate schema
                     print(f"Annotating schema for {building_block.identifier}", file=sys.stderr)
 
@@ -238,6 +243,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                         if is_url(building_block.ldContext):
                             # Use URL directly
                             default_jsonld_context = building_block.ldContext
+                            # Force caching remote file
+                            building_block.jsonld_context_contents
                         else:
                             # Use path relative to bblock.json
                             default_jsonld_context = building_block.files_path / building_block.ldContext
@@ -296,7 +303,14 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                         print("Exception when processing ontology for", building_block.identifier, file=sys.stderr)
                         traceback.print_exception(e, file=sys.stderr)
                 elif building_block.ontology.is_url:
+                    # Force cache
+                    building_block.ontology_graph
                     building_block.metadata['ontology'] = building_block.ontology.value
+
+        if base_url and building_block.remote_cache_dir.is_dir():
+            building_block.metadata['remoteCacheDir'] = (
+                    base_url + os.path.relpath(building_block.remote_cache_dir.resolve(), cwd) + '/'
+            )
 
         child_bblocks.append(building_block)
 

@@ -102,6 +102,8 @@ class BuildingBlock:
                                                ('ontology.ttl', 'ontology.owl'))
         self.output_ontology = self.annotated_path / 'ontology.ttl'
 
+        self.remote_cache_dir = self.annotated_path / 'remote_cache'
+
     def _find_path_or_url(self, metadata_property: str, default_filenames: tuple[str, ...]):
         ref = self.metadata.get(metadata_property)
         if ref:
@@ -157,7 +159,7 @@ class BuildingBlock:
         if 'schema_contents' not in self._lazy_properties:
             if not self.schema.exists:
                 return None
-            self._lazy_properties['schema_contents'] = load_file(self.schema.value)
+            self._lazy_properties['schema_contents'] = load_file(self.schema.value, self.remote_cache_dir)
         return self._lazy_properties['schema_contents']
 
     @property
@@ -174,7 +176,7 @@ class BuildingBlock:
         if 'annotated_schema_contents' not in self._lazy_properties:
             if not self.annotated_schema.is_file():
                 return None
-            self._lazy_properties['annotated_schema_contents'] = load_file(self.annotated_schema)
+            self._lazy_properties['annotated_schema_contents'] = load_file(self.annotated_schema, self.remote_cache_dir)
         return self._lazy_properties['annotated_schema_contents']
 
     @property
@@ -184,7 +186,7 @@ class BuildingBlock:
         if 'jsonld_context_contents' not in self._lazy_properties:
             if not self.jsonld_context.is_file():
                 return None
-            self._lazy_properties['jsonld_context_contents'] = load_file(self.jsonld_context)
+            self._lazy_properties['jsonld_context_contents'] = load_file(self.jsonld_context, self.remote_cache_dir)
         return self._lazy_properties['jsonld_context_contents']
 
     @property
@@ -192,7 +194,7 @@ class BuildingBlock:
         if 'ontology_graph' not in self._lazy_properties:
             if not self.ontology.exists:
                 return None
-            self._lazy_properties['ontology_graph'] = Graph().parse(self.ontology.value)
+            self._lazy_properties['ontology_graph'] = Graph().parse(self.ontology.value, self.remote_cache_dir)
         return self._lazy_properties['ontology_graph']
 
     @property
@@ -202,7 +204,7 @@ class BuildingBlock:
         if 'output_openapi_contents' not in self._lazy_properties:
             if not self.output_openapi.is_file():
                 return None
-            self._lazy_properties['output_openapi_contents'] = load_file(self.output_openapi)
+            self._lazy_properties['output_openapi_contents'] = load_file(self.output_openapi, self.remote_cache_dir)
         return self._lazy_properties['output_openapi_contents']
 
     def get_extra_test_resources(self) -> Generator[dict, None, None]:

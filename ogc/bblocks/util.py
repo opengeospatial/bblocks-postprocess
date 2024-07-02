@@ -5,7 +5,9 @@ import functools
 import json
 import os.path
 import re
+import sys
 from collections import deque
+from hashlib import sha256
 from pathlib import Path
 from typing import Any, Sequence, Callable
 from urllib.parse import urljoin, urlparse, urlunparse
@@ -42,12 +44,23 @@ def load_file_cached(fn):
     return load_file(fn)
 
 
-def load_file(fn):
+def load_file(fn, remote_cache_dir: Path | None = None):
     if isinstance(fn, PathOrUrl):
         fn = fn.value
     if isinstance(fn, str) and is_url(fn):
         r = requests.get(fn)
         r.raise_for_status()
+
+        if remote_cache_dir:
+            url_hash = sha256(fn.encode('utf-8')).hexdigest()
+            try:
+                remote_cache_dir.mkdir(exist_ok=True, parents=True)
+                with open(remote_cache_dir / url_hash, 'wb') as f:
+                    f.write(r.content)
+            except Exception as e:
+                print(f"Warning: could not store cached version of remote file in {remote_cache_dir / url_hash}: {e}",
+                      file=sys.stderr)
+
         return r.text
     with open(fn) as f:
         return f.read()
