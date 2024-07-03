@@ -194,7 +194,8 @@ class BuildingBlock:
         if 'ontology_graph' not in self._lazy_properties:
             if not self.ontology.exists:
                 return None
-            self._lazy_properties['ontology_graph'] = Graph().parse(self.ontology.value, self.remote_cache_dir)
+            contents = load_file(self.ontology.value, self.remote_cache_dir)
+            self._lazy_properties['ontology_graph'] = Graph().parse(data=contents)
         return self._lazy_properties['ontology_graph']
 
     @property
