@@ -270,13 +270,13 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
                 if building_block.openapi.exists:
                     print(f"Annotating OpenAPI document for {building_block.identifier}", file=sys.stderr)
-                    openapi_resolved = resolve_all_schema_references(building_block.openapi.load_yaml(), bbr,
-                                                                     building_block, building_block.openapi, base_url)
-                    building_block.output_openapi.parent.mkdir(parents=True, exist_ok=True)
-                    dump_yaml(openapi_resolved, building_block.output_openapi)
-                    print(f"  - {os.path.relpath(building_block.output_openapi)}", file=sys.stderr)
-
                     try:
+                        openapi_resolved = resolve_all_schema_references(building_block.openapi.load_yaml(), bbr,
+                                                                         building_block, building_block.openapi, base_url)
+                        building_block.output_openapi.parent.mkdir(parents=True, exist_ok=True)
+                        dump_yaml(openapi_resolved, building_block.output_openapi)
+                        print(f"  - {os.path.relpath(building_block.output_openapi)}", file=sys.stderr)
+
                         if openapi_resolved.get('openapi', '').startswith('3.1'):
                             print(f"Downcompiling OpenAPI document to 3.0 for {building_block.identifier}", file=sys.stderr)
                             oas30_doc_fn = building_block.output_openapi_30
@@ -290,22 +290,22 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
             if building_block.ontology.exists:
                 building_block.metadata.pop('ontology', None)
-                if building_block.ontology.is_path and building_block.ontology_graph:
-                    try:
+                try:
+                    if building_block.ontology.is_path and building_block.ontology_graph:
                         building_block.output_ontology.parent.mkdir(parents=True, exist_ok=True)
                         building_block.ontology_graph.serialize(building_block.output_ontology, 'ttl')
                         building_block.metadata['ontology'] = PathOrUrl(building_block.output_ontology)\
                             .with_base_url(base_url)
-                    except Exception as e:
-                        if fail_on_error:
-                            raise BuildingBlockError(f'Error processing ontology for {building_block.identifier}')\
-                                from e
-                        print("Exception when processing ontology for", building_block.identifier, file=sys.stderr)
-                        traceback.print_exception(e, file=sys.stderr)
-                elif building_block.ontology.is_url:
-                    # Force cache
-                    building_block.ontology_graph
-                    building_block.metadata['ontology'] = building_block.ontology.value
+                    elif building_block.ontology.is_url:
+                        # Force cache
+                        building_block.ontology_graph
+                        building_block.metadata['ontology'] = building_block.ontology.value
+                except Exception as e:
+                    if fail_on_error:
+                        raise BuildingBlockError(f'Error processing ontology for {building_block.identifier}')\
+                            from e
+                    print("Exception when processing ontology for", building_block.identifier, file=sys.stderr)
+                    traceback.print_exception(e, file=sys.stderr)
 
         if base_url and building_block.remote_cache_dir.is_dir():
             building_block.metadata['remoteCacheDir'] = (
