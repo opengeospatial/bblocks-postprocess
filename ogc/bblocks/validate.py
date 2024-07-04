@@ -732,14 +732,17 @@ def validate_test_resources(bblock: BuildingBlock,
     schema_url = next((u for u in bblock.metadata.get('schema', []) if u.endswith('.json')), None)
 
     try:
-        if bblock.annotated_schema:
+        if bblock.annotated_schema.is_file():
             schema_validator = get_json_validator(bblock.annotated_schema_contents,
                                                   bblock.annotated_schema.resolve().as_uri(),
                                                   bblocks_register)
+    except Exception as e:
+        json_error = f"Error creating JSON validator: {type(e).__name__}: {e}"
+    try:
         if bblock.jsonld_context.is_file():
             jsonld_context = load_yaml(filename=bblock.jsonld_context)
     except Exception as e:
-        json_error = f"{type(e).__name__}: {e}"
+        json_error = f"Error loading JSON-LD context: {type(e).__name__}: {e}"
 
     if outputs_path:
         output_dir = outputs_path / bblock.subdirs
