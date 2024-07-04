@@ -1,5 +1,5 @@
 name: OGC Building Blocks full postprocess
-description: Generates documentation and output files for OGC building blocks, including Slate templats
+description: Generates documentation and output files for OGC building blocks
 author: Alejandro Villar
 inputs:
   register_file:
@@ -68,12 +68,3 @@ runs:
         viewer_path: ${{ inputs.viewer_path }}
         sparql_username: ${{ inputs.sparql_username }}
         sparql_password: ${{ inputs.sparql_password }}
-    - name: Generate Slate documentation
-      continue-on-error: true
-      run: |
-        GENDOCS_PATH="$(realpath "${{ inputs.generated_docs_path }}")"
-        SOURCE_PATH="${GENDOCS_PATH}/slate/"
-        BUILD_PATH="${GENDOCS_PATH}/slate-build/"
-        docker run --rm -v "${SOURCE_PATH}:/srv/slate/source" \
-          -v "${BUILD_PATH}:/srv/slate/build" dockerogc/slate build
-      shell: bash

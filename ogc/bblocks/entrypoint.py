@@ -277,17 +277,7 @@ if __name__ == '__main__':
                              provenance_base_uri=args.base_url,
                              transform_args=uplift_args)
 
-    # 3. Copy Slate assets
-    # Run rsync -rlt /src/ogc/bblocks/slate-assets/ "${GENERATED_DOCS_PATH}/slate/"
-    print(f"Copying Slate assets to {args.generated_docs_path}/slate", file=sys.stderr)
-    subprocess.run([
-        'rsync',
-        '-rlt',
-        str(Path(__file__).parent / 'slate-assets') + '/',
-        f"{args.generated_docs_path}/slate/",
-    ])
-
-    # 4. Push to triplestore
+    # 3. Push to triplestore
     if args.enable_sparql:
         sparql_gsp = sparql_conf.get('push')
         if sparql_gsp:
