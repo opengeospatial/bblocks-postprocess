@@ -130,6 +130,12 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             bblock.metadata['ldContext'] = PathOrUrl(bblock.jsonld_context).with_base_url(
                 base_url, cwd if base_url else output_file_root
             )
+        elif bblock.metadata.get('ldContext') and not is_url(bblock.metadata['ldContext']):
+            # Unprocessed JSON-LD context instead of generated from annotations
+            ld_context_path = bblock.files_path / bblock.metadata['ldContext']
+            bblock.metadata['ldContext'] = PathOrUrl(ld_context_path).with_base_url(
+                base_url, cwd if base_url else output_file_root
+            )
         if bblock.output_openapi.is_file():
             bblock.metadata['sourceOpenAPIDocument'] = bblock.openapi.with_base_url(
                 base_url, cwd if base_url else output_file_root
