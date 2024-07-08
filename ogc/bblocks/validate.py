@@ -24,6 +24,7 @@ import requests
 from jsonschema.validators import validator_for
 from ogc.na.util import load_yaml, is_url, copy_triples
 from pyparsing import ParseBaseException
+from pyshacl.errors import ReportableRuntimeError
 from rdflib import Graph
 from rdflib.term import Node, URIRef, BNode
 from yaml import MarkedYAMLError
@@ -652,6 +653,18 @@ def _validate_resource(bblock: BuildingBlock,
                                 'shaclFile': str(shacl_file),
                             }
                         ))
+                    except ReportableRuntimeError as e:
+                        report.add_entry(ValidationReportEntry(
+                            section=ValidationReportSection.SHACL,
+                            message=f"Error running SHACL validation for {shacl_file}: {e}",
+                            is_error=True,
+                            is_global=True,
+                            payload={
+                                'exception': e.__class__.__qualname__,
+                                'errorMessage': str(e),
+                                'shaclFile': str(shacl_file),
+                            }
+                        ))
 
     try:
         validate_inner()
@@ -709,7 +722,7 @@ def validate_test_resources(bblock: BuildingBlock,
             except HTTPError as e:
                 shacl_errors.append(f"Error retrieving {e.url}: {e}")
             except Exception as e:
-                shacl_errors.append(str(e))
+                shacl_errors.append(f"Error processing {shacl_file}: {str(e)}")
         inherited_shacl_rules[shacl_bblock] = bblock_shacl_files
 
     for sc in bblock.shaclClosures or ():
@@ -718,7 +731,7 @@ def validate_test_resources(bblock: BuildingBlock,
         except HTTPError as e:
             shacl_errors.append(f"Error retrieving {e.url}: {e}")
         except Exception as e:
-            shacl_errors.append(str(e))
+            shacl_errors.append(f"Error processing {sc}: {str(e)}")
     bblock.metadata['shaclRules'] = inherited_shacl_rules
 
     if not bblock.tests_dir.is_dir() and not bblock.examples:
