@@ -17,10 +17,6 @@ on:
       base_url:
         type: string
         description: Base URL to use for asset linkage
-        default: >-
-          ${{ github.event.repository.has_pages
-            && format('https://{0}.github.io/{1}', github.repository_owner, github.event.repository.name)
-            || format('https://raw.githubusercontent.com/{0}/{1}', github.repository, github.ref_name) }}
       fail_on_error:
         type: string
         description: Whether to fail on errors
@@ -111,6 +107,30 @@ jobs:
           ref: ${{ inputs.ref }}
       - name: Update submodules
         run: git submodule update --recursive --remote
+      - name: Get Pages Base URL
+        id: get-pages-url
+        uses: actions/github-script@v6
+        with:
+          result-encoding: string
+          script: |
+            let base_url;
+            if ("${{ inputs.base_url }}"?.trim()) {
+              base_url = "${{ inputs.base_url }}";
+            } else {
+              const { owner, repo } = context.repo;
+              try {
+                const response = await github.rest.repos.getPages({
+                  owner,
+                  repo
+                });
+                base_url = response.data.html_url;
+              } catch {
+                core.warning('No base_url provided, and the GitHub Pages URL could not be retrieved. Did you forget to enable GitHub Pages?');
+                base_url = `https://raw.githubusercontent.com/${owner}/${repo}/${context.ref_name}`;
+              }
+            }
+            // Remove trailing slash 
+            return base_url.replace(/\/$/, '');
       - name: OGC BB postprocess
         if: ${{ !inputs.skip-build }}
         uses: opengeospatial/bblocks-postprocess/full@v1
@@ -118,7 +138,7 @@ jobs:
           register_file: ${{ inputs.register_file }}
           items_dir: ${{ inputs.items_dir }}
           generated_docs_path: ${{ inputs.generated_docs_path }}
-          base_url: ${{ inputs.base_url }}
+          base_url: ${{ steps.get-pages-url.outputs.result }}
           fail_on_error: ${{ inputs.fail_on_error }}
           annotated_path: ${{ inputs.annotated_path }}
           clean: ${{ inputs.clean }}
@@ -175,7 +195,7 @@ jobs:
             <link rel="icon" href="https://ogcincubator.github.io/bblocks-viewer/favicon.ico" />
             <meta name="viewport" content="width=device-width, initial-scale=1.0" />
             <title>OGC Location Building Blocks</title>
-            <script src="/${{ github.event.repository.name }}/${BASE_URL}config.js"></script>
+            <script src="${{ steps.get-pages-url.outputs.result }}/${BASE_URL}config.js"></script>
             <script type="module" crossorigin src="https://ogcincubator.github.io/bblocks-viewer/assets/index.js"></script>
             <link rel="stylesheet" href="https://ogcincubator.github.io/bblocks-viewer/assets/index.css">
           </head>
@@ -186,11 +206,11 @@ jobs:
           EOF
           
           cat << EOF > config.js
-          window.bblocksRegister = '${{ format('https://{0}.github.io/{1}/{2}', github.repository_owner, github.event.repository.name, inputs.register_file) }}';
+          window.bblocksRegister = '${{ steps.get-pages-url.outputs.result }}/${{ inputs.register_file }}';
           window.bblocksViewer = {
             title: $(jq '.name // "${{ github.event.repository.name }}"' < "$REGISTER_FILE"),
             showImported: ${{ inputs.viewer_show_imported }},
-            baseUrl: '/${{ github.event.repository.name }}/${BASE_URL}',
+            baseUrl: '${{ steps.get-pages-url.outputs.result }}/${BASE_URL}',
           };
           EOF
           
