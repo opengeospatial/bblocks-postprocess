@@ -152,6 +152,13 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             base_url, cwd if base_url else output_file_root
         ) + '/'
 
+        if bblock.semanticUplift and bblock.semanticUplift.get('additionalSteps'):
+            for step in bblock.semanticUplift['additionalSteps']:
+                if step.get('ref'):
+                    step['ref'] = PathOrUrl(bblock.files_path).resolve_ref(step['ref']).with_base_url(
+                        base_url, cwd if base_url else output_file_root
+                    )
+
         if not light:
             if not steps or 'tests' in steps:
                 print(f"  > Running tests for {bblock.identifier}", file=sys.stderr)

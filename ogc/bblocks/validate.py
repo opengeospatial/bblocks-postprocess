@@ -1,39 +1,24 @@
 from __future__ import annotations
 
-import dataclasses
 import json
-import logging
 import os
-import random
 import re
 import shutil
-from enum import Enum
-from io import StringIO
-from json import JSONDecodeError
-from pathlib import Path
-from time import time
-from typing import Any, Sequence
-from urllib.error import HTTPError
-from urllib.parse import urlsplit, urljoin
-from urllib.request import urlopen
+import traceback
 from datetime import datetime, timezone
+from pathlib import Path
+from typing import Sequence
+from urllib.parse import urljoin
 
-import jsonschema
 from mako import exceptions as mako_exceptions, template as mako_template
-import requests
-from jsonschema.validators import validator_for
-from ogc.na.util import load_yaml, is_url, copy_triples
-from pyparsing import ParseBaseException
-from pyshacl.errors import ReportableRuntimeError
-from rdflib import Graph
-from rdflib.term import Node, URIRef, BNode
-from yaml import MarkedYAMLError
+from ogc.na.util import is_url
 
 from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister
 from ogc.bblocks.util import sanitize_filename
-import traceback
-import pyshacl
-import jsonref
+from ogc.bblocks.validation import Validator, ValidationItemSourceType, ValidationReportSection, ValidationItemSource, \
+    ValidationReportEntry, ValidationReportItem
+from ogc.bblocks.validation.json_ import JsonValidator
+from ogc.bblocks.validation.rdf import RdfValidator
 
 OUTPUT_SUBDIR = 'output'
 FORMAT_ALIASES = {
@@ -41,111 +26,6 @@ FORMAT_ALIASES = {
     'json-ld': 'jsonld',
 }
 DEFAULT_UPLIFT_FORMATS = ['jsonld', 'ttl']
-
-
-class CaptureLogHandler(logging.StreamHandler):
-
-    def __init__(self):
-        logging.StreamHandler.__init__(self, StringIO())
-
-    def clear(self):
-        self.stream = StringIO()
-
-    def getvalue(self):
-        return self.stream.getvalue()
-
-
-class ValidationItemSourceType(Enum):
-    TEST_RESOURCE = 'Test resource'
-    EXAMPLE = 'Example'
-
-
-class ValidationReportSection(Enum):
-    GENERAL = 'General'
-    FILES = 'Files'
-    JSON_SCHEMA = 'JSON Schema'
-    JSON_LD = 'JSON-LD'
-    TURTLE = 'Turtle'
-    SHACL = 'SHACL'
-    UNKNOWN = 'Unknown errors'
-
-
-@dataclasses.dataclass
-class ValidationItemSource:
-    type: ValidationItemSourceType
-    filename: Path | None = None
-    example_index: int | None = None
-    snippet_index: int | None = None
-    language: str | None = None
-    require_fail: bool = False
-    source_url: str | None = None
-
-
-@dataclasses.dataclass
-class ValidationReportEntry:
-    section: ValidationReportSection
-    message: str
-    is_error: bool = False
-    payload: dict | None = None
-    is_global: bool = False
-
-
-class ValidationReportItem:
-
-    def __init__(self, source: ValidationItemSource):
-        self._has_errors = False
-        self.source = source
-        self._sections: dict[ValidationReportSection, list[ValidationReportEntry]] = {s: []
-                                                                                      for s in ValidationReportSection}
-        self._uplifted_files: dict[str, tuple[Path, str]] = {}
-        self._has_general_errors = False
-        self._used_files: list[tuple[Path | str, bool]] = []
-
-    def add_entry(self, entry: ValidationReportEntry):
-        self._sections.setdefault(entry.section, []).append(entry)
-        if entry.is_error and (not entry.payload or entry.payload.get('op') != 'require-fail'):
-            self._has_errors = True
-            if entry.is_global:
-                self._has_general_errors = True
-
-    def add_uplifted_file(self, file_format: str, path: Path, contents: str):
-        self._uplifted_files[file_format] = (path, contents)
-
-    def write_text(self, bblock: BuildingBlock, report_fn: Path):
-        with open(report_fn, 'w') as f:
-            f.write(f"Validation report for {bblock.identifier} - {bblock.name}\n")
-            f.write(f"Generated {datetime.now(timezone.utc).astimezone().isoformat()}\n")
-            for section in ValidationReportSection:
-                entries = self._sections.get(section)
-                if not entries:
-                    continue
-                f.write(f"=== {section.value} ===\n")
-                for entry in entries:
-                    if entry.is_error:
-                        f.write("\n** Validation error **\n")
-                    f.write(f"{entry.message}\n")
-                f.write(f"=== End {section.value} ===\n\n")
-
-    @property
-    def failed(self) -> bool:
-        return self._has_general_errors or self.source.require_fail != self._has_errors
-
-    @property
-    def general_errors(self) -> bool:
-        return self._has_general_errors
-
-    @property
-    def sections(self) -> dict[ValidationReportSection, list[ValidationReportEntry]]:
-        return self._sections
-
-    @property
-    def uplifted_files(self) -> dict[str, tuple[Path, str]]:
-        return self._uplifted_files
-
-
-capture_log_handler = CaptureLogHandler()
-capture_log_handler.setLevel(logging.WARN)
-rdflib_logger = logging.getLogger('rdflib')
 
 
 def report_to_dict(bblock: BuildingBlock,
@@ -188,6 +68,8 @@ def report_to_dict(bblock: BuildingBlock,
 
             sections = []
             for section_enum, entries in item.sections.items():
+                if not entries:
+                    continue
                 section = {
                     'name': section_enum.name,
                     'title': section_enum.value,
@@ -239,7 +121,6 @@ def report_to_dict(bblock: BuildingBlock,
 def report_to_html(json_reports: list[dict],
                    base_url: str | None = None,
                    report_fn: Path | None = None) -> str | None:
-
     pass_count = sum(r['result'] for r in json_reports)
     counts = {
         'total': len(json_reports),
@@ -262,22 +143,14 @@ def report_to_html(json_reports: list[dict],
 def _validate_resource(bblock: BuildingBlock,
                        filename: Path,
                        output_filename: Path,
+                       validators: list[Validator],
                        resource_contents: str | None = None,
-                       schema_validator: jsonschema.Validator | None = None,
-                       schema_url: str | None = None,
-                       jsonld_context: dict | None = None,
-                       jsonld_url: str | None = None,
-                       shacl_graphs: dict[str | Path, Graph] | None = None,
-                       json_error: str | None = None,
-                       shacl_errors: list[str] | None = None,
+                       additional_shacl_closures: list[str | Path] | None = None,
                        base_uri: str | None = None,
                        schema_ref: str | None = None,
-                       shacl_closure_files: list[str | Path] | None = None,
-                       shacl_closure: Graph | None = None,
                        require_fail: bool | None = None,
                        resource_url: str | None = None,
-                       example_index: tuple[int, int] | None = None) -> ValidationReportItem:
-
+                       example_index: tuple[int, int] | None = None) -> ValidationReportItem | None:
     if require_fail is None:
         require_fail = filename.stem.endswith('-fail') and not example_index
 
@@ -304,370 +177,16 @@ def _validate_resource(bblock: BuildingBlock,
         )
     report = ValidationReportItem(source)
 
-    file_from = 'examples' if example_index else 'test resources'
-
-    def validate_inner():
-        json_doc = None
-        graph = None
-
-        if filename.suffix in ('.json', '.jsonld', '.yaml', '.yml'):
-            try:
-                if resource_contents:
-                    if filename.suffix.startswith('.json'):
-                        json_doc = json.loads(resource_contents)
-                    else:
-                        json_doc = load_yaml(content=resource_contents)
-                    if filename.name == output_filename.name:
-                        using_fn = filename.name
-                    else:
-                        using_fn = f"{output_filename.name} ({filename.stem})"
-                    report.add_entry(ValidationReportEntry(
-                        section=ValidationReportSection.FILES,
-                        message=f'Using {using_fn} from {file_from}',
-                    ))
-                else:
-                    json_doc = load_yaml(filename=filename)
-                    report.add_entry(ValidationReportEntry(
-                        section=ValidationReportSection.FILES,
-                        message=f'Using {filename.name} from {file_from}',
-                    ))
-                json_doc = jsonref.replace_refs(json_doc, base_uri=filename.as_uri(), merge_props=True, proxies=False)
-            except MarkedYAMLError as e:
-                report.add_entry(ValidationReportEntry(
-                    section=ValidationReportSection.JSON_SCHEMA,
-                    message=f"Error parsing YAML example: {str(e)} "
-                            f"on or near line {e.context_mark.line + 1} "
-                            f"column {e.context_mark.column + 1}",
-                    is_error=True,
-                    payload={
-                        'exception': e.__class__.__qualname__,
-                        'line': e.context_mark.line + 1,
-                        'col': e.context_mark.column + 1,
-                    }
-                ))
-                return
-            except JSONDecodeError as e:
-                report.add_entry(ValidationReportEntry(
-                    section=ValidationReportSection.JSON_SCHEMA,
-                    message=f"Error parsing JSON example: {str(e)} "
-                            f"on or near line {e.lineno} "
-                            f"column {e.colno}",
-                    is_error=True,
-                    payload={
-                        'exception': e.__class__.__qualname__,
-                        'line': e.lineno,
-                        'col': e.colno,
-                    }
-                ))
-                return
-
-            if '@graph' in json_doc:
-                json_doc = json_doc['@graph']
-                report.add_entry(ValidationReportEntry(
-                    section=ValidationReportSection.FILES,
-                    message='"@graph" found, unwrapping',
-                    payload={
-                        'op': '@graph-unwrap'
-                    }
-                ))
-
-            try:
-                if (filename.suffix == '.json' and jsonld_context
-                        and (isinstance(json_doc, dict) or isinstance(json_doc, list))):
-                    report.add_entry(ValidationReportEntry(
-                        section=ValidationReportSection.FILES,
-                        message='JSON-LD context is present - uplifting',
-                        payload={
-                            'op': 'jsonld-uplift'
-                        }
-                    ))
-                    new_context = jsonld_context['@context']
-                    if isinstance(json_doc, dict):
-                        if '@context' in json_doc:
-                            existing_context = json_doc['@context']
-                            if isinstance(existing_context, list):
-                                new_context = [
-                                    jsonld_context['@context'],
-                                    *existing_context,
-                                ]
-                            else:
-                                new_context = [
-                                    jsonld_context['@context'],
-                                    existing_context,
-                                ]
-                        jsonld_uplifted = json_doc.copy()
-                        jsonld_uplifted['@context'] = new_context
-                    else:
-                        jsonld_uplifted = {
-                            '@context': new_context,
-                            '@graph': json_doc,
-                        }
-
-                    try:
-                        capture_log_handler.clear()
-                        rdflib_logger.addHandler(capture_log_handler)
-                        graph = Graph().parse(data=json.dumps(jsonld_uplifted), format='json-ld', base=base_uri)
-                    finally:
-                        rdflib_logger.removeHandler(capture_log_handler)
-
-                    if capture_log_handler.getvalue():
-                        report.add_entry(ValidationReportEntry(
-                            section=ValidationReportSection.JSON_LD,
-                            is_error=True,
-                            message=f'Error found when uplifting JSON-LD: {capture_log_handler.getvalue()}',
-                            payload={
-                                'op': 'jsonld-uplift-error',
-                                'contents': capture_log_handler.getvalue(),
-                            }
-                        ))
-
-                    if jsonld_url:
-                        if isinstance(jsonld_uplifted['@context'], list):
-                            jsonld_uplifted['@context'][0] = jsonld_url
-                        else:
-                            jsonld_uplifted['@context'] = jsonld_url
-                    jsonld_fn = output_filename.with_suffix('.jsonld')
-                    jsonld_contents = json.dumps(jsonld_uplifted, indent=2)
-                    with open(jsonld_fn, 'w') as f:
-                        f.write(jsonld_contents)
-                    report.add_uplifted_file('jsonld', jsonld_fn, jsonld_contents)
-                    report.add_entry(ValidationReportEntry(
-                        section=ValidationReportSection.FILES,
-                        message=f'Output JSON-LD {jsonld_fn.name} created',
-                        payload={
-                            'op': 'jsonld-create',
-                            'filename': jsonld_fn.name,
-                        }
-                    ))
-
-                elif output_filename.suffix == '.jsonld':
-                    graph = Graph().parse(data=json_doc, format='json-ld', base=base_uri)
-
-            except JSONDecodeError as e:
-                report.add_entry(ValidationReportEntry(
-                    section=ValidationReportSection.JSON_LD,
-                    message=str(e),
-                    payload={
-                        'exception': e.__class__.__qualname__,
-                    }
-                ))
-                return
-
-        elif filename.suffix == '.ttl':
-            try:
-                if resource_contents:
-                    graph = Graph().parse(data=resource_contents, format='ttl')
-                    report.add_entry(ValidationReportEntry(
-                        section=ValidationReportSection.FILES,
-                        message=f'Using {filename.name} from {file_from}',
-                    ))
-                else:
-                    graph = Graph().parse(filename)
-                    report.add_entry(ValidationReportEntry(
-                        section=ValidationReportSection.FILES,
-                        message=f'Using {filename.name} from {file_from}',
-                    ))
-            except (ValueError, SyntaxError) as e:
-                report.add_entry(ValidationReportEntry(
-                    section=ValidationReportSection.TURTLE,
-                    is_error=True,
-                    message=str(e),
-                    payload={
-                        'exception': e.__class__.__qualname__,
-                    }
-                ))
-                return
-
-        else:
-            return
-
-        if graph is not None and (resource_contents or filename.suffix != '.ttl'):
-            try:
-                ttl_fn = output_filename.with_suffix('.ttl')
-                if graph:
-                    graph.serialize(ttl_fn, format='ttl')
-                else:
-                    with open(ttl_fn, 'w') as f:
-                        f.write('# Empty Turtle file\n')
-                report.add_uplifted_file('ttl', ttl_fn, graph.serialize(format='ttl'))
-
-                report.add_entry(ValidationReportEntry(
-                    section=ValidationReportSection.FILES,
-                    message=f"{'O' if graph else '**Empty** o'}utput Turtle {ttl_fn.name} created",
-                    is_error=not graph,
-                    payload={
-                        'op': 'ttl-create',
-                        'empty': not graph,
-                        'filename': ttl_fn.name,
-                        'size': len(graph),
-                    }
-                ))
-            except Exception as e:
-                report.add_entry(ValidationReportEntry(
-                    section=ValidationReportSection.TURTLE,
-                    is_error=True,
-                    message=str(e),
-                    payload={
-                        'exception': e.__class__.__qualname__,
-                    }
-                ))
-                return
-
-        if json_doc:
-            if schema_ref:
-                report.add_entry(ValidationReportEntry(
-                    section=ValidationReportSection.JSON_SCHEMA,
-                    message=f"Using the following JSON Schema: {schema_ref}",
-                    payload={
-                        'filename': schema_ref,
-                    }
-                ))
-            if json_error:
-                report.add_entry(ValidationReportEntry(
-                    section=ValidationReportSection.JSON_SCHEMA,
-                    message=json_error,
-                    is_error=True,
-                    is_global=True,
-                ))
-            elif schema_validator:
-                try:
-                    validate_json(json_doc, schema_validator)
-                    report.add_entry(ValidationReportEntry(
-                        section=ValidationReportSection.JSON_SCHEMA,
-                        message='Validation passed',
-                        payload={
-                            'op': 'validation',
-                            'result': True,
-                        }
-                    ))
-                except Exception as e:
-                    if not isinstance(e, jsonschema.exceptions.ValidationError):
-                        traceback.print_exception(e)
-                    report.add_entry(ValidationReportEntry(
-                        section=ValidationReportSection.JSON_SCHEMA,
-                        message=f"{type(e).__name__}: {e}",
-                        is_error=True,
-                        payload={
-                            'op': 'validation',
-                            'result': False,
-                            'exception': e.__class__.__qualname__,
-                            'errorMessage': e.message,
-                        }
-                    ))
-
-            if schema_url:
-                json_doc = {'$schema': schema_url, **json_doc}
-
-            if resource_contents:
-                # This is an example or a ref, write it to disk
-                with open(output_filename, 'w') as f:
-                    json.dump(json_doc, f, indent=2)
-
-        if graph:
-            if shacl_errors:
-                for shacl_error in shacl_errors:
-                    report.add_entry(ValidationReportEntry(
-                        section=ValidationReportSection.SHACL,
-                        message=shacl_error,
-                        is_error=True,
-                        is_global=True,
-                    ))
-            elif shacl_graphs:
-                for shacl_file, shacl_graph in shacl_graphs.items():
-                    try:
-                        ont_graph = Graph()
-                        if shacl_closure_files:
-                            for c in shacl_closure_files:
-                                ont_graph.parse(c)
-                        if shacl_closure:
-                            copy_triples(shacl_closure, ont_graph)
-                        shacl_conforms, shacl_result, shacl_report, focus_nodes = shacl_validate(
-                            graph, shacl_graph, ont_graph=ont_graph)
-
-                        report.add_entry(ValidationReportEntry(
-                            section=ValidationReportSection.SHACL,
-                            message=f"Validation result for {shacl_file}:\n"
-                                    f"{re.sub(r'^', '  ', shacl_report, flags=re.M)}",
-                            is_error=not shacl_conforms,
-                            payload={
-                                'op': 'shacl-report',
-                                'shaclFile': str(shacl_file),
-                                'graph': shacl_result.serialize(),
-                            }
-                        ))
-                        if focus_nodes:
-                            focus_nodes_report = ''
-                            focus_nodes_payload = {}
-                            for shape, shape_focus_nodes in focus_nodes.items():
-                                g = Graph()
-                                for t in shacl_graph.triples((shape.node, None, None)):
-                                    g.add(t)
-                                focus_nodes_str = '/'.join(format_node(shacl_graph, n)
-                                                           for n in
-                                                           (find_closest_uri(shacl_graph, shape.node) or (shape.node,)))
-                                focus_nodes_payload[focus_nodes_str] = {
-                                    'nodes': [],
-                                }
-                                focus_nodes_report += f" - Shape {focus_nodes_str}"
-                                shape_path = shape.path()
-                                if shape_path:
-                                    shape_path = format_node(shacl_graph, shape_path)
-                                    focus_nodes_report += f" (path {shape_path})"
-                                    focus_nodes_payload[focus_nodes_str]['path'] = shape_path
-                                focus_nodes_report += ": "
-                                if not shape_focus_nodes:
-                                    focus_nodes_report += '*none*'
-                                else:
-                                    fmt_shape_focus_nodes = ['/'.join(format_node(graph, n)
-                                                                      for n in (find_closest_uri(graph, fn) or (fn,)))
-                                                             for fn in shape_focus_nodes]
-                                    focus_nodes_report += ','.join(fmt_shape_focus_nodes)
-                                    focus_nodes_payload[focus_nodes_str]['nodes'] = fmt_shape_focus_nodes
-                                focus_nodes_report += "\n"
-
-                            report.add_entry(ValidationReportEntry(
-                                section=ValidationReportSection.SHACL,
-                                message=f"Focus nodes for {shacl_file}:\n{focus_nodes_report}",
-                                payload={
-                                    'shaclFile': str(shacl_file),
-                                    'focusNodes': focus_nodes_payload,
-                                }
-                            ))
-                    except ParseBaseException as e:
-                        if e.args:
-                            query_lines = e.args[0].splitlines()
-                            max_line_digits = len(str(len(query_lines)))
-                            query_error = ('\nfor SPARQL query\n'
-                                           + '\n'.join(f"{str(i + 1).rjust(max_line_digits)}: {line}"
-                                                                             for i, line in enumerate(query_lines)))
-                        else:
-                            query_error = ''
-                        report.add_entry(ValidationReportEntry(
-                            section=ValidationReportSection.SHACL,
-                            message=f"Error parsing SHACL validator for {shacl_file}: {e}{query_error}",
-                            is_error=True,
-                            is_global=True,
-                            payload={
-                                'exception': e.__class__.__qualname__,
-                                'errorMessage': query_error,
-                                'shaclFile': str(shacl_file),
-                            }
-                        ))
-                    except ReportableRuntimeError as e:
-                        report.add_entry(ValidationReportEntry(
-                            section=ValidationReportSection.SHACL,
-                            message=f"Error running SHACL validation for {shacl_file}: {e}",
-                            is_error=True,
-                            is_global=True,
-                            payload={
-                                'exception': e.__class__.__qualname__,
-                                'errorMessage': str(e),
-                                'shaclFile': str(shacl_file),
-                            }
-                        ))
-
+    any_validator_run = False
     try:
-        validate_inner()
+        for validator in validators:
+            result = validator.validate(filename, output_filename, report,
+                                        contents=resource_contents,
+                                        base_uri=base_uri,
+                                        additional_shacl_closures=additional_shacl_closures,
+                                        schema_ref=schema_ref)
+            any_validator_run = any_validator_run or (result is not None)
+
     except Exception as unknown_exc:
         report.add_entry(ValidationReportEntry(
             section=ValidationReportSection.UNKNOWN,
@@ -678,6 +197,9 @@ def _validate_resource(bblock: BuildingBlock,
                 'exception': unknown_exc.__class__.__qualname__,
             }
         ))
+
+    if not any_validator_run:
+        return None
 
     failed = report.failed
     if require_fail and not report.general_errors:
@@ -705,58 +227,6 @@ def validate_test_resources(bblock: BuildingBlock,
     final_result = True
     test_count = 0
 
-    shacl_graphs: dict[str | Path, Graph] = {}
-    bblock_shacl_closure = Graph()
-    shacl_errors = []
-
-    inherited_shacl_rules = bblocks_register.get_inherited_shacl_rules(bblock.identifier)
-    for shacl_bblock in list(inherited_shacl_rules.keys()):
-        bblock_shacl_files = set()
-        for shacl_file in inherited_shacl_rules[shacl_bblock]:
-            if isinstance(shacl_file, Path) or (isinstance(shacl_file, str) and not is_url(shacl_file)):
-                # assume file
-                shacl_file = str(os.path.relpath(bblock.files_path / shacl_file))
-            bblock_shacl_files.add(shacl_file)
-            try:
-                shacl_graphs[shacl_file] = Graph().parse(shacl_file, format='turtle')
-            except HTTPError as e:
-                shacl_errors.append(f"Error retrieving {e.url}: {e}")
-            except Exception as e:
-                shacl_errors.append(f"Error processing {shacl_file}: {str(e)}")
-        inherited_shacl_rules[shacl_bblock] = bblock_shacl_files
-
-    for sc in bblock.shaclClosures or ():
-        try:
-            bblock_shacl_closure.parse(bblock.resolve_file(sc), format='turtle')
-        except HTTPError as e:
-            shacl_errors.append(f"Error retrieving {e.url}: {e}")
-        except Exception as e:
-            shacl_errors.append(f"Error processing {sc}: {str(e)}")
-    bblock.metadata['shaclRules'] = inherited_shacl_rules
-
-    if not bblock.tests_dir.is_dir() and not bblock.examples:
-        return final_result, test_count, report_to_dict(bblock, None, base_url)
-
-    json_error = None
-    schema_validator = None
-    jsonld_context = None
-    jsonld_url = bblock.metadata.get('ldContext')
-
-    schema_url = next((u for u in bblock.metadata.get('schema', []) if u.endswith('.json')), None)
-
-    try:
-        if bblock.annotated_schema.is_file():
-            schema_validator = get_json_validator(bblock.annotated_schema_contents,
-                                                  bblock.annotated_schema.resolve().as_uri(),
-                                                  bblocks_register)
-    except Exception as e:
-        json_error = f"Error creating JSON validator: {type(e).__name__}: {e}"
-    try:
-        if bblock.jsonld_context.is_file():
-            jsonld_context = load_yaml(filename=bblock.jsonld_context)
-    except Exception as e:
-        json_error = f"Error loading JSON-LD context: {type(e).__name__}: {e}"
-
     if outputs_path:
         output_dir = outputs_path / bblock.subdirs
     else:
@@ -768,6 +238,11 @@ def validate_test_resources(bblock: BuildingBlock,
 
     output_base_filenames = set()
 
+    validators = [
+        JsonValidator(bblock, bblocks_register),
+        RdfValidator(bblock, bblocks_register),
+    ]
+
     # Test resources
     if bblock.tests_dir.is_dir():
         for fn in sorted(bblock.tests_dir.resolve().iterdir()):
@@ -777,17 +252,15 @@ def validate_test_resources(bblock: BuildingBlock,
             output_base_filenames.add(fn.stem)
 
             test_result = _validate_resource(
-                bblock, fn, output_fn,
-                schema_validator=schema_validator,
-                jsonld_context=jsonld_context,
-                jsonld_url=jsonld_url,
-                shacl_graphs=shacl_graphs,
-                json_error=json_error,
-                shacl_errors=shacl_errors,
-                shacl_closure=bblock_shacl_closure)
-            all_results.append(test_result)
-            final_result = not test_result.failed and final_result
-            test_count += 1
+                bblock=bblock,
+                filename=fn,
+                output_filename=output_fn,
+                validators=validators,
+            )
+            if test_result:
+                all_results.append(test_result)
+                final_result = not test_result.failed and final_result
+                test_count += 1
 
     for extra_test_resource in bblock.get_extra_test_resources():
         if not re.search(r'\.(json(ld)?|ttl)$', extra_test_resource['output-filename']):
@@ -797,21 +270,18 @@ def validate_test_resources(bblock: BuildingBlock,
         output_base_filenames.add(fn.stem)
 
         test_result = _validate_resource(
-            bblock, fn, output_fn,
+            bblock=bblock,
+            filename=fn,
+            output_filename=output_fn,
+            validators=validators,
             resource_contents=extra_test_resource['contents'],
-            schema_validator=schema_validator,
-            jsonld_context=jsonld_context,
-            jsonld_url=jsonld_url,
-            shacl_graphs=shacl_graphs,
-            json_error=json_error,
-            shacl_errors=shacl_errors,
-            shacl_closure=bblock_shacl_closure,
             require_fail=extra_test_resource.get('require-fail', False),
             resource_url=extra_test_resource['ref'] if isinstance(extra_test_resource['ref'], str) else None,
         )
-        all_results.append(test_result)
-        final_result = not test_result.failed and final_result
-        test_count += 1
+        if test_result:
+            all_results.append(test_result)
+            final_result = not test_result.failed and final_result
+            test_count += 1
 
     # Examples
     if bblock.examples:
@@ -824,71 +294,38 @@ def validate_test_resources(bblock: BuildingBlock,
                 code, lang = snippet.get('code'), snippet.get('language')
                 add_snippets_formats = snippet.get('doc-uplift-formats', DEFAULT_UPLIFT_FORMATS)
 
-                if 'schema-ref' not in snippet:
-                    snippet_schema_validator = schema_validator
-                else:
-                    schema_ref = snippet['schema-ref']
-                    random_fn = f"example.{time()}.{random.randint(0,1000)}.yaml"
-                    if bblock.schema.is_path:
-                        schema_uri = bblock.schema.value.with_name(random_fn).as_uri()
-                    else:
-                        schema_url = urljoin(bblock.schema.value, random_fn)
-                    if schema_ref.startswith('#/'):
-                        schema_ref = f"{bblock.annotated_schema.resolve()}{schema_ref}"
-                    elif not is_url(schema_ref):
-                        if '#' in schema_ref:
-                            path, fragment = schema_ref.split('#', 1)
-                            schema_ref = f"{bblock.annotated_schema.parent.resolve().joinpath(path)}#{fragment}"
-                            schema_uri = (f"{bblock.schema.parent.joinpath(path).with_name(random_fn).as_uri()}"
-                                          f"#{fragment}")
-                        else:
-                            schema_uri = bblock.schema.resolve_ref(schema_ref).with_name(random_fn).as_uri()
-                    snippet_schema = {'$ref': schema_ref}
-                    snippet_schema_validator = get_json_validator(snippet_schema,
-                                                                  schema_uri,
-                                                                  bblocks_register)
-
                 if isinstance(add_snippets_formats, str):
                     add_snippets_formats = [add_snippets_formats]
                 elif not add_snippets_formats:
                     add_snippets_formats = []
-                if code and lang in ('json', 'jsonld', 'ttl', 'json-ld', 'turtle', 'yaml'):
-                    fn = bblock.files_path / (f"example_{example_id + 1}_{snippet_id + 1}"
-                                              f".{FORMAT_ALIASES.get(snippet['language'], snippet['language'])}")
 
-                    output_fn = output_dir / sanitize_filename(example.get('base-output-filename', fn.name))
-                    i = 0
-                    while output_fn.stem in output_base_filenames:
-                        i += 1
-                        output_fn = output_fn.with_stem(f"{output_fn.stem}-{i}")
+                fn = bblock.files_path / (f"example_{example_id + 1}_{snippet_id + 1}"
+                                          f".{FORMAT_ALIASES.get(snippet['language'], snippet['language'])}")
 
-                    with open(output_fn, 'w') as f:
-                        f.write(code)
+                output_fn = output_dir / sanitize_filename(example.get('base-output-filename', fn.name))
+                i = 0
+                while output_fn.stem in output_base_filenames:
+                    i += 1
+                    output_fn = output_fn.with_stem(f"{output_fn.stem}-{i}")
 
-                    snippet['path'] = output_fn
+                with open(output_fn, 'w') as f:
+                    f.write(code)
 
-                    snippet_shacl_closure: list[str | Path] = snippet.get('shacl-closure')
-                    if snippet_shacl_closure:
-                        snippet_shacl_closure = [c if is_url(c) else bblock.files_path.joinpath(c)
-                                                 for c in snippet_shacl_closure]
+                snippet['path'] = output_fn
 
-                    example_result = _validate_resource(
-                        bblock, fn, output_fn,
-                        resource_contents=code,
-                        example_index=(example_id + 1, snippet_id + 1),
-                        schema_url=schema_url,
-                        schema_validator=snippet_schema_validator,
-                        jsonld_context=jsonld_context,
-                        jsonld_url=jsonld_url,
-                        shacl_graphs=shacl_graphs,
-                        json_error=json_error,
-                        shacl_errors=shacl_errors,
-                        base_uri=snippet.get('base-uri', example_base_uri),
-                        schema_ref=snippet.get('schema-ref'),
-                        shacl_closure_files=snippet_shacl_closure,
-                        shacl_closure=bblock_shacl_closure,
-                        resource_url=snippet.get('ref'),
-                    )
+                example_result = _validate_resource(
+                    bblock=bblock,
+                    filename=fn,
+                    output_filename=output_fn,
+                    validators=validators,
+                    resource_contents=code,
+                    example_index=(example_id + 1, snippet_id + 1),
+                    base_uri=snippet.get('base-uri', example_base_uri),
+                    schema_ref=snippet.get('schema-ref'),
+                    resource_url=snippet.get('ref'),
+                    require_fail=False,
+                )
+                if example_result:
                     all_results.append(example_result)
                     final_result = final_result and not example_result.failed
                     for file_format, file_data in example_result.uplifted_files.items():
@@ -911,97 +348,3 @@ def validate_test_resources(bblock: BuildingBlock,
         json.dump(json_report, f, indent=2)
 
     return final_result, test_count, json_report
-
-
-class RefResolver(jsonschema.validators.RefResolver):
-
-    def __init__(self, bblocks_register: BuildingBlockRegister, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.bblocks_register = bblocks_register
-
-    def resolve_remote(self, uri):
-        if uri in self.bblocks_register.local_bblock_files:
-            bblock_id = self.bblocks_register.local_bblock_files[uri]
-            bblock = self.bblocks_register.bblocks[bblock_id]
-            return load_yaml(content=bblock.annotated_schema_contents)
-
-        scheme = urlsplit(uri).scheme
-
-        if scheme in self.handlers:
-            result = self.handlers[scheme](uri)
-        elif scheme in ["http", "https"]:
-            result = load_yaml(content=requests.get(uri).content)
-        else:
-            # Otherwise, pass off to urllib and assume utf-8
-            with urlopen(uri) as url:
-                result = load_yaml(content=url.read().decode("utf-8"))
-
-        if self.cache_remote:
-            self.store[uri] = result
-        return result
-
-
-def get_json_validator(contents, base_uri, bblocks_register: BuildingBlockRegister) -> jsonschema.Validator:
-    if isinstance(contents, dict):
-        schema = contents
-    else:
-        schema = load_yaml(content=contents)
-    resolver = RefResolver(
-        base_uri=base_uri,
-        referrer=schema,
-        bblocks_register=bblocks_register,
-    )
-    validator_cls = validator_for(schema)
-    validator_cls.check_schema(schema)
-    return validator_cls(schema, resolver=resolver)
-
-
-def validate_json(instance: Any, validator: jsonschema.Validator):
-    error = jsonschema.exceptions.best_match(validator.iter_errors(instance))
-    if error is not None:
-        raise error
-
-
-def shacl_validate(g: Graph, s: Graph, ont_graph: Graph | None = None) \
-        -> tuple[bool, Graph, str, dict[pyshacl.Shape, Sequence[Node]]]:
-    validator = pyshacl.Validator(g, shacl_graph=s, ont_graph=ont_graph, options={
-        'advanced': True
-    })
-    focus_nodes: dict[pyshacl.Shape, Sequence[Node]] = {shape: shape.focus_nodes(g)
-                                                        for shape in validator.shacl_graph.shapes
-                                                        if not shape.is_property_shape}
-    conforms, shacl_result, shacl_report = validator.run()
-    return conforms, shacl_result, shacl_report, focus_nodes
-
-
-def format_node(g: Graph, n: Node):
-    if isinstance(n, URIRef):
-        try:
-            prefix, ns, qname = g.namespace_manager.compute_qname(str(n), False)
-            return f"{prefix}:{qname}"
-        except:
-            return f"<{n}>"
-    if isinstance(n, BNode):
-        return f"_:{n}"
-    return str(n)
-
-
-def find_closest_uri(g: Graph, n: Node, max_depth=3) -> list[URIRef] | None:
-    if isinstance(n, URIRef):
-        return [n]
-
-    alt_paths = []
-    for s, p in g.subject_predicates(n, True):
-        if isinstance(s, URIRef):
-            return [s, p]
-        alt_paths.append((s, p))
-
-    if max_depth == 1:
-        return None
-
-    for s, p in alt_paths:
-        found = find_closest_uri(g, s, max_depth - 1)
-        if found:
-            return found + [p]
-
-    return None
