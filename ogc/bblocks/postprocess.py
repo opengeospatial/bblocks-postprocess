@@ -152,13 +152,6 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             base_url, cwd if base_url else output_file_root
         ) + '/'
 
-        if bblock.semanticUplift and bblock.semanticUplift.get('additionalSteps'):
-            for step in bblock.semanticUplift['additionalSteps']:
-                if step.get('ref'):
-                    step['ref'] = PathOrUrl(bblock.files_path).resolve_ref(step['ref']).with_base_url(
-                        base_url, cwd if base_url else output_file_root
-                    )
-
         if not light:
             if not steps or 'tests' in steps:
                 print(f"  > Running tests for {bblock.identifier}", file=sys.stderr)
@@ -197,6 +190,13 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 for transform in bblock.transforms:
                     transform['ref'] = urljoin(bblock.metadata['sourceFiles'], transform['ref'])
                     bblock.metadata['transforms'].append({k: v for k, v in transform.items() if k != 'code'})
+
+            if bblock.semanticUplift and bblock.semanticUplift.get('additionalSteps'):
+                for step in bblock.semanticUplift['additionalSteps']:
+                    if step.get('ref'):
+                        step['ref'] = PathOrUrl(bblock.files_path).resolve_ref(step['ref']).with_base_url(
+                            base_url, cwd if base_url else output_file_root
+                        )
 
         if not light and (not steps or 'doc' in steps):
             print(f"  > Generating documentation for {bblock.identifier}", file=sys.stderr)
