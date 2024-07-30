@@ -7,7 +7,7 @@ requests~=2.31.0
 pyparsing~=3.0.9
 pyshacl~=0.21.0
 # Includes rdflib fixes
-rdflib @ git+https://github.com/avillar/rdflib.git@6.x
+rdflib @ git+https://github.com/avillar/rdflib.git@6.x#egg=rdflib
 jsonref~=1.1.0
 networkx~=3.1
 jq~=1.6

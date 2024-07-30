@@ -122,6 +122,8 @@ class PathOrUrl:
             return PathOrUrl(ref)
         if self.is_url:
             return PathOrUrl(urljoin(self.url, str(ref)))
+        elif self.path.is_dir():
+            return PathOrUrl(self.path / ref)
         else:
             return PathOrUrl(self.path.parent / ref)
 
