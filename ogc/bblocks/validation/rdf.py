@@ -269,11 +269,11 @@ class RdfValidator(Validator):
                  contents: str | None = None,
                  base_uri: str | None = None,
                  additional_shacl_closures: list[str | Path] | None = None,
-                 **kwargs) -> ValidationReportItem | None:
+                 **kwargs) -> bool | None:
         graph = self._load_graph(filename, output_filename, report, contents, base_uri)
 
         if graph is None:
-            return
+            return False
 
         if graph is not None and (contents or filename.suffix != '.ttl'):
             try:
@@ -418,5 +418,3 @@ class RdfValidator(Validator):
                             'shaclFile': str(shacl_file),
                         }
                     ))
-
-        return report
