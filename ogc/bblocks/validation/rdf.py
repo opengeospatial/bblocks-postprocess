@@ -130,8 +130,8 @@ class RdfValidator(Validator):
 
     def _load_graph(self, filename: Path, output_filename: Path, report: ValidationReportItem,
                     contents: str | None = None,
-                    base_uri: str | None = None) -> Graph | None:
-        graph = None
+                    base_uri: str | None = None) -> Graph | None | bool:
+        graph = False
         if filename.suffix == '.json':
             if self.jsonld_error:
                 report.add_entry(ValidationReportEntry(
@@ -262,6 +262,7 @@ class RdfValidator(Validator):
                         'exception': e.__class__.__qualname__,
                     }
                 ))
+                return
 
         return graph
 
@@ -272,8 +273,10 @@ class RdfValidator(Validator):
                  **kwargs) -> bool | None:
         graph = self._load_graph(filename, output_filename, report, contents, base_uri)
 
-        if graph is None:
+        if graph is False:
             return False
+        if graph is None:
+            return
 
         if graph is not None and (contents or filename.suffix != '.ttl'):
             try:
