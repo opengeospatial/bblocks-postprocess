@@ -23,7 +23,7 @@ class Validator(ABC):
                  base_uri: str | None = None,
                  resource_url: str | None = None,
                  require_fail: bool | None = None,
-                 **kwargs) -> ValidationReportItem | None:
+                 **kwargs) -> bool | None:
         raise NotImplementedError
 
 

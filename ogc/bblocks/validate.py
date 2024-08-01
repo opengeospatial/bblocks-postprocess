@@ -185,7 +185,7 @@ def _validate_resource(bblock: BuildingBlock,
                                         base_uri=base_uri,
                                         additional_shacl_closures=additional_shacl_closures,
                                         schema_ref=schema_ref)
-            any_validator_run = any_validator_run or (result is not None)
+            any_validator_run = any_validator_run or (result is not False)
 
     except Exception as unknown_exc:
         report.add_entry(ValidationReportEntry(

@@ -88,10 +88,10 @@ class JsonValidator(Validator):
     def validate(self, filename: Path, output_filename: Path, report: ValidationReportItem,
                  contents: str | None = None,
                  schema_ref: str | None = None,
-                 **kwargs) -> ValidationReportItem | None:
+                 **kwargs) -> bool | None:
 
         if filename.suffix not in ('.json', '.jsonld', '.yaml', '.yml'):
-            return
+            return False
 
         file_from = 'examples' if report.source.type == ValidationItemSourceType.EXAMPLE else 'test resources'
 
@@ -232,5 +232,3 @@ class JsonValidator(Validator):
                     'col': e.colno,
                 }
             ))
-
-        return report
