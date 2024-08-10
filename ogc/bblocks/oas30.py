@@ -400,7 +400,7 @@ def oas31_to_oas30(document: dict, document_location: PathOrUrl | str, bbr: Buil
             for old_schema_ref in refs_to_xdefs[old_ref]:
                 walk_schema(old_schema_ref, update_ref_fn, old_ref=old_ref, new_component_ref=new_component_ref)
 
-        def fn(subschema: dict[str, Any], is_properties=False, property=None, **kwargs):
+        def fn(subschema: dict[str, Any], parent_is_properties=False, property=None, **kwargs):
             if isinstance(subschema, dict):
                 # remove $comment to avoid errors
                 for del_prop in ('$id', '$comment'):
@@ -412,10 +412,10 @@ def oas31_to_oas30(document: dict, document_location: PathOrUrl | str, bbr: Buil
                     if len(subschema.keys()) > 1:
                         subschema.setdefault('allOf', []).append({'$ref': ref})
                         subschema.pop('$ref')
-                if not is_properties:
+                if parent_is_properties or property != 'properties':
                     apply_oas30_subschema_fixes(subschema)
             return {
-                'is_properties': not is_properties and property == 'properties'
+                'is_properties': not parent_is_properties and property == 'properties'
             }
 
         pending_schemas = deque((o,))
