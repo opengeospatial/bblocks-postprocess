@@ -13,6 +13,8 @@ if bblock.example_prefixes:
     output['examplePrefixes'] = bblock.example_prefixes
 if bblock.annotated_schema:
     output['annotatedSchema'] = bblock.annotated_schema_contents
+if bblock.semantic_uplift:
+    output['semanticUplift'] = bblock.semantic_uplift
 if git_repo:
     output['gitRepository'] = git_repo
     output['gitPath'] = git_path

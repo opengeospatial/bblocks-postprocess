@@ -1,0 +1,36 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+title: Additional configuration for semantic uplift of resources
+type: object
+properties:
+  additionalSteps:
+    description: List of additional transformation steps to perform before or after the actual semantic uplift
+    type: array
+    items:
+      type: object
+      properties:
+        type:
+          description: |
+            Type of transformation step. The type will also determine whether the step will be run before or after
+            the uplift
+          enum:
+            - jq
+            - shacl
+            - sparql-construct
+            - sparql-update
+        code:
+          description: Code contents of this transformation step (e.g., jq script or SHACL rules file).
+          type: string
+          pattern: '[^\s]+'
+        ref:
+          description: |
+            Location of a file with the code contents of this transformation ste (instead of
+            providing them inline through the "code" property).
+          type: string
+          pattern: '[^\s]+'
+      required:
+        - type
+      oneOf:
+        - required:
+          - code
+        - required:
+          - ref

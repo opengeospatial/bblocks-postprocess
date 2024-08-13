@@ -217,6 +217,22 @@ class BuildingBlock:
             self._lazy_properties['output_openapi_contents'] = load_file(self.output_openapi, self.remote_cache_dir)
         return self._lazy_properties['output_openapi_contents']
 
+    @property
+    def semantic_uplift(self):
+        if 'semantic_uplift' not in self._lazy_properties:
+            fn = self.files_path / 'semantic_uplift.yaml'
+            semantic_uplift = {}
+            if fn.is_file():
+                semantic_uplift = load_yaml(fn)
+                if not semantic_uplift:
+                    semantic_uplift = {}
+                try:
+                    jsonschema.validate(semantic_uplift, get_schema('semantic-uplift'))
+                except Exception as e:
+                    raise BuildingBlockError(f'Error validating semantic uplift metadata for {self.identifier}') from e
+            self._lazy_properties['semantic_uplift'] = semantic_uplift
+        return self._lazy_properties['semantic_uplift']
+
     def get_extra_test_resources(self) -> Generator[dict, None, None]:
         extra_tests_file = self.files_path / 'tests.yaml'
         if extra_tests_file.is_file():

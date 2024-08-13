@@ -191,12 +191,11 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                     transform['ref'] = urljoin(bblock.metadata['sourceFiles'], transform['ref'])
                     bblock.metadata['transforms'].append({k: v for k, v in transform.items() if k != 'code'})
 
-            if bblock.semanticUplift and bblock.semanticUplift.get('additionalSteps'):
-                for step in bblock.semanticUplift['additionalSteps']:
-                    if step.get('ref'):
-                        step['ref'] = PathOrUrl(bblock.files_path).resolve_ref(step['ref']).with_base_url(
-                            base_url, cwd if base_url else output_file_root
-                        )
+            for step in bblock.semantic_uplift.get('additionalSteps', ()):
+                if step.get('ref'):
+                    step['ref'] = PathOrUrl(bblock.files_path).resolve_ref(step['ref']).with_base_url(
+                        base_url, cwd if base_url else output_file_root
+                    )
 
         if not light and (not steps or 'doc' in steps):
             print(f"  > Generating documentation for {bblock.identifier}", file=sys.stderr)
