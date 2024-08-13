@@ -9,6 +9,8 @@ if bblock.description:
     output['description'] = bblock.description
 if bblock.examples:
     output['examples'] = bblock.examples
+if bblock.example_prefixes:
+    output['examplePrefixes'] = bblock.example_prefixes
 if bblock.annotated_schema:
     output['annotatedSchema'] = bblock.annotated_schema_contents
 if git_repo:

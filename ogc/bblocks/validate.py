@@ -150,7 +150,8 @@ def _validate_resource(bblock: BuildingBlock,
                        schema_ref: str | None = None,
                        require_fail: bool | None = None,
                        resource_url: str | None = None,
-                       example_index: tuple[int, int] | None = None) -> ValidationReportItem | None:
+                       example_index: tuple[int, int] | None = None,
+                       prefixes: dict[str, str] | None = None) -> ValidationReportItem | None:
     if require_fail is None:
         require_fail = filename.stem.endswith('-fail') and not example_index
 
@@ -184,7 +185,8 @@ def _validate_resource(bblock: BuildingBlock,
                                         contents=resource_contents,
                                         base_uri=base_uri,
                                         additional_shacl_closures=additional_shacl_closures,
-                                        schema_ref=schema_ref)
+                                        schema_ref=schema_ref,
+                                        prefixes=prefixes)
             any_validator_run = any_validator_run or (result is not False)
 
     except Exception as unknown_exc:
@@ -192,7 +194,7 @@ def _validate_resource(bblock: BuildingBlock,
             section=ValidationReportSection.UNKNOWN,
             message=','.join(traceback.format_exception(unknown_exc)),
             is_error=True,
-            is_global=True,
+            is_global=False,
             payload={
                 'exception': unknown_exc.__class__.__qualname__,
             }
@@ -324,6 +326,7 @@ def validate_test_resources(bblock: BuildingBlock,
                     schema_ref=snippet.get('schema-ref'),
                     resource_url=snippet.get('ref'),
                     require_fail=False,
+                    prefixes=example.get('prefixes'),
                 )
                 if example_result:
                     all_results.append(example_result)
