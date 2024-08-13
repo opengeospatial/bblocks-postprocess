@@ -16,25 +16,24 @@ class Uplifter:
         self.bblock_files = PathOrUrl(bblock.files_path)
 
     def _run_steps(self, stage: str, report: ValidationReportItem, input_data: Any, *args):
-        if self.bblock.semanticUplift and self.bblock.semanticUplift.get('additionalSteps'):
-            for idx, step in enumerate(self.bblock.semanticUplift['additionalSteps']):
-                func_name = f"_{stage}_{step['type'].replace('-', '_')}"
-                if hasattr(self, func_name):
-                    code = step.get('code')
-                    report_source = 'inline code'
-                    if not code:
-                        if step.get('ref'):
-                            code = load_file(self.bblock_files.resolve_ref(step['ref']), self.bblock.remote_cache_dir)
-                            report_source = step['ref']
-                        else:
-                            raise ValueError(
-                                f'No code or ref found for semanticUplift step {idx} in {self.bblock.identifier}')
-                    step['stage'] = stage
-                    report.add_entry(ValidationReportEntry(
-                        section=ValidationReportSection.SEMANTIC_UPLIFT,
-                        message=f"Running {stage}-uplift {step['type']} transform step from {report_source}",
-                    ))
-                    input_data = getattr(self, func_name)(code, input_data, *args)
+        for idx, step in enumerate(self.bblock.semantic_uplift.get('additionalSteps', ())):
+            func_name = f"_{stage}_{step['type'].replace('-', '_')}"
+            if hasattr(self, func_name):
+                code = step.get('code')
+                report_source = 'inline code'
+                if not code:
+                    if step.get('ref'):
+                        code = load_file(self.bblock_files.resolve_ref(step['ref']), self.bblock.remote_cache_dir)
+                        report_source = step['ref']
+                    else:
+                        raise ValueError(
+                            f'No code or ref found for semanticUplift step {idx} in {self.bblock.identifier}')
+                step['stage'] = stage
+                report.add_entry(ValidationReportEntry(
+                    section=ValidationReportSection.SEMANTIC_UPLIFT,
+                    message=f"Running {stage}-uplift {step['type']} transform step from {report_source}",
+                ))
+                input_data = getattr(self, func_name)(code, input_data, *args)
         return input_data
 
     def pre_uplift(self, report: ValidationReportItem, json_doc: dict | list):
