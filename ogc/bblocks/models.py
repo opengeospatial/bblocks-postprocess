@@ -82,7 +82,7 @@ class BuildingBlock:
         self.assets_path = ap if ap.is_dir() else None
 
         self.examples_file = fp / 'examples.yaml'
-        self.examples = self._load_examples()
+        self._load_examples()
 
         self.tests_dir = fp / 'tests'
 
@@ -132,6 +132,7 @@ class BuildingBlock:
 
     def _load_examples(self):
         examples = None
+        prefixes = {}
         if self.examples_file.is_file():
             examples = load_yaml(self.examples_file)
             if not examples:
@@ -140,6 +141,10 @@ class BuildingBlock:
                 jsonschema.validate(examples, get_schema('examples'))
             except Exception as e:
                 raise BuildingBlockError('Error validating building block examples (examples.yaml)') from e
+
+            if isinstance(examples, dict):
+                prefixes = examples.get('prefixes', {})
+                examples = examples['examples']
 
             for example in examples:
                 for snippet in example.get('snippets', ()):
@@ -152,7 +157,11 @@ class BuildingBlock:
                         # Load transform code from "ref"
                         ref = transform['ref'] if is_url(transform['ref']) else self.files_path / transform['ref']
                         transform['code'] = load_file(ref)
-        return examples
+                if prefixes:
+                    example['prefixes'] = {**prefixes, **example.get('prefixes', {})}
+
+        self.example_prefixes = prefixes
+        self.examples = examples
 
     @property
     def schema_contents(self):

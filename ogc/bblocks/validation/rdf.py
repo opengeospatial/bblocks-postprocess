@@ -116,13 +116,13 @@ class RdfValidator(Validator):
                     self.shacl_errors.append(f"Error processing {shacl_file}: {str(e)}")
             inherited_shacl_rules[shacl_bblock] = bblock_shacl_files
 
-        for shacle_closure in bblock.shaclClosures or ():
+        for shacl_closure in bblock.shaclClosures or ():
             try:
-                self.closure_graph.parse(bblock.resolve_file(shacle_closure), format='turtle')
+                self.closure_graph.parse(bblock.resolve_file(shacl_closure), format='turtle')
             except HTTPError as e:
                 self.shacl_errors.append(f"Error retrieving {e.url}: {e}")
             except Exception as e:
-                self.shacl_errors.append(f"Error processing {shacle_closure}: {str(e)}")
+                self.shacl_errors.append(f"Error processing {shacl_closure}: {str(e)}")
 
         bblock.metadata['shaclRules'] = inherited_shacl_rules
 
@@ -130,7 +130,8 @@ class RdfValidator(Validator):
 
     def _load_graph(self, filename: Path, output_filename: Path, report: ValidationReportItem,
                     contents: str | None = None,
-                    base_uri: str | None = None) -> Graph | None | bool:
+                    base_uri: str | None = None,
+                    prefixes: dict[str, str] | None = None) -> Graph | None | bool:
         graph = False
         if filename.suffix == '.json':
             if self.jsonld_error:
@@ -242,6 +243,13 @@ class RdfValidator(Validator):
             rdf_format = 'ttl' if output_filename.suffix == '.ttl' else 'json-ld'
             try:
                 if contents:
+                    # Prepend prefixes
+                    if prefixes:
+                        contents = '\n'.join(f"@prefix {k}: <{v}> ." for k, v in prefixes.items()) + '\n' + contents
+                        report.add_entry(ValidationReportEntry(
+                            section=ValidationReportSection.TURTLE,
+                            message=f"Prefixes are defined for {', '.join(prefixes.keys())}"
+                        ))
                     graph = Graph().parse(data=contents, format=rdf_format)
                     report.add_entry(ValidationReportEntry(
                         section=ValidationReportSection.FILES,
@@ -270,8 +278,9 @@ class RdfValidator(Validator):
                  contents: str | None = None,
                  base_uri: str | None = None,
                  additional_shacl_closures: list[str | Path] | None = None,
+                 prefixes: dict[str, str] | None = None,
                  **kwargs) -> bool | None:
-        graph = self._load_graph(filename, output_filename, report, contents, base_uri)
+        graph = self._load_graph(filename, output_filename, report, contents, base_uri, prefixes)
 
         if graph is False:
             return False

@@ -1,135 +1,177 @@
 "$schema": https://json-schema.org/draft/2020-12/schema
 title: OGC Building Blocks examples schema
-type: array
-items:
-  type: object
-  anyOf:
-    - required:
-        - content
-    - required:
-        - snippets
-      properties:
-        snippets:
-          minItems: 1
-  properties:
-    title:
-      description: A title for this example
-      type: string
-    content:
-      description: Markdown contents to describe the example.
-      type: string
-    base-uri:
-      description: Base URI that will be used for semantic uplift (JSON -> JSON-LD -> Turtle).
-      type: string
-    base-output-filename:
-      description: |
-        Base filename that will be used for writing this example to its own file. Extension, if any, will be discarded.
-      type: string
-    snippets:
-      description: |
-        Collection of snippets to illustrate this example. Preferably, only one snippet per language
-        should be added here, as additional snippets in the same language can be created as different
-        examples.
-      type: array
-      items:
-        type: object
-        required:
-          - language
+$defs:
+
+  examples:
+    type: array
+    items:
+      $ref: '#/$defs/example'
+
+  example:
+    type: object
+    anyOf:
+      - required:
+          - content
+      - required:
+          - snippets
         properties:
-          language:
-            description: |
-              The language for this snippet. Can be a file format (such as 'jsonld' or 'turtle'),
-              a MIME type (e.g., 'text/html'), a programming language ('python'). 'plaintext' by default.
-            type: string
-          code:
-            description: Code block for the snippet. Either this property or 'ref' have to be provided.
-            type: string
-          ref:
-            description: |
-              A reference to a filename (relative to the examples.yaml file) with the contents of
-              this snippet, as an alternative to inlining them in the 'code' property.
-            type: string
-            format: uri-reference
-          base-uri:
-            description: |
-              Base URI that will be used when semantically uplifting this snippet. Overrides
-              that of the example, if any.
-            type: string
-          schema-ref:
-            description: |
-              A reference to a JSON schema or subschema that will be used to validate this snippet.
-              A full URL or a filename (relative to the building block's 'schema.yaml'), with or
-              without a fragment, can be provided. If only a fragment is provided, it will be
-              looked up inside the default 'schema.yaml'. If none provided, the default schema for
-              the building block will be employed.
-            type: string
-            format: uri-reference
-          doc-uplift-formats:
-            description: |
-              Uplifted snippet format, or array thereof, that will be added to the output documentation.
-              If omitted, both 'jsonld' and 'ttl' will be used; if empty array or null, no uplifted snippets
-              will be included in the documentation.
-            oneOf:
-              - type: string
-                enum: [jsonld, ttl]
-              - type: array
-                items:
-                  type: string
-                  enum: [jsonld, ttl]
-              - type: 'null'
-          shacl-closure:
-            description: |
-              List of Turtle documents (file names or URLs) that will be used as the SHACL closure graph. This list
-              will be merged with the one defined inside `bblock.json`, if any.
-            type: array
+          snippets:
+            minItems: 1
+    properties:
+      title:
+        description: A title for this example
+        type: string
+      content:
+        description: Markdown contents to describe the example.
+        type: string
+      base-uri:
+        description: Base URI that will be used for semantic uplift (JSON -> JSON-LD -> Turtle).
+        type: string
+      base-output-filename:
+        description: |
+          Base filename that will be used for writing this example to its own file. Extension, if any, will be discarded.
+        type: string
+      prefixes:
+        description: |
+          Prefixes for this example. Will be merged with top-level `prefixes`, if any, with the example
+          ones taking precedence.
+        $ref: '#/$defs/prefixes'
+      snippets:
+        description: |
+          Collection of snippets to illustrate this example. Preferably, only one snippet per language
+          should be added here, as additional snippets in the same language can be created as different
+          examples.
+        type: array
+        items:
+          $ref: '#/$defs/snippet'
+
+      transforms:
+        description: |
+          List of transforms for this example
+        type: array
+        items:
+          $ref: '#/$defs/transform'
+
+  snippet:
+    type: object
+    required:
+      - language
+    properties:
+      language:
+        description: |
+          The language for this snippet. Can be a file format (such as 'jsonld' or 'turtle'),
+          a MIME type (e.g., 'text/html'), a programming language ('python'). 'plaintext' by default.
+        type: string
+      code:
+        description: Code block for the snippet. Either this property or 'ref' have to be provided.
+        type: string
+      ref:
+        description: |
+          A reference to a filename (relative to the examples.yaml file) with the contents of
+          this snippet, as an alternative to inlining them in the 'code' property.
+        type: string
+        format: uri-reference
+      base-uri:
+        description: |
+          Base URI that will be used when semantically uplifting this snippet. Overrides
+          that of the example, if any.
+        type: string
+      schema-ref:
+        description: |
+          A reference to a JSON schema or subschema that will be used to validate this snippet.
+          A full URL or a filename (relative to the building block's 'schema.yaml'), with or
+          without a fragment, can be provided. If only a fragment is provided, it will be
+          looked up inside the default 'schema.yaml'. If none provided, the default schema for
+          the building block will be employed.
+        type: string
+        format: uri-reference
+      doc-uplift-formats:
+        description: |
+          Uplifted snippet format, or array thereof, that will be added to the output documentation.
+          If omitted, both 'jsonld' and 'ttl' will be used; if empty array or null, no uplifted snippets
+          will be included in the documentation.
+        oneOf:
+          - type: string
+            enum: [ jsonld, ttl ]
+          - type: array
             items:
               type: string
-          expand-level:
-            description: Default expand level for Treedoc Viewer, where applicable (JSON, YAML)
-            type: integer
-            minimum: 1
-        oneOf:
-          - required:
-            - code
-          - required:
-            - ref
-    transforms:
-      description: |
-        List of transforms for this example
-      type: array
-      items:
-        type: object
-        required:
-          - input-language
-          - output-language
-          - type
-        oneOf:
-          - required:
-              - code
-          - required:
-              - ref
-        properties:
-          input-language:
-            description: |
-              Input language of the code snippet from this example that will be transformed. It can correspond to a
-              manually-provided snippet, or to an uplifted one.
-            type: string
-          output-language:
-            description: |
-              Output language of the transformed snippet.
-            type: string
-          type:
-            description: |
-              The type of this transform. "jq" or "shacl" are examples of automatically processed ones.
-            type: string
-          description:
-            description: Textual description of this transformation. Markdown is accepted.
-            type: string
-          code:
-            description: Code contents of this transformation (e.g., jq script or SHACL rules file).
-            type: string
-          ref:
-            description: |
-              Location of a file with the code contents of this transformation (instead of
-              providing them inline through the "code" property).
-            type: string
+              enum: [ jsonld, ttl ]
+          - type: 'null'
+      shacl-closure:
+        description: |
+          List of Turtle documents (file names or URLs) that will be used as the SHACL closure graph. This list
+          will be merged with the one defined inside `bblock.json`, if any.
+        type: array
+        items:
+          type: string
+      expand-level:
+        description: Default expand level for Treedoc Viewer, where applicable (JSON, YAML)
+        type: integer
+        minimum: 1
+    oneOf:
+      - required:
+          - code
+      - required:
+          - ref
+
+  transform:
+    type: object
+    required:
+      - input-language
+      - output-language
+      - type
+    oneOf:
+      - required:
+          - code
+      - required:
+          - ref
+    properties:
+      input-language:
+        description: |
+          Input language of the code snippet from this example that will be transformed. It can correspond to a
+          manually-provided snippet, or to an uplifted one.
+        type: string
+      output-language:
+        description: |
+          Output language of the transformed snippet.
+        type: string
+      type:
+        description: |
+          The type of this transform. "jq" or "shacl" are examples of automatically processed ones.
+        type: string
+      description:
+        description: Textual description of this transformation. Markdown is accepted.
+        type: string
+      code:
+        description: Code contents of this transformation (e.g., jq script or SHACL rules file).
+        type: string
+      ref:
+        description: |
+          Location of a file with the code contents of this transformation (instead of
+          providing them inline through the "code" property).
+        type: string
+
+  prefixes:
+    type: object
+    description: Map of prefix -> URI that will be used for Turtle resources
+    additionalProperties:
+      type: string
+    examples:
+      - dct: http://purl.org/dc/terms/
+        dcat: http://www.w3.org/ns/dcat#
+      - skos: http://www.w3.org/2004/02/skos/core#
+        rdfs: http://www.w3.org/2000/01/rdf-schema#
+        schema: http://schema.org/
+
+oneOf:
+  - $ref: '#/$defs/examples'
+  - type: object
+    properties:
+      prefixes:
+        description: Default prefixes for all examples
+        $ref: '#/$defs/prefixes'
+      examples:
+        $ref: '#/$defs/examples'
+    required:
+      - examples
