@@ -140,7 +140,8 @@ class BuildingBlock:
             try:
                 jsonschema.validate(examples, get_schema('examples'))
             except Exception as e:
-                raise BuildingBlockError('Error validating building block examples (examples.yaml)') from e
+                raise BuildingBlockError(f'Error validating building block examples (examples.yaml)'
+                                         f' for {self.identifier}') from e
 
             if isinstance(examples, dict):
                 prefixes = examples.get('prefixes', {})
