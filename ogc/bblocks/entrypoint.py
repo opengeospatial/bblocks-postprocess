@@ -201,6 +201,12 @@ if __name__ == '__main__':
         if sparql_conf and sparql_conf.get('query'):
             register_additional_metadata['sparqlEndpoint'] = sparql_conf['query']
 
+    bb_local_config_file = Path('bblocks-config-local.yml')
+    import_local_mappings = None
+    if bb_local_config_file.is_file():
+        bb_local_config = load_yaml(filename=bb_local_config_file)
+        import_local_mappings = bb_local_config.get('imports-local')
+
     register_additional_metadata['modified'] = datetime.datetime.now().isoformat()
 
     if os.environ.get('BBP_GIT_INFO_FILE'):
@@ -261,7 +267,8 @@ if __name__ == '__main__':
                 steps=steps,
                 git_repo_path=git_repo_path,
                 viewer_path=(args.viewer_path or '.') if deploy_viewer else None,
-                additional_metadata=register_additional_metadata)
+                additional_metadata=register_additional_metadata,
+                import_local_mappings=import_local_mappings)
 
     # 2. Uplift register.json
     print(f"Running semantic uplift of {register_file}", file=sys.stderr)
