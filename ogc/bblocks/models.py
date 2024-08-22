@@ -279,10 +279,11 @@ class BuildingBlock:
 
 class ImportedBuildingBlocks:
 
-    def __init__(self, metadata_urls: list[str] | None):
+    def __init__(self, metadata_urls: list[str] | None, local_mappings: dict[str, str] | None):
         self.bblocks: dict[str, dict] = {}
         self.imported_registers: dict[str, list[str]] = {}
         self.real_metadata_urls: dict[str, str] = {}
+        self.local_mappings = local_mappings
         if metadata_urls:
             pending_urls = deque(metadata_urls)
             while pending_urls:
@@ -293,24 +294,46 @@ class ImportedBuildingBlocks:
                 pending_urls.extend(u for u in new_pending if u not in self.imported_registers)
 
     def load(self, metadata_url: str) -> tuple[list[str], str]:
+
         imported: dict | list | None = None
-        metadata_url_trailing = metadata_url + ('' if metadata_url.endswith('/') else '/')
-        for url in (metadata_url,
-                    metadata_url_trailing + 'build/register.json',
-                    metadata_url_trailing + 'register.json'):
-            try:
-                r = requests.get(url)
-                if r.ok:
-                    imported = r.json()
-                    if (isinstance(imported, dict) and 'bblocks' in imported) or isinstance(imported, list):
-                        metadata_url = url
-                        break
-            except:
-                # Ignore exceptions
-                pass
+
+        tested_locations: dict[str | Path, Any] = {}
+
+        if self.local_mappings and metadata_url in self.local_mappings:
+            metadata_path = Path(self.local_mappings[metadata_url])
+            for path in (metadata_path, metadata_path / 'build/register.json', metadata_path / 'register.json'):
+                try:
+                    tested_locations[path] = True
+                    if path.is_file():
+                        imported = load_yaml(filename=path)
+                        if (isinstance(imported, dict) and 'bblocks' in imported) or isinstance(imported, list):
+                            break
+                except:
+                    # Ignore exceptions
+                    imported = None
+                    pass
+
+        else:
+            metadata_url_trailing = metadata_url + ('' if metadata_url.endswith('/') else '/')
+            for url in (metadata_url,
+                        metadata_url_trailing + 'build/register.json',
+                        metadata_url_trailing + 'register.json'):
+                try:
+                    tested_locations[url] = True
+                    r = requests.get(url)
+                    if r.ok:
+                        imported = r.json()
+                        if (isinstance(imported, dict) and 'bblocks' in imported) or isinstance(imported, list):
+                            metadata_url = url
+                            break
+                except:
+                    # Ignore exceptions
+                    imported = None
+                    pass
 
         if imported is None:
-            raise BuildingBlockError(f'Could not load metadata from {metadata_url}')
+            tested_locations_str = '  ' + '\n  '.join(str(loc) for loc in tested_locations.keys())
+            raise BuildingBlockError(f"Could not load metadata from {metadata_url}, tested:\n{tested_locations_str}")
 
         if isinstance(imported, list):
             bblock_list = imported

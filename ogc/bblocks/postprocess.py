@@ -40,7 +40,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 bbr_config: dict | None = None,
                 git_repo_path: Path | None = None,
                 viewer_path: str | Path | None = None,
-                additional_metadata: dict | None = None) -> list[dict]:
+                additional_metadata: dict | None = None,
+                import_local_mappings: dict[str, str] | None = None) -> list[dict]:
 
     cwd = Path().resolve()
 
@@ -66,7 +67,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
     child_bblocks = []
     super_bblocks = {}
-    imported_bblocks = ImportedBuildingBlocks(imported_registers)
+    imported_bblocks = ImportedBuildingBlocks(imported_registers, local_mappings=import_local_mappings)
     bbr = BuildingBlockRegister(registered_items_path,
                                 fail_on_error=fail_on_error,
                                 prefix=id_prefix,
