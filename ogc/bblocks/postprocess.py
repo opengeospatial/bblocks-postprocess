@@ -396,7 +396,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 **output_register_json,
             }
 
-        output_register_json['imports'] = imported_registers or []
+        if imported_bblocks.real_metadata_urls:
+            output_register_json['imports'] = list(imported_bblocks.real_metadata_urls.values())
         output_register_json['bblocks'] = output_bblocks
 
         if output_file == '-':

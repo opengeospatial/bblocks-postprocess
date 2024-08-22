@@ -282,17 +282,36 @@ class ImportedBuildingBlocks:
     def __init__(self, metadata_urls: list[str] | None):
         self.bblocks: dict[str, dict] = {}
         self.imported_registers: dict[str, list[str]] = {}
+        self.real_metadata_urls: dict[str, str] = {}
         if metadata_urls:
             pending_urls = deque(metadata_urls)
             while pending_urls:
                 metadata_url = pending_urls.popleft()
-                new_pending = self.load(metadata_url)
+                new_pending, real_metadata_url = self.load(metadata_url)
+                if metadata_url in metadata_urls:
+                    self.real_metadata_urls[metadata_url] = real_metadata_url
                 pending_urls.extend(u for u in new_pending if u not in self.imported_registers)
 
-    def load(self, metadata_url: str) -> list[str]:
-        r = requests.get(metadata_url)
-        r.raise_for_status()
-        imported = r.json()
+    def load(self, metadata_url: str) -> tuple[list[str], str]:
+        imported: dict | list | None = None
+        metadata_url_trailing = metadata_url + ('' if metadata_url.endswith('/') else '/')
+        for url in (metadata_url,
+                    metadata_url_trailing + 'build/register.json',
+                    metadata_url_trailing + 'register.json'):
+            try:
+                r = requests.get(url)
+                if r.ok:
+                    imported = r.json()
+                    if (isinstance(imported, dict) and 'bblocks' in imported) or isinstance(imported, list):
+                        metadata_url = url
+                        break
+            except:
+                # Ignore exceptions
+                pass
+
+        if imported is None:
+            raise BuildingBlockError(f'Could not load metadata from {metadata_url}')
+
         if isinstance(imported, list):
             bblock_list = imported
             dependencies = []
@@ -304,7 +323,7 @@ class ImportedBuildingBlocks:
             bblock['register'] = self
             self.bblocks[bblock['itemIdentifier']] = bblock
             self.imported_registers[metadata_url].append(bblock['itemIdentifier'])
-        return dependencies
+        return dependencies, metadata_url
 
 
 class BuildingBlockRegister:
