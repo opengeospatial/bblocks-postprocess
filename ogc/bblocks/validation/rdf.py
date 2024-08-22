@@ -143,7 +143,7 @@ class RdfValidator(Validator):
                 ))
                 return
 
-            if not self.jsonld_context:
+            if not self.jsonld_context and not self.prefixes:
                 return
 
             report.add_entry(ValidationReportEntry(
@@ -162,27 +162,24 @@ class RdfValidator(Validator):
             # Additional steps for semantic uplift
             json_doc = self.uplifter.pre_uplift(report, json_doc)
 
-            new_context = self.jsonld_context['@context']
+            new_context = [self.jsonld_context['@context'] if self.jsonld_context else {}]
+
+            if prefixes:
+                new_context.insert(0, prefixes)
 
             # Preprend bblock context to snippet context
             if isinstance(json_doc, dict):
                 if '@context' in json_doc:
                     existing_context = json_doc['@context']
                     if isinstance(existing_context, list):
-                        new_context = [
-                            self.jsonld_context['@context'],
-                            *existing_context,
-                        ]
+                        new_context.extend(existing_context)
                     else:
-                        new_context = [
-                            self.jsonld_context['@context'],
-                            existing_context,
-                        ]
+                        new_context.append(existing_context)
                 jsonld_uplifted = json_doc.copy()
-                jsonld_uplifted['@context'] = new_context
+                jsonld_uplifted['@context'] = new_context if len(new_context) > 1 else new_context[0]
             else:
                 jsonld_uplifted = {
-                    '@context': new_context,
+                    '@context': new_context if len(new_context) > 1 else new_context[0],
                     '@graph': json_doc,
                 }
 
@@ -210,7 +207,7 @@ class RdfValidator(Validator):
             jsonld_url = self.bblock.metadata.get('ldContext')
             if jsonld_url:
                 if isinstance(jsonld_uplifted['@context'], list):
-                    jsonld_uplifted['@context'][0] = jsonld_url
+                    jsonld_uplifted['@context'][1 if prefixes else 0] = jsonld_url
                 else:
                     jsonld_uplifted['@context'] = jsonld_url
             jsonld_fn = output_filename.with_suffix('.jsonld')
@@ -231,11 +228,30 @@ class RdfValidator(Validator):
                 graph = self.uplifter.post_uplift(report, graph)
 
         elif output_filename.suffix == '.jsonld':
-            if contents:
-                graph = Graph().parse(data=contents, format='json-ld', base=base_uri)
-            else:
-                graph = Graph().parse(filename, format='json-ld', base=base_uri)
 
+            if contents:
+                jsonld_doc = load_yaml(content=contents)
+            else:
+                jsonld_doc = load_yaml(filename=filename)
+
+            if prefixes:
+                if isinstance(jsonld_doc, dict):
+                    jsonld_doc.setdefault('@context', {})
+                    if isinstance(jsonld_doc['@context'], list):
+                        jsonld_doc['@context'].insert(0, {'@context': prefixes})
+                    else:
+                        jsonld_doc['@context'] = [
+                            {'@context': prefixes},
+                            jsonld_doc['@context'],
+                        ]
+
+                elif isinstance(jsonld_doc, list):
+                    jsonld_doc = {
+                        '@context': prefixes,
+                        '@graph': jsonld_doc,
+                    }
+
+            graph = Graph().parse(data=json.dumps(jsonld_doc), format='json-ld', base=base_uri)
             graph = self.uplifter.post_uplift(report, graph)
 
         elif output_filename.suffix in ('.ttl', '.jsonld'):
