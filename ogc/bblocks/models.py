@@ -221,7 +221,7 @@ class BuildingBlock:
     @property
     def semantic_uplift(self):
         if 'semantic_uplift' not in self._lazy_properties:
-            fn = self.files_path / 'semantic_uplift.yaml'
+            fn = self.files_path / 'semantic-uplift.yaml'
             semantic_uplift = {}
             if fn.is_file():
                 semantic_uplift = load_yaml(fn)
