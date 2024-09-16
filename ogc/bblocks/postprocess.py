@@ -12,6 +12,7 @@ from pathlib import Path
 import traceback
 from urllib.parse import urljoin
 
+from ogc.na.exceptions import ContextLoadError
 from ogc.na.util import is_url, dump_yaml
 
 from ogc.bblocks.generate_docs import DocGenerator
@@ -280,6 +281,11 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                         if fail_on_error:
                             raise
                         traceback.print_exception(e, file=sys.stderr)
+                        if isinstance(e, ContextLoadError):
+                            if e.__cause__:
+                                print(f"{e}: {e.__cause__}", file=sys.stderr)
+                            else:
+                                print(str(e), file=sys.stderr)
 
                 if building_block.openapi.exists:
                     print(f"Annotating OpenAPI document for {building_block.identifier}", file=sys.stderr)
