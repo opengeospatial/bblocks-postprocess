@@ -143,7 +143,7 @@ class RdfValidator(Validator):
                 ))
                 return
 
-            if not self.jsonld_context and not self.prefixes:
+            if not self.jsonld_context and not prefixes:
                 return
 
             report.add_entry(ValidationReportEntry(
