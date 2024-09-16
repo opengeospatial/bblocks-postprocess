@@ -68,7 +68,7 @@ def load_file(fn, remote_cache_dir: Path | None = None):
 
 def get_schema(t: str) -> dict:
     if t not in loaded_schemas:
-        loaded_schemas[t] = load_yaml(Path(__file__).parent / f'{t}-schema.yaml')
+        loaded_schemas[t] = load_yaml(Path(__file__).parent / f'schemas/{t}.schema.yaml')
     return loaded_schemas[t]
 
 

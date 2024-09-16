@@ -54,7 +54,7 @@ class BuildingBlock:
             self.metadata = json.load(f)
 
             try:
-                jsonschema.validate(self.metadata, get_schema('metadata'))
+                jsonschema.validate(self.metadata, get_schema('bblock'))
             except Exception as e:
                 raise BuildingBlockError('Error validating building block metadata') from e
 
@@ -241,7 +241,7 @@ class BuildingBlock:
             if not extra_tests:
                 return
             try:
-                jsonschema.validate(extra_tests, get_schema('extra-tests'))
+                jsonschema.validate(extra_tests, get_schema('tests'))
             except Exception as e:
                 raise BuildingBlockError('Error validating extra tests (tests.yaml)') from e
 
