@@ -50,7 +50,7 @@ if __name__ == '__main__':
 
     parser.add_argument(
         '--fail-on-error',
-        default='false',
+        default='true',
         help='Fail run if an error is encountered',
     )
 
