@@ -45,13 +45,6 @@ $defs:
         items:
           $ref: '#/$defs/snippet'
 
-      transforms:
-        description: |
-          List of transforms for this example
-        type: array
-        items:
-          $ref: '#/$defs/transform'
-
   snippet:
     type: object
     required:
@@ -114,43 +107,6 @@ $defs:
           - code
       - required:
           - ref
-
-  transform:
-    type: object
-    required:
-      - input-language
-      - output-language
-      - type
-    oneOf:
-      - required:
-          - code
-      - required:
-          - ref
-    properties:
-      input-language:
-        description: |
-          Input language of the code snippet from this example that will be transformed. It can correspond to a
-          manually-provided snippet, or to an uplifted one.
-        type: string
-      output-language:
-        description: |
-          Output language of the transformed snippet.
-        type: string
-      type:
-        description: |
-          The type of this transform. "jq" or "shacl" are examples of automatically processed ones.
-        type: string
-      description:
-        description: Textual description of this transformation. Markdown is accepted.
-        type: string
-      code:
-        description: Code contents of this transformation (e.g., jq script or SHACL rules file).
-        type: string
-      ref:
-        description: |
-          Location of a file with the code contents of this transformation (instead of
-          providing them inline through the "code" property).
-        type: string
 
   prefixes:
     type: object

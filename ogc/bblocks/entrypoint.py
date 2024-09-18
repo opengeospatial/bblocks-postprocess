@@ -96,7 +96,7 @@ if __name__ == '__main__':
 
     parser.add_argument(
         '--steps',
-        help='Comma-separated list of postprocessing steps that will run (annotate,jsonld,superbb,'
+        help='Comma-separated list of postprocessing steps that will run (annotate,jsonld,'
              'tests,transforms,doc,register). Forces --clean to false'
     )
 

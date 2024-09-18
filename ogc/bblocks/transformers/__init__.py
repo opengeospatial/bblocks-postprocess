@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-import functools
 import importlib
+import inspect
 from pathlib import Path
-from typing import AnyStr
 
-from ogc.bblocks.models import TransformMetadata
+from ogc.bblocks.models import Transformer
+from ogc.bblocks.transformers.jq import transform_type
 
-transform_modules = []
+transformers: dict[str, Transformer] = {}
 
 for mod_file in Path(__file__).parent.glob('*.py'):
     if mod_file.name.startswith('_'):
@@ -15,23 +15,7 @@ for mod_file in Path(__file__).parent.glob('*.py'):
     mod_name = f".{mod_file.stem}"
     module = importlib.import_module(mod_name, package=__name__)
 
-    if hasattr(module, 'transform_type'):
-        transform_modules.append(module)
-
-
-@functools.lru_cache
-def find_transformer(transform_type, source_mime_type, target_mime_type) -> module:
-    for mod in transform_modules:
-        if (mod.transform_type == transform_type
-                and source_mime_type in mod.source_mime_types
-                and target_mime_type in mod.target_mime_types):
-            return mod
-
-
-def transform(transform_metadata: TransformMetadata) -> AnyStr | None:
-    transformer = find_transformer(transform_metadata.type,
-                                   transform_metadata.source_mime_type,
-                                   transform_metadata.target_mime_type)
-    if not transformer:
-        return None
-    return transformer.transform(transform_metadata)
+    for cls_name, cls in inspect.getmembers(module, inspect.isclass):
+        if issubclass(cls, Transformer) and cls is not Transformer:
+            transformer = cls()
+            transformers[transformer.transform_type] = transformer
