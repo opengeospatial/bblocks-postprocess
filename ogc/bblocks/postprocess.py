@@ -67,7 +67,6 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         registered_items_path = Path(registered_items_path)
 
     child_bblocks = []
-    super_bblocks = {}
     imported_bblocks = ImportedBuildingBlocks(imported_registers, local_mappings=import_local_mappings)
     bbr = BuildingBlockRegister(registered_items_path,
                                 fail_on_error=fail_on_error,
@@ -170,7 +169,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 if test_count and test_outputs_base_url:
                     bblock.metadata['testOutputs'] = f"{test_outputs_base_url}{bblock.subdirs}/"
 
-        if not light and (not steps or 'transforms' in steps):
+        if not light and (not steps or 'transforms' in steps) and bblock.transforms:
             print(f"  > Running transforms for {bblock.identifier}", file=sys.stderr)
             apply_transforms(bblock, outputs_path=test_outputs_path)
 
@@ -190,8 +189,9 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             if bblock.transforms:
                 bblock.metadata['transforms'] = []
                 for transform in bblock.transforms:
-                    transform['ref'] = urljoin(bblock.metadata['sourceFiles'], transform['ref'])
-                    bblock.metadata['transforms'].append({k: v for k, v in transform.items() if k != 'code'})
+                    if 'ref' in transform:
+                        transform['ref'] = urljoin(bblock.metadata['sourceFiles'], transform['ref'])
+                    bblock.metadata['transforms'].append(transform)
 
             for step in bblock.semantic_uplift.get('additionalSteps', ()):
                 if step.get('ref'):
@@ -229,18 +229,14 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         else:
             filter_id = bb_filter
 
-    if transformers.transform_modules:
+    if transformers:
         print("Available transformers:", file=sys.stderr)
-        for t in transformers.transform_modules:
+        for t in transformers.values():
             print(f"  - {t.transform_type}", file=sys.stderr)
     else:
         print("No transformers found", file=sys.stderr)
 
     for building_block in bbr.bblocks.values():
-        if building_block.super_bblock:
-            super_bblocks[building_block.files_path] = building_block
-            continue
-
         if filter_id is None or building_block.identifier == filter_id:
             if not steps or 'annotate' in steps:
 
@@ -363,7 +359,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                     print(f"[Error] Writing context for {building_block.identifier}: {type(e).__name__}: {e}")
 
     output_bblocks = []
-    for building_block in itertools.chain(child_bblocks, super_bblocks.values()):
+    for building_block in child_bblocks:
         light = filter_id is not None and building_block.identifier != filter_id
         lightmsg = ' (light)' if light else ''
         print(f"Postprocessing building block {building_block.identifier}{lightmsg}", file=sys.stderr)

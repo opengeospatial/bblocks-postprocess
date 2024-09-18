@@ -17,6 +17,7 @@ import requests
 from ogc.na.util import is_url, load_yaml
 from rdflib import Graph
 
+from ogc.bblocks import mimetypes
 from ogc.bblocks.util import get_schema, PathOrUrl, load_file, find_references_yaml, \
     find_references_xml
 from ogc.bblocks.schema import RegisterSchemaResolver
@@ -70,8 +71,6 @@ class BuildingBlock:
         if '.' in self.identifier:
             self.subdirs = get_bblock_subdirs(identifier)
 
-        self.super_bblock = self.metadata.get('superBBlock', False)
-
         fp = metadata_file.parent
         self.files_path = fp
 
@@ -101,6 +100,8 @@ class BuildingBlock:
         self.ontology = self._find_path_or_url('ontology',
                                                ('ontology.ttl', 'ontology.owl'))
         self.output_ontology = self.annotated_path / 'ontology.ttl'
+
+        self.transforms_path = fp / 'transforms.yaml'
 
         self.remote_cache_dir = self.annotated_path / 'remote_cache'
 
@@ -153,11 +154,6 @@ class BuildingBlock:
                         # Load snippet code from "ref"
                         ref = snippet['ref'] if is_url(snippet['ref']) else self.files_path / snippet['ref']
                         snippet['code'] = load_file(ref)
-                for transform in example.get('transforms', ()):
-                    if 'ref' in transform:
-                        # Load transform code from "ref"
-                        ref = transform['ref'] if is_url(transform['ref']) else self.files_path / transform['ref']
-                        transform['code'] = load_file(ref)
                 if prefixes:
                     example['prefixes'] = {**prefixes, **example.get('prefixes', {})}
 
@@ -233,6 +229,33 @@ class BuildingBlock:
                     raise BuildingBlockError(f'Error validating semantic uplift metadata for {self.identifier}') from e
             self._lazy_properties['semantic_uplift'] = semantic_uplift
         return self._lazy_properties['semantic_uplift']
+
+    @property
+    def transforms(self) -> list:
+        if 'transforms' not in self._lazy_properties:
+            transforms = {}
+            if self.transforms_path.is_file():
+                transforms = load_yaml(self.transforms_path)
+                try:
+                    jsonschema.validate(transforms, get_schema('transforms'))
+                    if transforms:
+                        transforms = transforms.get('transforms')
+                        transform_ids = set()
+                        for transform in transforms:
+                            if transform['id'] in transform_ids:
+                                raise BuildingBlockError(f"Duplicate transform id "
+                                                         f"'{transform['id']}' in {self.identifier}")
+                            if 'ref' in transform:
+                                # Load transform code from "ref"
+                                ref = (transform['ref']
+                                       if is_url(transform['ref'])
+                                       else self.files_path / transform['ref'])
+                                transform['code'] = load_file(ref)
+                            transform_ids.add(transform['id'])
+                except Exception as e:
+                    raise BuildingBlockError(f'Error validating transforms metadata for {self.identifier}') from e
+            self._lazy_properties['transforms'] = transforms
+        return self._lazy_properties['transforms']
 
     def get_extra_test_resources(self) -> Generator[dict, None, None]:
         extra_tests_file = self.files_path / 'tests.yaml'
@@ -556,3 +579,18 @@ class TransformMetadata:
     transform_content: AnyStr
     input_data: AnyStr
     metadata: Any | None = None
+
+
+class Transformer:
+
+    def __init__(self, transform_type: str,
+                 default_inputs: list[str] = None, default_outputs: list[str] = None):
+        self.transform_type = transform_type
+        self.default_inputs = [] if default_inputs is None else [mimetypes.lookup(m) or m for m in default_inputs]
+        self.default_outputs = [] if default_outputs is None else [mimetypes.lookup(m) or m for m in default_outputs]
+
+    def transform(self, metadata: TransformMetadata) -> AnyStr | None:
+        return self.do_transform(metadata)
+
+    def do_transform(self, metadata: TransformMetadata) -> AnyStr | None:
+        raise NotImplementedError
