@@ -47,17 +47,23 @@ def apply_transforms(bblock: BuildingBlock,
 
         supported_input_media_types = {(m if isinstance(m, str) else m['mimeType']): m
                                       for m in transform.get('inputs')['mediaTypes']}
-        default_output_media_type = next(iter(transform['outputs']['mediaTypes']), None)
+        default_output_media_type: dict | str = next(iter(transform['outputs']['mediaTypes']), None)
         if not default_output_media_type:
             raise BuildingBlockError(f"Transform {transform['id']} for {bblock.identifier}"
                                      f" has no default output formats")
         default_suffix = ('' if isinstance(default_output_media_type, str)
                              else '.' + default_output_media_type['defaultExtension'])
+        target_mime_type = (default_output_media_type if isinstance(default_output_media_type, str)
+                            else default_output_media_type['mimeType'])
+
+        bblock_prefixes = bblock.example_prefixes or {}
 
         for example_id, example in enumerate(bblock.examples):
             snippets = example.get('snippets')
             if not snippets:
                 continue
+
+            example_prefixes = bblock_prefixes | example.get('prefixes', {})
 
             for snippet_id, snippet in enumerate(snippets):
                 snippet_lang = snippet.get('language')
@@ -71,11 +77,14 @@ def apply_transforms(bblock: BuildingBlock,
                 output_fn = output_dir / (f"example_{example_id + 1}_{snippet_id + 1}"
                                           f".{transform['id']}{default_suffix}")
 
+                metadata = transform.get('metadata', {})
+                metadata['_prefixes'] = example_prefixes
+
                 transform_metadata = TransformMetadata(type=transform['type'],
                                                        source_mime_type=snippet_mime_type,
-                                                       target_mime_type=default_output_media_type,
+                                                       target_mime_type=target_mime_type,
                                                        transform_content=transform['code'],
-                                                       metadata=transform.get('metadata'),
+                                                       metadata=metadata,
                                                        input_data=snippet['code'])
 
                 try:

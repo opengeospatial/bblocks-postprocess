@@ -18,7 +18,7 @@ default_outputs = [
 class JqTransformer(Transformer):
 
     def __init__(self):
-        super().__init__('jq', default_inputs, default_outputs)
+        super().__init__(['jq'], default_inputs, default_outputs)
 
     def do_transform(self, metadata: TransformMetadata) -> AnyStr | None:
         transformed = jq.compile(metadata.transform_content).input_text(metadata.input_data).text()

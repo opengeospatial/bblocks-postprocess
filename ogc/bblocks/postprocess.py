@@ -231,8 +231,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
     if transformers:
         print("Available transformers:", file=sys.stderr)
-        for t in transformers.values():
-            print(f"  - {t.transform_type}", file=sys.stderr)
+        print('  - ' + '\n  - '.join(tt for tt in sorted(transformers)))
     else:
         print("No transformers found", file=sys.stderr)
 
