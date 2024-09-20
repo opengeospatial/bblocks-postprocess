@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import shutil
+import os.path
 import traceback
 from pathlib import Path
+from urllib.parse import urljoin
 
 from ogc.bblocks import mimetypes
 from ogc.bblocks.models import BuildingBlock, TransformMetadata, BuildingBlockError
@@ -12,11 +14,13 @@ from ogc.bblocks.transformers import transformers
 
 def apply_transforms(bblock: BuildingBlock,
                      outputs_path: str | Path,
-                     output_subpath='transforms'):
+                     output_subpath='transforms',
+                     base_url: str | None = None):
 
     if not bblock.transforms:
         return
 
+    cwd = Path().resolve()
     output_dir = Path(outputs_path) / bblock.subdirs / output_subpath
     shutil.rmtree(output_dir, ignore_errors=True)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -90,6 +94,11 @@ def apply_transforms(bblock: BuildingBlock,
                 try:
                     transform_result = transformer.transform(transform_metadata)
                     if transform_result:
+                        snippet_transform_results = snippet.setdefault('transformResults', {})
+                        output_rel_path = str(os.path.relpath(output_fn, cwd))
+                        if base_url:
+                            output_rel_path = urljoin(base_url, output_rel_path)
+                        snippet_transform_results[transform['id']] = output_rel_path
                         with open(output_fn, 'w') as f:
                             f.write(transform_result)
                 except:

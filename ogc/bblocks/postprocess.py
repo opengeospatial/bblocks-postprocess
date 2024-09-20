@@ -171,7 +171,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
         if not light and (not steps or 'transforms' in steps) and bblock.transforms:
             print(f"  > Running transforms for {bblock.identifier}", file=sys.stderr)
-            apply_transforms(bblock, outputs_path=test_outputs_path)
+            apply_transforms(bblock, outputs_path=test_outputs_path, base_url=base_url)
 
         if bblock.examples:
             for example in bblock.examples:
