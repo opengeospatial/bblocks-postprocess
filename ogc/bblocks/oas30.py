@@ -308,10 +308,10 @@ def oas31_to_oas30(document: dict, document_location: PathOrUrl | str, bbr: Buil
                    x_defs_path='/x-defs', target_version='3.0.3'):
 
     if not isinstance(document, dict):
-        if isinstance(document, Path) or not is_url(document):
+        if isinstance(document, Path) or not is_url(str(document)):
             document = load_yaml(filename=document)
         else:
-            document = load_yaml(url=document)
+            document = load_yaml(url=str(document))
 
     # == 1. Bundle
     if x_defs_path[0] != '/':

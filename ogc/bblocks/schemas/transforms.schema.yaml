@@ -48,7 +48,9 @@ $defs:
         description: Reference to the code or content for the transform
         $ref: '#/$defs/nonEmptyString'
       metadata:
-        description: Additional metadata to pass to the transform. Can be anything.
+        description: |
+          Additional metadata to pass to the transform. Must be an object, the values of which can be anything.
+        type: object
 
   transformList:
     description: List of transforms for the Building Block

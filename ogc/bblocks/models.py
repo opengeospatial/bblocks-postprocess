@@ -578,14 +578,14 @@ class TransformMetadata:
     target_mime_type: str
     transform_content: AnyStr
     input_data: AnyStr
-    metadata: Any | None = None
+    metadata: dict | None = None
 
 
 class Transformer:
 
-    def __init__(self, transform_type: str,
+    def __init__(self, transform_types: list[str],
                  default_inputs: list[str] = None, default_outputs: list[str] = None):
-        self.transform_type = transform_type
+        self.transform_types = transform_types
         self.default_inputs = [] if default_inputs is None else [mimetypes.lookup(m) or m for m in default_inputs]
         self.default_outputs = [] if default_outputs is None else [mimetypes.lookup(m) or m for m in default_outputs]
 

@@ -5,7 +5,6 @@ import inspect
 from pathlib import Path
 
 from ogc.bblocks.models import Transformer
-from ogc.bblocks.transformers.jq import transform_type
 
 transformers: dict[str, Transformer] = {}
 
@@ -17,5 +16,7 @@ for mod_file in Path(__file__).parent.glob('*.py'):
 
     for cls_name, cls in inspect.getmembers(module, inspect.isclass):
         if issubclass(cls, Transformer) and cls is not Transformer:
+            # noinspection PyArgumentList
             transformer = cls()
-            transformers[transformer.transform_type] = transformer
+            for tt in transformer.transform_types:
+                    transformers[tt] = transformer
