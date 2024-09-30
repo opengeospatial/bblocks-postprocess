@@ -1,0 +1,33 @@
+name: Postprocessing regression tests
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - Build Docker image
+    types:
+      - completed
+
+jobs:
+  test:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        register:
+          - repo: opengeospatial/bblocks
+            items: registereditems
+          - repo: ogcincubator/bblocks-examples
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.register.repo }}
+      - name: OGC BB postprocess
+        uses: opengeospatial/bblocks-postprocess/postprocess@master
+        with:
+          items_dir: ${{ matrix.register.items || '_sources' }}
+          fail_on_error: 'true'
+          deploy_viewer: 'false'
+          github_base_url: 'https://dummy.github.io/${{ matrix.register.repo }}'
