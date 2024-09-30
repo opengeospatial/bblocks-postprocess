@@ -176,7 +176,11 @@ class RdfValidator(Validator):
                     else:
                         new_context.append(existing_context)
                 jsonld_uplifted = json_doc.copy()
-                jsonld_uplifted['@context'] = new_context if len(new_context) > 1 else new_context[0]
+                jsonld_uplifted.pop('@context', None)
+                jsonld_uplifted = {
+                    '@context': new_context if len(new_context) > 1 else new_context[0],
+                    **jsonld_uplifted,
+                }
             else:
                 jsonld_uplifted = {
                     '@context': new_context if len(new_context) > 1 else new_context[0],
