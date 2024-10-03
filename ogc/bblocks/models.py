@@ -57,7 +57,7 @@ class BuildingBlock:
             try:
                 jsonschema.validate(self.metadata, get_schema('bblock'))
             except Exception as e:
-                raise BuildingBlockError('Error validating building block metadata') from e
+                raise BuildingBlockError(f'Error validating building block metadata for {identifier}') from e
 
             self.metadata.pop('itemIdentifier', None)
             self.metadata: dict[str, Any] = {
