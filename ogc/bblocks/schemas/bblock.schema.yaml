@@ -133,12 +133,8 @@ properties:
           type: string
           format: uri
   schema:
-    description: URL (or array thereof) for JSON schemas of this Building Block.
-    oneOf:
-      - type: array
-        items:
-          type: string
-      - type: string
+    description: URL for the JSON schema of this Building Block.
+    type: string
   openAPIDocument:
     description: URL or path to OpenAPI document
     type: string
