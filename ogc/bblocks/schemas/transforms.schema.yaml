@@ -68,6 +68,7 @@ $defs:
           - sparql-update
           - json-ld-frame
           - jq
+          - semantic-uplift
       - description: Other identifiers are also accepted
         $ref: '#/$defs/nonEmptyString'
 
