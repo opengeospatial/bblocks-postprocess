@@ -202,6 +202,8 @@ if __name__ == '__main__':
             register_additional_metadata['sparqlEndpoint'] = sparql_conf['query']
 
     bb_local_config_file = Path('bblocks-config-local.yml')
+    if not bb_local_config_file.is_file():
+        bb_local_config_file = Path('bblocks-config-local.yaml')
     import_local_mappings = None
     if bb_local_config_file.is_file():
         bb_local_config = load_yaml(filename=bb_local_config_file)
