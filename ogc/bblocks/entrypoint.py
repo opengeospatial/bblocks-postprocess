@@ -180,6 +180,7 @@ if __name__ == '__main__':
     imported_registers = []
     register_additional_metadata = {}
     sparql_conf = {}
+    schema_oas30_downcompile = False
     if bb_config_file and bb_config_file.is_file():
         bb_config = load_yaml(filename=bb_config_file)
         id_prefix = bb_config.get('identifier-prefix', id_prefix)
@@ -208,6 +209,7 @@ if __name__ == '__main__':
     if bb_local_config_file.is_file():
         bb_local_config = load_yaml(filename=bb_local_config_file)
         import_local_mappings = bb_local_config.get('imports-local')
+        schema_oas30_downcompile = bb_config.get('schema-oas30-downcompile', False)
 
     register_additional_metadata['modified'] = datetime.datetime.now().isoformat()
 
@@ -270,7 +272,8 @@ if __name__ == '__main__':
                 git_repo_path=git_repo_path,
                 viewer_path=(args.viewer_path or '.') if deploy_viewer else None,
                 additional_metadata=register_additional_metadata,
-                import_local_mappings=import_local_mappings)
+                import_local_mappings=import_local_mappings,
+                schemas_oas30_downcompile=schema_oas30_downcompile)
 
     # 2. Uplift register.json
     print(f"Running semantic uplift of {register_file}", file=sys.stderr)

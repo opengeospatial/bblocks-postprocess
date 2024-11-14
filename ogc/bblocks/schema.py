@@ -55,7 +55,8 @@ class RegisterSchemaResolver(SchemaResolver):
 def annotate_schema(bblock: BuildingBlock,
                     bblocks_register: BuildingBlockRegister,
                     context: Path | dict | None = None,
-                    base_url: str | None = None) -> list[Path]:
+                    base_url: str | None = None,
+                    oas30_downcompile: bool = False) -> list[Path]:
     result = []
     schema_fn = None
     schema_url = None
@@ -158,26 +159,24 @@ def annotate_schema(bblock: BuildingBlock,
               '\n - '.join(potential_yaml_refs.keys()), '\n\n')
 
     # OAS 3.0
-    # try:
-    #     if base_url:
-    #         oas30_schema_fn = annotated_schema_fn.with_stem('schema-oas3.0')
-    #         dump_yaml(oas30.schema_to_oas30(annotated_schema_fn,
-    #                                         urljoin(base_url, str(os.path.relpath(oas30_schema_fn))),
-    #                                         bblocks_register),
-    #                   oas30_schema_fn)
-    #         result.append(oas30_schema_fn)
-    #
-    #         print("oas30 yaml dumped", time.time() - start)
-    #
-    #         oas30_schema_json_fn = annotated_schema_json_fn.with_stem('schema-oas3.0')
-    #         with open(oas30_schema_json_fn, 'w') as f:
-    #             json.dump(oas30.schema_to_oas30(annotated_schema_json_fn,
-    #                                             urljoin(base_url, str(os.path.relpath(oas30_schema_json_fn))),
-    #                                             bblocks_register), f, indent=2)
-    #         result.append(oas30_schema_json_fn)
-    #         print("oas30 json dumped", time.time() - start)
-    # except Exception as e:
-    #     print('Error building OAS 3.0 documents:', e, file=sys.stderr)
+    if oas30_downcompile:
+        try:
+            if base_url:
+                oas30_schema_fn = annotated_schema_fn.with_stem('schema-oas3.0')
+                dump_yaml(oas30.schema_to_oas30(annotated_schema_fn,
+                                                urljoin(base_url, str(os.path.relpath(oas30_schema_fn))),
+                                                bblocks_register),
+                          oas30_schema_fn)
+                result.append(oas30_schema_fn)
+
+                oas30_schema_json_fn = annotated_schema_json_fn.with_stem('schema-oas3.0')
+                with open(oas30_schema_json_fn, 'w') as f:
+                    json.dump(oas30.schema_to_oas30(annotated_schema_json_fn,
+                                                    urljoin(base_url, str(os.path.relpath(oas30_schema_json_fn))),
+                                                    bblocks_register), f, indent=2)
+                result.append(oas30_schema_json_fn)
+        except Exception as e:
+            print('Error building OAS 3.0 documents:', e, file=sys.stderr)
 
     return result
 
