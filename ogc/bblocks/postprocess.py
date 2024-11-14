@@ -42,7 +42,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 git_repo_path: Path | None = None,
                 viewer_path: str | Path | None = None,
                 additional_metadata: dict | None = None,
-                import_local_mappings: dict[str, str] | None = None) -> list[dict]:
+                import_local_mappings: dict[str, str] | None = None,
+                schemas_oas30_downcompile=False) -> list[dict]:
 
     cwd = Path().resolve()
 
@@ -270,7 +271,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                         for annotated in annotate_schema(building_block,
                                                          bblocks_register=bbr,
                                                          context=default_jsonld_context,
-                                                         base_url=base_url):
+                                                         base_url=base_url,
+                                                         oas30_downcompile=schemas_oas30_downcompile):
                             print(f"  - {annotated}", file=sys.stderr)
                     except Exception as e:
                         if fail_on_error:
