@@ -103,24 +103,41 @@ class BuildingBlock:
 
         self.transforms_path = fp / 'transforms.yaml'
 
+        self.rdf_data_paths: list[PathOrUrl] = self._find_path_or_url('rdfData', ('data.ttl',))
+        if not isinstance(self.rdf_data_paths, list):
+            self.rdf_data_paths = [self.rdf_data_paths]
+
         self.remote_cache_dir = self.annotated_path / 'remote_cache'
 
-    def _find_path_or_url(self, metadata_property: str, default_filenames: tuple[str, ...]):
-        ref = self.metadata.get(metadata_property)
-        if ref:
-            if is_url(ref):
-                result = ref
-            else:
-                result = self.files_path.joinpath(ref).resolve()
-        else:
-            result = default_filenames[0]
+    def _find_path_or_url(self, metadata_property: str,
+                          default_filenames: tuple[str, ...]) -> PathOrUrl | list[PathOrUrl] | None:
+        value = self.metadata.get(metadata_property)
+        result = []
+        single = True
+        if value:
+            single = isinstance(value, str)
+            if single:
+                value = [value]
+            for ref in value:
+                if ref:
+                    if is_url(ref):
+                        result.append(ref)
+                    else:
+                        result.append(self.files_path.joinpath(ref).resolve())
+
+        if not result:
+            result = [default_filenames[0]]
             for fn in default_filenames:
                 f = self.files_path / fn
                 if f.is_file():
-                    result = f
+                    result[0] = f
                     break
 
-        return PathOrUrl(result)
+        if not result:
+            return None
+
+        result = [PathOrUrl(r) for r in result]
+        return result[0] if single else result
 
     def __getattr__(self, item):
         return self.metadata.get(item)
@@ -256,6 +273,17 @@ class BuildingBlock:
                     raise BuildingBlockError(f'Error validating transforms metadata for {self.identifier}') from e
             self._lazy_properties['transforms'] = transforms
         return self._lazy_properties['transforms']
+
+    @property
+    def rdf_data(self) -> Graph | None:
+        if 'rdf_data' not in self._lazy_properties:
+            rdf_data = None
+            if self.rdf_data_paths:
+                rdf_data = Graph()
+                for rdf_data_path in self.rdf_data_paths:
+                    rdf_data.parse(rdf_data_path.value)
+            self._lazy_properties['rdf_data'] = rdf_data
+        return self._lazy_properties['rdf_data']
 
     def get_extra_test_resources(self) -> Generator[dict, None, None]:
         extra_tests_file = self.files_path / 'tests.yaml'
