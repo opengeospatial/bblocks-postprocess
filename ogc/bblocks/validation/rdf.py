@@ -20,6 +20,13 @@ from ogc.bblocks.validation import Validator, ValidationItemSourceType, Validati
 from ogc.bblocks.validation.uplift import Uplifter
 
 
+NATIVE_RDF_LANGS = {
+    'application/ld+json': 'jsonld',
+    'text/turtle': 'ttl',
+    'application/rdf+xml': 'xml',
+}
+
+
 def shacl_validate(g: Graph, s: Graph, ont_graph: Graph | None = None) \
         -> tuple[bool, Graph, str, dict[pyshacl.Shape, Sequence[Node]]]:
     validator = pyshacl.Validator(g, shacl_graph=s, ont_graph=ont_graph, options={
@@ -131,9 +138,10 @@ class RdfValidator(Validator):
     def _load_graph(self, filename: Path, output_filename: Path, report: ValidationReportItem,
                     contents: str | None = None,
                     base_uri: str | None = None,
-                    prefixes: dict[str, str] | None = None) -> Graph | None | bool:
+                    prefixes: dict[str, str] | None = None,
+                    file_format: str | None = None) -> Graph | None | bool:
         graph = False
-        if filename.suffix == '.json':
+        if filename.suffix == '.json' or file_format == 'application/json':
             if self.jsonld_error:
                 report.add_entry(ValidationReportEntry(
                     section=ValidationReportSection.JSON_LD,
@@ -231,7 +239,7 @@ class RdfValidator(Validator):
             if graph:
                 graph = self.uplifter.post_uplift(report, graph)
 
-        elif output_filename.suffix == '.jsonld':
+        elif output_filename.suffix == '.jsonld' or file_format == 'application/ld+json':
 
             if contents:
                 jsonld_doc = load_yaml(content=contents)
@@ -258,9 +266,11 @@ class RdfValidator(Validator):
             graph = Graph().parse(data=json.dumps(jsonld_doc), format='json-ld', base=base_uri)
             graph = self.uplifter.post_uplift(report, graph)
 
-        elif output_filename.suffix in ('.ttl', '.jsonld'):
+        elif (output_filename.suffix in ('.ttl', '.jsonld', '.rdf')
+              or file_format in NATIVE_RDF_LANGS):
             file_from = 'examples' if report.source.type == ValidationItemSourceType.EXAMPLE else 'test resources'
-            rdf_format = 'ttl' if output_filename.suffix == '.ttl' else 'json-ld'
+            rdf_format = NATIVE_RDF_LANGS.get(file_format,
+                                              'ttl' if output_filename.suffix == '.ttl' else 'json-ld')
             try:
                 if contents:
                     # Prepend prefixes
@@ -299,8 +309,10 @@ class RdfValidator(Validator):
                  base_uri: str | None = None,
                  additional_shacl_closures: list[str | Path] | None = None,
                  prefixes: dict[str, str] | None = None,
+                 file_format: str | None = None,
                  **kwargs) -> bool | None:
-        graph = self._load_graph(filename, output_filename, report, contents, base_uri, prefixes)
+        graph = self._load_graph(filename, output_filename, report,
+                                 contents, base_uri, prefixes, file_format=file_format)
 
         if graph is False:
             return False

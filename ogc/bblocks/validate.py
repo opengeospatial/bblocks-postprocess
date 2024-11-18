@@ -13,6 +13,7 @@ from urllib.parse import urljoin
 from mako import exceptions as mako_exceptions, template as mako_template
 from ogc.na.util import is_url
 
+from ogc.bblocks import mimetypes
 from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister
 from ogc.bblocks.util import sanitize_filename
 from ogc.bblocks.validation import Validator, ValidationItemSourceType, ValidationReportSection, ValidationItemSource, \
@@ -151,7 +152,8 @@ def _validate_resource(bblock: BuildingBlock,
                        require_fail: bool | None = None,
                        resource_url: str | None = None,
                        example_index: tuple[int, int] | None = None,
-                       prefixes: dict[str, str] | None = None) -> ValidationReportItem | None:
+                       prefixes: dict[str, str] | None = None,
+                       file_format: str | None = None) -> ValidationReportItem | None:
     if require_fail is None:
         require_fail = filename.stem.endswith('-fail') and not example_index
 
@@ -165,7 +167,7 @@ def _validate_resource(bblock: BuildingBlock,
             filename=output_filename,
             example_index=int(example_idx),
             snippet_index=int(snippet_idx),
-            language=filename.suffix[1:],
+            language=file_format,
             source_url=resource_url,
         )
     else:
@@ -186,7 +188,8 @@ def _validate_resource(bblock: BuildingBlock,
                                         base_uri=base_uri,
                                         additional_shacl_closures=additional_shacl_closures,
                                         schema_ref=schema_ref,
-                                        prefixes=prefixes)
+                                        prefixes=prefixes,
+                                        file_format=file_format)
             any_validator_run = any_validator_run or (result is not False)
 
     except Exception as unknown_exc:
@@ -279,6 +282,7 @@ def validate_test_resources(bblock: BuildingBlock,
             resource_contents=extra_test_resource['contents'],
             require_fail=extra_test_resource.get('require-fail', False),
             resource_url=extra_test_resource['ref'] if isinstance(extra_test_resource['ref'], str) else None,
+            file_format=mimetypes.from_extension(fn.suffix[1:]),
         )
         if test_result:
             all_results.append(test_result)
@@ -301,8 +305,9 @@ def validate_test_resources(bblock: BuildingBlock,
                 elif not add_snippets_formats:
                     add_snippets_formats = []
 
+                extension = FORMAT_ALIASES.get(snippet['language'], snippet['language']).replace('/', '.')
                 fn = bblock.files_path / (f"example_{example_id + 1}_{snippet_id + 1}"
-                                          f".{FORMAT_ALIASES.get(snippet['language'], snippet['language'])}")
+                                          f".{extension}")
 
                 output_fn = output_dir / sanitize_filename(example.get('base-output-filename', fn.name))
                 i = 0
@@ -314,6 +319,9 @@ def validate_test_resources(bblock: BuildingBlock,
                     f.write(code)
 
                 snippet['path'] = output_fn
+                snippet_language = snippet.get('language')
+                if snippet_language:
+                    snippet_language = mimetypes.normalize(snippet_language)
 
                 example_result = _validate_resource(
                     bblock=bblock,
@@ -327,6 +335,7 @@ def validate_test_resources(bblock: BuildingBlock,
                     resource_url=snippet.get('ref'),
                     require_fail=False,
                     prefixes=example.get('prefixes'),
+                    file_format=snippet_language,
                 )
                 if example_result:
                     all_results.append(example_result)

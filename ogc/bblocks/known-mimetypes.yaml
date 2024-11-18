@@ -36,3 +36,12 @@ xml:
     - application/xml
   extensions:
     - xml
+
+yaml:
+  label: YAML
+  mimeType: application/x-yaml
+  aliases:
+    - text/yaml
+  extensions:
+    - yaml
+    - yml

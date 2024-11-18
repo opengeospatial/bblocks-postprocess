@@ -16,7 +16,9 @@ class Validator(ABC):
         self.register = register
 
     @abstractmethod
-    def validate(self, filename: Path, output_filename: Path,
+    def validate(self,
+                 filename: Path,
+                 output_filename: Path,
                  report: ValidationReportItem,
                  contents: str | None = None,
                  schema_ref: str | None = None,
@@ -24,6 +26,7 @@ class Validator(ABC):
                  resource_url: str | None = None,
                  require_fail: bool | None = None,
                  prefixes: dict[str, str] | None = None,
+                 file_format: str | None = None,
                  **kwargs) -> bool | None:
         raise NotImplementedError
 
