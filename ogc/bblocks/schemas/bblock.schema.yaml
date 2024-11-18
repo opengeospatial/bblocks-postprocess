@@ -232,4 +232,11 @@ properties:
   semanticUplift:
     description: Deprecated - configuration should go in semantic-uplift.yaml
     not: true
-
+  rdfData:
+    description: |
+      Array of file names (relative to the Building Block directory) or URLs with RDF content for this Building Block,
+      such as ontology sources, profile descriptions, etc.
+      If the data file is named `data.ttl`, this property can be omitted.
+    type: array
+    items:
+      type: string

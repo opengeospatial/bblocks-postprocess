@@ -154,6 +154,11 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             base_url, cwd if base_url else output_file_root
         ) + '/'
 
+        if bblock.rdf_data_paths:
+            bblock.metadata['rdfData'] = [
+                p.with_base_url(base_url, cwd if base_url else output_file_root) for p in bblock.rdf_data_paths
+            ]
+
         if not light:
             if not steps or 'tests' in steps:
                 print(f"  > Running tests for {bblock.identifier}", file=sys.stderr)
