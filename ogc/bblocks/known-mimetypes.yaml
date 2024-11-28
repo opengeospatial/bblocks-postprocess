@@ -34,6 +34,7 @@ xml:
   mimeType: application/xml
   aliases:
     - application/xml
+    - text/xml
   extensions:
     - xml
 

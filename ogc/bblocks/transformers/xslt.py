@@ -8,11 +8,11 @@ from lxml import etree
 transform_type = 'xslt'
 
 default_inputs = [
-    'text/xml',
+    'application/xml',
 ]
 
 default_outputs = [
-    'text/xml',
+    'application/xml',
 ]
 
 class XmlTransformer(Transformer):
@@ -21,6 +21,6 @@ class XmlTransformer(Transformer):
         super().__init__(['xslt'], default_inputs, default_outputs)
 
     def do_transform(self, metadata: TransformMetadata) -> AnyStr | None:
-        transform = etree.XSLT(etree.XML(metadata.transform_content))
-        result = transform(etree.XML(metadata.input_data))
-        return etree.to_string(result, pretty=True)
+        transform = etree.XSLT(etree.XML(metadata.transform_content.encode('utf-8')))
+        result = transform(etree.XML(metadata.input_data.encode('utf-8')))
+        return etree.tostring(result, encoding='utf-8', pretty_print=True, xml_declaration=True).decode('utf-8')

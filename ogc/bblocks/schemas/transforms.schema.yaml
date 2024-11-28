@@ -69,6 +69,7 @@ $defs:
           - json-ld-frame
           - jq
           - semantic-uplift
+          - xslt
       - description: Other identifiers are also accepted
         $ref: '#/$defs/nonEmptyString'
 
