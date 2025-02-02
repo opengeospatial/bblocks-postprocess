@@ -238,7 +238,7 @@ jobs:
         uses: actions/configure-pages@v3
       - name: Upload artifacts
         if: ${{ github.event.repository.has_pages && !inputs.skip-pages }}
-        uses: actions/upload-pages-artifact@v1
+        uses: actions/upload-pages-artifact@v3
         with:
           path: .
       - name: Deploy to GH Pages
