@@ -156,7 +156,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
         if bblock.rdf_data_paths:
             bblock.metadata['rdfData'] = [
-                p.with_base_url(base_url, cwd if base_url else output_file_root) for p in bblock.rdf_data_paths
+                p.with_base_url(base_url, cwd if base_url else output_file_root)
+                for p in bblock.rdf_data_paths if p.is_file()
             ]
 
         if not light:
