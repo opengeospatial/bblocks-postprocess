@@ -492,7 +492,14 @@ class BuildingBlockRegister:
         cycles = list(nx.simple_cycles(dep_graph))
         if cycles:
             cycles_str = '\n - '.join(' -> '.join(reversed(c)) + ' -> ' + c[-1] for c in cycles)
-            raise BuildingBlockError(f"Circular dependencies found: \n - {cycles_str}")
+            print("=== WARNING!! ===", file=sys.stderr)
+            print(f"Circular dependencies found: \n - {cycles_str}", file=sys.stderr)
+            print("Circular dependency support is experimental", file=sys.stderr)
+            print("=== WARNING!! ===", file=sys.stderr)
+        while cycles:
+            for cycle in cycles:
+                dep_graph.remove_edge(cycle[0], cycle[1])
+            cycles = list(nx.simple_cycles(dep_graph))
         self.bblocks: dict[str, BuildingBlock] = {b: self.bblocks[b]
                                                   for b in nx.topological_sort(dep_graph)
                                                   if b in self.bblocks}
@@ -558,7 +565,7 @@ class BuildingBlockRegister:
         return dependencies
 
     @lru_cache
-    def find_dependencies(self, identifier: str) -> list[dict | BuildingBlock]:
+    def find_dependencies(self, identifier: str, seen: tuple[str] = None) -> list[dict | BuildingBlock]:
         if identifier in self.bblocks:
             bblock = self.bblocks[identifier]
             metadata = bblock.metadata
@@ -569,8 +576,10 @@ class BuildingBlockRegister:
             return []
 
         dependencies = [bblock or metadata]
+        seen = (identifier,) if not seen else seen + (identifier,)
         for d in metadata.get('dependsOn', ()):
-            dependencies.extend(self.find_dependencies(d))
+            if d not in seen:
+                dependencies.extend(self.find_dependencies(d, seen=seen))
 
         return dependencies
 
