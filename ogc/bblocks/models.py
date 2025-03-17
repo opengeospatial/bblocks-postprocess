@@ -497,8 +497,9 @@ class BuildingBlockRegister:
             print("Circular dependency support is experimental", file=sys.stderr)
             print("=== WARNING!! ===", file=sys.stderr)
         while cycles:
-            for cycle in cycles:
-                dep_graph.remove_edge(cycle[0], cycle[1])
+            #for cycle in cycles:
+            #    dep_graph.remove_edge(cycle[0], cycle[1])
+            dep_graph.remove_edges_from((cycle[0], cycle[1]) for cycle in cycles)
             cycles = list(nx.simple_cycles(dep_graph))
         self.bblocks: dict[str, BuildingBlock] = {b: self.bblocks[b]
                                                   for b in nx.topological_sort(dep_graph)
