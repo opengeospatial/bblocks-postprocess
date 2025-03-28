@@ -100,7 +100,6 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
 
     outputs:
-      sparql_config: ${{ steps.deploy-viewer.outputs.sparql_config }}
       register_url: ${{ steps.get-pages-url.outputs.result }}/${{ inputs.register_file }}
 
     steps:
@@ -235,9 +234,6 @@ jobs:
           if [ ! -f "404.html" ]; then
             cp "${{ inputs.viewer_path }}/index.html" 404.html
           fi
-          
-          echo sparql_config="$(yq -o=json '.sparql' ${{ inputs.config_file }})" >> "$GITHUB_OUTPUT"
-
       - name: Before pages
         if: ${{inputs.before_pages}}
         run: ${{inputs.before_pages}}
@@ -253,10 +249,14 @@ jobs:
         if: ${{ github.event.repository.has_pages && !inputs.skip-pages }}
         id: deployment
         uses: actions/deploy-pages@v4
+      - name: Temporarily upload bblocks-config.yaml
+        uses: actions/upload-artifact@v4
+        with:
+          name: bblocks-config
+          path: ${{ inputs.config_file }}
   upload-to-triplestore:
     needs: validate-and-process
     if: ${{ github.event.repository.has_pages && !inputs.skip-pages && needs.validate-and-process.outputs.register_url }}
     uses: ./.github/workflows/upload-to-triplestore.yml
     with:
-      sparql_config: ${{ needs.validate-and-process.outputs.sparql_config }}
       register_url: ${{ needs.validate-and-process.outputs.register_url }}
