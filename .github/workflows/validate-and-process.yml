@@ -241,7 +241,7 @@ jobs:
             yq -o=json '.sparql' '${{ inputs.config_file }}'
             echo 'eirue3biu8Cai6cioraaJie8theechi7ahgheiM0dojooho0unii2deech4abiaX'
           } >> "$GITHUB_OUTPUT"
-
+          
       - name: Before pages
         if: ${{inputs.before_pages}}
         run: ${{inputs.before_pages}}
@@ -264,3 +264,6 @@ jobs:
     with:
       sparql_config: ${{ needs.validate-and-process.outputs.sparql_config }}
       register_url: ${{ needs.validate-and-process.outputs.register_url }}
+    secrets:
+      sparql_username: ${{ secrets.sparql_username }}
+      sparql_password: ${{ secrets.sparql_password }}
