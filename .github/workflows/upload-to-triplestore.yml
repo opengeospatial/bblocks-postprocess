@@ -3,16 +3,14 @@ name: Upload resources to triplestore
 on:
   workflow_call:
     inputs:
-      config_file:
+      sparql_config:
         required: true
         type: string
-        description: Building blocks submodule config file
-        default: 'bblocks-config.yaml'
-      register_file:
+        description: SPARQL configuration from bblocks-config.yaml in JSON format
+      register_url:
         required: true
         type: string
-        description: JSON register file
-        default: build/register.json
+        description: JSON register file URL
     secrets:
       sparql_username:
         description: SPARQL Graph Store Protocol user name for push authentication
@@ -25,34 +23,34 @@ jobs:
   upload:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install ogc-na pyyaml
+      - run: pip install ogc-na
       - name: Uplift and upload
         env:
-          BBLOCKS_CONFIG: ${{ inputs.config_file }}
-          REGISTER_JSON: ${{ inputs.register_file }}
+          SPARQL_CONFIG: ${{ inputs.sparql_config }}
+          REGISTER_URL: ${{ inputs.register_url }}
           SPARQL_USERNAME: ${{ secrets.sparql_username }}
           SPARQL_PASSWORD: ${{ secrets.sparql_password }}
         shell: python
         run: |
           import json
           import logging
+          import urllib.request
           import os
           import sys
           
           from ogc.na.profile import ProfileRegistry
           from ogc.na import update_vocabs
-          from yaml import safe_load
           from rdflib import Graph
           
           logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
           
-          with open(os.environ['BBLOCKS_CONFIG']) as f:
-              config = safe_load(f)
-          
-          sparql_config = config.get('sparql', {})
+          sparql_config = json.loads(os.environ['SPARQL_CONFIG']) or {}
+
           sparql_endpoint = sparql_config.get('push')
           resources = sparql_config.get('resources', {})
           
@@ -62,7 +60,7 @@ jobs:
               logging.info('No SPARQL endpoint or no uploads enabled. Exiting.')
               sys.exit()
           
-          with open(os.environ['REGISTER_JSON']) as f:
+          with urllib.request.urlopen(os.environ['REGISTER_URL']) as f:
               register = json.load(f)
           
           bblocks = register.get('bblocks', [])
