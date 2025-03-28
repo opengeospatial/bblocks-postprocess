@@ -3,10 +3,6 @@ name: Upload resources to triplestore
 on:
   workflow_call:
     inputs:
-      sparql_config:
-        required: true
-        type: string
-        description: SPARQL configuration from bblocks-config.yaml in JSON format
       register_url:
         required: true
         type: string
@@ -28,7 +24,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install ogc-na
+      - run: pip install ogc-na pyyaml
+      - name: Retrieve bblocks-config
+        uses: actions/download-artifact@v4
+        with:
+          name: bblocks-config
+          path: bblocks-config.yaml
       - name: Uplift and upload
         env:
           SPARQL_CONFIG: ${{ inputs.sparql_config }}
@@ -46,10 +47,14 @@ jobs:
           from ogc.na.profile import ProfileRegistry
           from ogc.na import update_vocabs
           from rdflib import Graph
+          from yaml import safe_load
           
           logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
           
-          sparql_config = json.loads(os.environ['SPARQL_CONFIG']) or {}
+          with open('bblocks-config.yaml') as f:
+              config = safe_load(f)
+          
+          sparql_config = config.get('sparql', {})
 
           sparql_endpoint = sparql_config.get('push')
           resources = sparql_config.get('resources', {})
