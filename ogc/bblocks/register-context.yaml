@@ -31,8 +31,12 @@ context:
     itemIdentifier: '@id'
     baseURL: '@id'
     name: rdfs:label
-    abstract: dct:abstract
-    description: dct:description
+    abstract:
+      '@id': dct:abstract
+      '@type': https://www.w3.org/ns/iana/media-types/text/markdown
+    description:
+      '@id': dct:description
+      '@type': https://www.w3.org/ns/iana/media-types/text/markdown
     # register:
     #  '@id': bblocks:inRegister
     #  '@type': '@id'
