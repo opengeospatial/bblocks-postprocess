@@ -52,7 +52,7 @@ class BuildingBlock:
         self.metadata_file = metadata_file
 
         with open(metadata_file) as f:
-            self.metadata = json.load(f)
+            self.metadata: dict[str, Any] = json.load(f)
 
             try:
                 jsonschema.validate(self.metadata, get_schema('bblock'))
@@ -352,11 +352,20 @@ class ImportedBuildingBlocks:
         tested_locations: dict[str | Path, Any] = {}
 
         if self.local_mappings and metadata_url in self.local_mappings:
+            metadata_url = self.local_mappings[metadata_url]
+            if metadata_url.startswith('file://'):
+                metadata_url = metadata_url[len('file://'):]
+            elif metadata_url.startswith('https://') or metadata_url.startswith('http://'):
+                raise ValueError(
+                    f"Local import mapping for {metadata_url} points to a remote URL, "
+                    f"which is not supported. Please use a local path instead."
+                )
             metadata_path = Path(self.local_mappings[metadata_url])
             for path in (metadata_path, metadata_path / 'build/register.json', metadata_path / 'register.json'):
                 try:
                     tested_locations[path] = True
                     if path.is_file():
+                        print('Using local import mapping for', metadata_url, '(from file', path , ')', file=sys.stderr)
                         imported = load_yaml(filename=path)
                         if (isinstance(imported, dict) and 'bblocks' in imported) or isinstance(imported, list):
                             break
