@@ -99,6 +99,10 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
 
+    outputs:
+      sparql_config: ${{ steps.deploy-viewer.outputs.sparql_config }}
+      register_url: ${{ steps.get-pages-url.outputs.result }}/${{ inputs.register_file }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -169,6 +173,7 @@ jobs:
           sudo find "${{ inputs.annotated_path }}" -name _visited_properties.tsv -delete || true
           sudo find "${{ inputs.annotated_path }}" -name _visited_properties.tsv.gz -delete || true
       - name: Deploy Building Blocks viewer
+        id: deploy-viewer
         if: ${{ inputs.deploy_viewer && github.event.repository.has_pages && !inputs.skip-pages }}
         run: |
           OLD_WD="$(pwd)"
@@ -230,6 +235,13 @@ jobs:
           if [ ! -f "404.html" ]; then
             cp "${{ inputs.viewer_path }}/index.html" 404.html
           fi
+          
+          {
+            echo 'sparql_config<<eirue3biu8Cai6cioraaJie8theechi7ahgheiM0dojooho0unii2deech4abiaX'
+            yq -o=json '.sparql' '${{ inputs.config_file }}'
+            echo 'eirue3biu8Cai6cioraaJie8theechi7ahgheiM0dojooho0unii2deech4abiaX'
+          } >> "$GITHUB_OUTPUT"
+          
       - name: Before pages
         if: ${{inputs.before_pages}}
         run: ${{inputs.before_pages}}
@@ -245,3 +257,13 @@ jobs:
         if: ${{ github.event.repository.has_pages && !inputs.skip-pages }}
         id: deployment
         uses: actions/deploy-pages@v4
+  upload-to-triplestore:
+    needs: validate-and-process
+    if: ${{ github.event.repository.has_pages && !inputs.skip-pages && needs.validate-and-process.outputs.register_url }}
+    uses: ./.github/workflows/upload-to-triplestore.yml
+    with:
+      sparql_config: ${{ needs.validate-and-process.outputs.sparql_config }}
+      register_url: ${{ needs.validate-and-process.outputs.register_url }}
+    secrets:
+      sparql_username: ${{ secrets.sparql_username }}
+      sparql_password: ${{ secrets.sparql_password }}

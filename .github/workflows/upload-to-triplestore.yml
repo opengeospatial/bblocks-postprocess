@@ -1,0 +1,96 @@
+name: Upload resources to triplestore
+
+on:
+  workflow_call:
+    inputs:
+      sparql_config:
+        required: true
+        type: string
+        description: SPARQL configuration from bblocks-config.yaml in JSON format
+      register_url:
+        required: true
+        type: string
+        description: JSON register file URL
+    secrets:
+      sparql_username:
+        description: SPARQL Graph Store Protocol user name for push authentication
+        required: false
+      sparql_password:
+        description: SPARQL Graph Store Protocol password for push authentication
+        required: false
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install ogc-na
+      - name: Uplift and upload
+        env:
+          SPARQL_CONFIG: ${{ inputs.sparql_config }}
+          REGISTER_URL: ${{ inputs.register_url }}
+          SPARQL_USERNAME: ${{ secrets.sparql_username }}
+          SPARQL_PASSWORD: ${{ secrets.sparql_password }}
+        shell: python
+        run: |
+          import json
+          import logging
+          import urllib.request
+          import os
+          import sys
+          
+          from ogc.na.profile import ProfileRegistry
+          from ogc.na import update_vocabs
+          from rdflib import Graph
+          
+          logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
+          
+          sparql_config = json.loads(os.environ['SPARQL_CONFIG']) or {}
+
+          sparql_endpoint = sparql_config.get('push')
+          resources = sparql_config.get('resources', {})
+          
+          ontologies = resources.get('ontologies') is True
+          
+          if not sparql_endpoint or not all((ontologies,)):
+              logging.info('No SPARQL endpoint or no uploads enabled. Exiting.')
+              sys.exit()
+          
+          with urllib.request.urlopen(os.environ['REGISTER_URL']) as f:
+              register = json.load(f)
+          
+          bblocks = register.get('bblocks', [])
+          if not bblocks:
+              sys.exit()
+          
+          profile_registry = ProfileRegistry('sparql:http://defs-dev.opengis.net/fuseki/query',
+                                             ignore_artifact_errors=True)
+          profile_uris = [
+              'http://www.opengis.net/def/metamodel/profiles/skos_shared',
+              'http://www.opengis.net/def/metamodel/profiles/skos_conceptscheme',
+              'http://www.opengis.net/def/metamodel/profiles/skos_conceptscheme_ogc',
+              'http://www.opengis.net/def/metamodel/profiles/vocprez_ogc',
+          ]
+          
+          auth_details = None
+          if 'SPARQL_USERNAME' in os.environ:
+              auth_details = (os.environ["SPARQL_USERNAME"], os.environ.get("SPARQL_PASSWORD", ""))
+          
+          for bblock in bblocks:
+              ontology = bblock.get('ontology')
+              if ontologies and ontology:
+                  logging.debug(f"Loading ontology for {bblock['itemIdentifier']}")
+                  g = Graph()
+                  for src in (ontology if isinstance(ontology, list) else (ontology,)):
+                      rdf_format = None
+                      if src.endswith('.ttl'):
+                          # Workaround for lack of support of content type on GitHub pages
+                          rdf_format = 'turtle'
+                      g.parse(src, format=rdf_format)
+                  graph_uri = f"urn:ogc:bblocks/{bblock['itemIdentifier']}/ontology"
+                  newg, entail_artifacts = profile_registry.entail(g, profile_uris)
+          
+                  update_vocabs.load_vocab(newg, graph_uri=graph_uri, 
+                                           graph_store=sparql_endpoint, auth_details=auth_details)
