@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+## http_interceptor needs to be the first import
+# to properly monkey-patch urllib and requests
+from ogc.bblocks import http_interceptor
 import datetime
 import os
 import shutil
@@ -201,15 +204,18 @@ if __name__ == '__main__':
         sparql_conf = bb_config.get('sparql', {}) or {}
         if sparql_conf and sparql_conf.get('query'):
             register_additional_metadata['sparqlEndpoint'] = sparql_conf['query']
+        schema_oas30_downcompile = bb_config.get('schema-oas30-downcompile', False)
 
     bb_local_config_file = Path('bblocks-config-local.yml')
     if not bb_local_config_file.is_file():
         bb_local_config_file = Path('bblocks-config-local.yaml')
-    import_local_mappings = None
+    local_url_mappings = None
     if bb_local_config_file.is_file():
         bb_local_config = load_yaml(filename=bb_local_config_file)
-        import_local_mappings = bb_local_config.get('imports-local')
-        schema_oas30_downcompile = bb_config.get('schema-oas30-downcompile', False)
+        if bb_local_config.get('imports-local'):
+            raise ValueError('Local imports are deprecated, please use local URL mappings instead: '
+                             'https://ogcincubator.github.io/bblocks-docs/create/imports#local-url-mappings')
+        local_url_mappings = bb_local_config.get('url-mappings')
 
     register_additional_metadata['modified'] = datetime.datetime.now().isoformat()
 
@@ -256,24 +262,28 @@ if __name__ == '__main__':
 
     # 1. Postprocess BBs
     print(f"Running postprocess...", file=sys.stderr)
-    postprocess(registered_items_path=items_dir,
-                output_file=args.register_file,
-                base_url=base_url,
-                generated_docs_path=args.generated_docs_path,
-                templates_dir=templates_dir,
-                fail_on_error=fail_on_error,
-                id_prefix=id_prefix,
-                annotated_path=annotated_path,
-                test_outputs_path=args.test_outputs_path,
-                github_base_url=github_base_url,
-                imported_registers=imported_registers,
-                bb_filter=args.filter,
-                steps=steps,
-                git_repo_path=git_repo_path,
-                viewer_path=(args.viewer_path or '.') if deploy_viewer else None,
-                additional_metadata=register_additional_metadata,
-                import_local_mappings=import_local_mappings,
-                schemas_oas30_downcompile=schema_oas30_downcompile)
+    try:
+        if local_url_mappings:
+            http_interceptor.enable(local_url_mappings)
+        postprocess(registered_items_path=items_dir,
+                    output_file=args.register_file,
+                    base_url=base_url,
+                    generated_docs_path=args.generated_docs_path,
+                    templates_dir=templates_dir,
+                    fail_on_error=fail_on_error,
+                    id_prefix=id_prefix,
+                    annotated_path=annotated_path,
+                    test_outputs_path=args.test_outputs_path,
+                    github_base_url=github_base_url,
+                    imported_registers=imported_registers,
+                    bb_filter=args.filter,
+                    steps=steps,
+                    git_repo_path=git_repo_path,
+                    viewer_path=(args.viewer_path or '.') if deploy_viewer else None,
+                    additional_metadata=register_additional_metadata,
+                    schemas_oas30_downcompile=schema_oas30_downcompile)
+    finally:
+        http_interceptor.disable()
 
     # 2. Uplift register.json
     print(f"Running semantic uplift of {register_file}", file=sys.stderr)

@@ -317,7 +317,7 @@ class RdfValidator(Validator):
         if graph is False:
             return False
         if graph is None:
-            return
+            return None
 
         if graph is not None and (contents or filename.suffix != '.ttl'):
             try:
@@ -349,7 +349,7 @@ class RdfValidator(Validator):
                         'exception': e.__class__.__qualname__,
                     }
                 ))
-                return
+                return None
 
         if graph:
             if self.shacl_errors:
@@ -360,9 +360,9 @@ class RdfValidator(Validator):
                         is_error=True,
                         is_global=True,
                     ))
-                    return
+                    return None
             if not self.shacl_graphs:
-                return
+                return None
 
             if additional_shacl_closures:
                 additional_shacl_closures = [c if is_url(c) else self.bblock.files_path.joinpath(c)
@@ -430,6 +430,8 @@ class RdfValidator(Validator):
                                 'focusNodes': focus_nodes_payload,
                             }
                         ))
+                        return None
+                    return None
                 except ParseBaseException as e:
                     if e.args:
                         query_lines = e.args[0].splitlines()
@@ -450,6 +452,7 @@ class RdfValidator(Validator):
                             'shaclFile': str(shacl_file),
                         }
                     ))
+                    return None
                 except ReportableRuntimeError as e:
                     report.add_entry(ValidationReportEntry(
                         section=ValidationReportSection.SHACL,
@@ -462,3 +465,6 @@ class RdfValidator(Validator):
                             'shaclFile': str(shacl_file),
                         }
                     ))
+                    return None
+            return None
+        return None
