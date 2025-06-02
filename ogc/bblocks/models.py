@@ -331,11 +331,10 @@ class BuildingBlock:
 
 class ImportedBuildingBlocks:
 
-    def __init__(self, metadata_urls: list[str] | None, local_mappings: dict[str, str] | None):
+    def __init__(self, metadata_urls: list[str] | None):
         self.bblocks: dict[str, dict] = {}
         self.imported_registers: dict[str, list[str]] = {}
         self.real_metadata_urls: dict[str, str] = {}
-        self.local_mappings = local_mappings
         if metadata_urls:
             pending_urls = deque(metadata_urls)
             while pending_urls:
@@ -351,46 +350,22 @@ class ImportedBuildingBlocks:
 
         tested_locations: dict[str | Path, Any] = {}
 
-        if self.local_mappings and metadata_url in self.local_mappings:
-            metadata_url = self.local_mappings[metadata_url]
-            if metadata_url.startswith('file://'):
-                metadata_url = metadata_url[len('file://'):]
-            elif metadata_url.startswith('https://') or metadata_url.startswith('http://'):
-                raise ValueError(
-                    f"Local import mapping for {metadata_url} points to a remote URL, "
-                    f"which is not supported. Please use a local path instead."
-                )
-            metadata_path = Path(self.local_mappings[metadata_url])
-            for path in (metadata_path, metadata_path / 'build/register.json', metadata_path / 'register.json'):
-                try:
-                    tested_locations[path] = True
-                    if path.is_file():
-                        print('Using local import mapping for', metadata_url, '(from file', path , ')', file=sys.stderr)
-                        imported = load_yaml(filename=path)
-                        if (isinstance(imported, dict) and 'bblocks' in imported) or isinstance(imported, list):
-                            break
-                except:
-                    # Ignore exceptions
-                    imported = None
-                    pass
-
-        else:
-            metadata_url_trailing = metadata_url + ('' if metadata_url.endswith('/') else '/')
-            for url in (metadata_url,
-                        metadata_url_trailing + 'build/register.json',
-                        metadata_url_trailing + 'register.json'):
-                try:
-                    tested_locations[url] = True
-                    r = requests.get(url)
-                    if r.ok:
-                        imported = r.json()
-                        if (isinstance(imported, dict) and 'bblocks' in imported) or isinstance(imported, list):
-                            metadata_url = url
-                            break
-                except:
-                    # Ignore exceptions
-                    imported = None
-                    pass
+        metadata_url_trailing = metadata_url + ('' if metadata_url.endswith('/') else '/')
+        for url in (metadata_url,
+                    metadata_url_trailing + 'build/register.json',
+                    metadata_url_trailing + 'register.json'):
+            try:
+                tested_locations[url] = True
+                r = requests.get(url)
+                if r.ok:
+                    imported = r.json()
+                    if (isinstance(imported, dict) and 'bblocks' in imported) or isinstance(imported, list):
+                        metadata_url = url
+                        break
+            except:
+                # Ignore exceptions
+                imported = None
+                pass
 
         if imported is None:
             tested_locations_str = '  ' + '\n  '.join(str(loc) for loc in tested_locations.keys())
@@ -497,6 +472,12 @@ class BuildingBlockRegister:
                 bblock.metadata['dependsOn'] = list(found_deps)
             dep_graph.add_node(bblock.identifier)
             dep_graph.add_edges_from([(d, bblock.identifier) for d in bblock.metadata.get('dependsOn', ())])
+
+            for a, b in dep_graph.edges:
+                if a not in self.bblocks and a not in self.imported_bblocks:
+                    raise ValueError(f'Invalid reference to bblock {a}'
+                                     f' from {b} - the bblock does not exist'
+                                     f' - perhaps an import is missing?')
 
         cycles = list(nx.simple_cycles(dep_graph))
         if cycles:

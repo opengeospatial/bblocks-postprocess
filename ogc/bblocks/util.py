@@ -299,3 +299,4 @@ def find_references_xml(contents) -> set[str]:
     """
     # TODO: Implement for XML schemas
     pass
+
