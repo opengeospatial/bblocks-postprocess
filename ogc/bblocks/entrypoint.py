@@ -213,8 +213,10 @@ if __name__ == '__main__':
     if bb_local_config_file.is_file():
         bb_local_config = load_yaml(filename=bb_local_config_file)
         if bb_local_config.get('imports-local'):
-            raise ValueError('Local imports are deprecated, please use local URL mappings instead: '
-                             'https://ogcincubator.github.io/bblocks-docs/create/imports#local-url-mappings')
+            raise ValueError(
+                'Local imports are deprecated, please use local URL mappings instead: '
+                'https://ogcincubator.github.io/bblocks-docs/create/imports#local-url-mappings-for-testing'
+            )
         local_url_mappings = bb_local_config.get('url-mappings')
 
     register_additional_metadata['modified'] = datetime.datetime.now().isoformat()
