@@ -331,10 +331,12 @@ class BuildingBlock:
 
 class ImportedBuildingBlocks:
 
-    def __init__(self, metadata_urls: list[str] | None):
+    def __init__(self, metadata_urls: list[str] | None, ignore_git_repos: list[str] | None = None):
         self.bblocks: dict[str, dict] = {}
         self.imported_registers: dict[str, list[str]] = {}
         self.real_metadata_urls: dict[str, str] = {}
+        self.ignore_git_repos: list[str] | None = ([x for x in ignore_git_repos if x]
+                                                      if ignore_git_repos else None)
         if metadata_urls:
             pending_urls = deque(metadata_urls)
             while pending_urls:
@@ -377,6 +379,10 @@ class ImportedBuildingBlocks:
         else:
             bblock_list = imported['bblocks']
             dependencies = imported.get('imports', [])
+            git_repo = imported.get('gitRepository')
+            if self.ignore_git_repos and git_repo and git_repo in self.ignore_git_repos:
+                # Skip own register (if GitHub repos match)
+                return [], metadata_url
         self.imported_registers[metadata_url] = []
         for bblock in bblock_list:
             bblock['register'] = self
@@ -443,9 +449,10 @@ class BuildingBlockRegister:
                         self.local_bblock_files[f"{base_url}{rel}"] = bblock_id
 
         for identifier, imported_bblock in self.imported_bblocks.items():
+            if identifier in self.bblocks:
+                continue
             dep_graph.add_node(identifier)
             dep_graph.add_edges_from([(d, identifier) for d in imported_bblock.get('dependsOn', ())])
-            imported_bblock.get('dependsOn', [])
             for schema_url in imported_bblock.get('schema', {}).values():
                 self.imported_bblock_files[schema_url] = identifier
             source_schema = imported_bblock.get('sourceSchema')
