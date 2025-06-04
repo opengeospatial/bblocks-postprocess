@@ -18,7 +18,7 @@ from ogc.na.util import is_url, dump_yaml
 from ogc.bblocks.generate_docs import DocGenerator
 from ogc.bblocks.oas30 import oas31_to_oas30
 from ogc.bblocks.util import write_jsonld_context, CustomJSONEncoder, \
-    PathOrUrl
+    PathOrUrl, get_git_repo_url
 from ogc.bblocks.schema import annotate_schema, resolve_all_schema_references
 from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister, ImportedBuildingBlocks, BuildingBlockError
 from ogc.bblocks.validate import validate_test_resources, report_to_html
@@ -67,7 +67,10 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         registered_items_path = Path(registered_items_path)
 
     child_bblocks = []
-    imported_bblocks = ImportedBuildingBlocks(imported_registers)
+    git_repo_url = additional_metadata.get('gitRepository')
+    imported_bblocks = ImportedBuildingBlocks(imported_registers,
+                                              ignore_git_repos=[get_git_repo_url(git_repo_url)]
+                                              if git_repo_url else None)
     bbr = BuildingBlockRegister(registered_items_path,
                                 fail_on_error=fail_on_error,
                                 prefix=id_prefix,
