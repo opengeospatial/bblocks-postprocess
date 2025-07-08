@@ -68,9 +68,11 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
     child_bblocks = []
     git_repo_url = additional_metadata.get('gitRepository')
+    remote_cache_dir = annotated_path / '_cache'
     imported_bblocks = ImportedBuildingBlocks(imported_registers,
                                               ignore_git_repos=[get_git_repo_url(git_repo_url)]
-                                              if git_repo_url else None)
+                                              if git_repo_url else None,
+                                              remote_cache_dir=remote_cache_dir)
     bbr = BuildingBlockRegister(registered_items_path,
                                 fail_on_error=fail_on_error,
                                 prefix=id_prefix,
@@ -411,6 +413,9 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         if imported_bblocks.real_metadata_urls:
             output_register_json['imports'] = list(imported_bblocks.real_metadata_urls.values())
         output_register_json['bblocks'] = output_bblocks
+
+        remote_cache_dir_url = f"{base_url}{os.path.relpath(Path(remote_cache_dir).resolve(), cwd)}"
+        output_register_json['remoteCacheDir'] = remote_cache_dir_url
 
         if output_file == '-':
             print(json.dumps(output_register_json, indent=2, cls=CustomJSONEncoder))
