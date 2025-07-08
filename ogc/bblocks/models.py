@@ -7,6 +7,7 @@ import os
 import sys
 from collections import deque
 from functools import lru_cache
+from hashlib import sha256
 from pathlib import Path
 from typing import Any, Generator, cast, AnyStr
 from urllib.parse import urlparse, urljoin
@@ -103,7 +104,7 @@ class BuildingBlock:
 
         self.transforms_path = fp / 'transforms.yaml'
 
-        self.rdf_data_paths: list[PathOrUrl] = self._find_path_or_url('rdfData', ('data.ttl',))
+        self.rdf_data_paths: list[PathOrUrl] | PathOrUrl = self._find_path_or_url('rdfData', ('data.ttl',))
         if not isinstance(self.rdf_data_paths, list):
             self.rdf_data_paths = [self.rdf_data_paths]
 
@@ -331,12 +332,16 @@ class BuildingBlock:
 
 class ImportedBuildingBlocks:
 
-    def __init__(self, metadata_urls: list[str] | None, ignore_git_repos: list[str] | None = None):
+    def __init__(self, metadata_urls: list[str] | None, ignore_git_repos: list[str] | None = None,
+                 remote_cache_dir: Path | None = None):
         self.bblocks: dict[str, dict] = {}
         self.imported_registers: dict[str, list[str]] = {}
         self.real_metadata_urls: dict[str, str] = {}
         self.ignore_git_repos: list[str] | None = ([x for x in ignore_git_repos if x]
                                                       if ignore_git_repos else None)
+        self.remote_cache_dir = remote_cache_dir
+        if remote_cache_dir:
+            remote_cache_dir.mkdir(exist_ok=True, parents=True)
         if metadata_urls:
             pending_urls = deque(metadata_urls)
             while pending_urls:
@@ -360,6 +365,13 @@ class ImportedBuildingBlocks:
                 tested_locations[url] = True
                 r = requests.get(url)
                 if r.ok:
+                    if self.remote_cache_dir:
+                        cache_fn = self.remote_cache_dir.joinpath(sha256(url.encode('utf-8')).hexdigest())
+                        try:
+                            with open(cache_fn, 'wb') as f:
+                                f.write(r.content)
+                        except:
+                            print(f"[WARN] Error writing cache file {cache_fn} for {url}", file=sys.stderr)
                     imported = r.json()
                     if (isinstance(imported, dict) and 'bblocks' in imported) or isinstance(imported, list):
                         metadata_url = url
