@@ -68,6 +68,11 @@ on:
           blocks as well as local ones. 0 means "only local", and a negative number means
           "all imports".
         default: 0
+      before_postprocess:
+        type: string
+        description: |
+          Shell code to run before running the bblocks postprocessing (e.g., for setting up custom settings)
+        default: ''
       before_pages:
         type: string
         description: |
@@ -139,6 +144,9 @@ jobs:
             core.exportVariable('PAGES_BASE_URL', base_url);
             core.exportVariable('PAGES_PATH', parsed.pathname);
             return base_url;
+      - name: Before postprocess
+        if: ${{inputs.before_postprocess}}
+        run: ${{inputs.before_postprocess}}
       - name: OGC BB postprocess
         if: ${{ !inputs.skip-build }}
         uses: opengeospatial/bblocks-postprocess/full@v1
