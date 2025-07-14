@@ -74,6 +74,7 @@ def load_content(url: str):
     local_file = local_path / rel_path
     if not local_file.exists():
         raise IOError(f'Local file {local_file} for URL {url} from mapping {url_mapping} does not exist')
+    print(f"Intercepted URL {url} -> {local_file}")
     with open(local_file, 'rb') as f:
         return f.read()
 
