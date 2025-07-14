@@ -266,6 +266,8 @@ if __name__ == '__main__':
     print(f"Running postprocess...", file=sys.stderr)
     try:
         if local_url_mappings:
+            print('Enabling local URL mappings:\n ' + '\n '.join(f"{k}: {v}" for k, v in local_url_mappings.items()),
+                  file=sys.stderr)
             http_interceptor.enable(local_url_mappings)
         postprocess(registered_items_path=items_dir,
                     output_file=args.register_file,
