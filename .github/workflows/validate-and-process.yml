@@ -85,6 +85,9 @@ on:
       sparql_password:
         description: SPARQL Graph Store Protocol password for push authentication
         required: false
+      gh_pat:
+        description: GitHub Personal Access Token to use when cloning repositories
+        required: false
 
 
 permissions:
@@ -144,6 +147,49 @@ jobs:
             core.exportVariable('PAGES_BASE_URL', base_url);
             core.exportVariable('PAGES_PATH', parsed.pathname);
             return base_url;
+      - name: Process GitHub repository mappings
+        run: |
+          export RANDOM_DIR="_repos_$(openssl rand -hex 8)"
+          mkdir "$RANDOM_DIR"
+          echo '*' > "${RANDOM_DIR}/.gitignore" 
+          
+          if [ -f "bblocks-github.yaml" ]; then
+            INPUT_YML="bblocks-github.yaml"
+          elif [ -f "bblocks-github.yml" ]; then
+            INPUT_YML="bblocks-github.yml"
+          fi
+          
+          if [ -z "$INPUT_YML" ]; then
+            echo "No GitHub repository mappings found"
+            exit 0
+          fi
+          
+          MAPPINGS_YML="bblocks-config-local.yml"
+          echo 'url-mappings:' > $MAPPINGS_YML
+          
+          if [ -z "${{ secrets.GH_PAT }}" ]; then
+            GH_AUTH=
+            echo "*WARNING* Cloning repository without a PAT"
+          else
+            GH_AUTH="x-access-token:${{ secrets.GH_PAT }}@"
+            echo "Using a GitHub PAT"
+          fi
+          export GH_AUTH
+          yq -r '."repository-mappings" | to_entries[] |
+            "\(strenv(RANDOM_DIR))/\(.value | sub(\"[^A-Za-z0-9]\", \"_\"))" as $SUBDIR |
+            "
+            if [ ! -d \"\($SUBDIR)\" ]; then
+              git clone \"https://\(strenv(GH_AUTH))github.com/\(.value).git\" \"\($SUBDIR)\"
+            fi
+            echo \"  \\\"\(.key)\\\": \\\"\($SUBDIR)\\\"\" >> bblocks-config-local.yml
+            "
+          ' < $INPUT_YML > _script.sh
+          cat _script.sh
+          bash _script.sh
+          
+          
+          echo "Repositories cloned and mapped in $RANDOM_DIR — output saved to $MAPPINGS_YML"
+
       - name: Before postprocess
         if: ${{inputs.before_postprocess}}
         run: ${{inputs.before_postprocess}}
