@@ -358,6 +358,7 @@ class ImportedBuildingBlocks:
         tested_locations: dict[str | Path, Any] = {}
 
         metadata_url_trailing = metadata_url + ('' if metadata_url.endswith('/') else '/')
+        collected_exceptions = {}
         for url in (metadata_url,
                     metadata_url_trailing + 'build/register.json',
                     metadata_url_trailing + 'register.json'):
@@ -376,13 +377,14 @@ class ImportedBuildingBlocks:
                     if (isinstance(imported, dict) and 'bblocks' in imported) or isinstance(imported, list):
                         metadata_url = url
                         break
-            except:
-                # Ignore exceptions
+            except Exception as e:
+                collected_exceptions[url] = e
                 imported = None
                 pass
 
         if imported is None:
-            tested_locations_str = '  ' + '\n  '.join(str(loc) for loc in tested_locations.keys())
+            tested_locations_str = '  ' + '\n  '.join(f"{loc} ({collected_exceptions.get(loc, '?')})"
+                                                      for loc in tested_locations.keys())
             raise BuildingBlockError(f"Could not load metadata from {metadata_url}, tested:\n{tested_locations_str}")
 
         if isinstance(imported, list):
