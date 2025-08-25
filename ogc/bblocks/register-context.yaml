@@ -92,7 +92,7 @@ context:
       '@id': prof:isProfileOf
       '@type': '@id'
     tags: dcat:keyword
-    shaclRules:
+    shaclShapes:
       '@id': bblocks:hasShaclRule
       '@type': '@id'
       '@container': '@index'
