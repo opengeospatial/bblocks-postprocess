@@ -92,11 +92,18 @@ class BuildingBlock:
         self.output_openapi = self.annotated_path / 'openapi.yaml'
         self.output_openapi_30 = self.output_openapi.with_stem(f"{self.output_openapi.stem}-oas30")
 
-        shacl_rules = self.metadata.setdefault('shaclRules', [])
-        default_shacl_rules = fp / 'rules.shacl'
-        if default_shacl_rules.is_file():
-            shacl_rules.append('rules.shacl')
-        self.shacl_rules = set(r if is_url(r) else fp / r for r in shacl_rules)
+        shacl_shapes = self.metadata.setdefault('shaclShapes', [])
+        if not shacl_shapes and self.metadata.get('shaclRules'):
+            shacl_shapes.extend(self.metadata.pop('shaclRules'))
+        default_shacl_shapes = fp / 'shapes.shacl'
+        if default_shacl_shapes.is_file():
+            shacl_shapes.append('shapes.shacl')
+        else:
+            legacy_shacl_shapes = fp / 'rules.shacl'
+            if legacy_shacl_shapes.is_file():
+                shacl_shapes.append('rules.shacl')
+
+        self.shacl_shapes = set(r if is_url(r) else fp / r for r in shacl_shapes)
 
         self.ontology = self._find_path_or_url('ontology',
                                                ('ontology.ttl', 'ontology.owl'))
@@ -466,7 +473,9 @@ class BuildingBlockRegister:
             if identifier in self.bblocks:
                 continue
             dep_graph.add_node(identifier)
-            dep_graph.add_edges_from([(d, identifier) for d in imported_bblock.get('dependsOn', ())])
+            dep_graph.add_edges_from([(d, identifier)
+                                      for d in imported_bblock.get('dependsOn', ())
+                                      if d != identifier])
             for schema_url in imported_bblock.get('schema', {}).values():
                 self.imported_bblock_files[schema_url] = identifier
             source_schema = imported_bblock.get('sourceSchema')
@@ -492,7 +501,9 @@ class BuildingBlockRegister:
             if found_deps:
                 bblock.metadata['dependsOn'] = list(found_deps)
             dep_graph.add_node(bblock.identifier)
-            dep_graph.add_edges_from([(d, bblock.identifier) for d in bblock.metadata.get('dependsOn', ())])
+            dep_graph.add_edges_from([(d, bblock.identifier)
+                                      for d in bblock.metadata.get('dependsOn', ())
+                                      if d != bblock.identifier])
 
             for a, b in dep_graph.edges:
                 if a not in self.bblocks and a not in self.imported_bblocks:
@@ -595,14 +606,14 @@ class BuildingBlockRegister:
 
         return dependencies
 
-    def get_inherited_shacl_rules(self, identifier: str) -> dict[str, set[str | Path]]:
+    def get_inherited_shacl_shapes(self, identifier: str) -> dict[str, set[str | Path]]:
         rules: dict[str, set[str | Path]] = {}
         for dep in self.find_dependencies(identifier):
             if isinstance(dep, BuildingBlock):
-                if dep.shacl_rules:
-                    rules[dep.identifier] = dep.shacl_rules
+                if dep.shacl_shapes:
+                    rules[dep.identifier] = dep.shacl_shapes
             else:
-                dep_rules = dep.get('shaclRules')
+                dep_rules = dep.get('shaclShapes', dep.get('shaclRules'))
                 if dep_rules:
                     if isinstance(dep_rules, list):
                         rules.setdefault(dep.get('itemIdentifier'), set()).update(dep_rules)

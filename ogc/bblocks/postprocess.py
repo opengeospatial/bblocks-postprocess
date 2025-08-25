@@ -192,11 +192,11 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                         snippet['url'] = f"{base_url}{path}"
 
         if base_url:
-            if bblock.shaclRules:
-                if isinstance(bblock.shaclRules, list):
-                    bblock.metadata['shaclRules'] = {bblock.identifier: bblock.shacl_rules}
-                bblock.metadata['shaclRules'] = {k: [urljoin(base_url, str(s)) for s in v]
-                                                 for k, v in bblock.shaclRules.items()}
+            if bblock.shaclShapes:
+                if isinstance(bblock.shaclShapes, list):
+                    bblock.metadata['shaclShapes'] = {bblock.identifier: bblock.shaclShapes}
+                bblock.metadata['shaclShapes'] = {k: [urljoin(base_url, str(s)) for s in v]
+                                                 for k, v in bblock.shaclShapes.items()}
             if bblock.transforms:
                 bblock.metadata['transforms'] = []
                 for transform in bblock.transforms:

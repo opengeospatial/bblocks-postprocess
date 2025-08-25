@@ -107,10 +107,10 @@ class RdfValidator(Validator):
         self.closure_graph = Graph()
         self.shacl_graphs: dict[str, Graph] = {}
         self.shacl_errors: list[str] = []
-        inherited_shacl_rules = register.get_inherited_shacl_rules(bblock.identifier)
-        for shacl_bblock in list(inherited_shacl_rules.keys()):
+        inherited_shacl_shapes = register.get_inherited_shacl_shapes(bblock.identifier)
+        for shacl_bblock in list(inherited_shacl_shapes.keys()):
             bblock_shacl_files = set()
-            for shacl_file in inherited_shacl_rules[shacl_bblock]:
+            for shacl_file in inherited_shacl_shapes[shacl_bblock]:
                 if isinstance(shacl_file, Path) or (isinstance(shacl_file, str) and not is_url(shacl_file)):
                     # assume file
                     shacl_file = str(os.path.relpath(bblock.files_path / shacl_file))
@@ -121,7 +121,7 @@ class RdfValidator(Validator):
                     self.shacl_errors.append(f"Error retrieving {e.url}: {e}")
                 except Exception as e:
                     self.shacl_errors.append(f"Error processing {shacl_file}: {str(e)}")
-            inherited_shacl_rules[shacl_bblock] = bblock_shacl_files
+            inherited_shacl_shapes[shacl_bblock] = bblock_shacl_files
 
         for shacl_closure in bblock.shaclClosures or ():
             try:
@@ -131,7 +131,7 @@ class RdfValidator(Validator):
             except Exception as e:
                 self.shacl_errors.append(f"Error processing {shacl_closure}: {str(e)}")
 
-        bblock.metadata['shaclRules'] = inherited_shacl_rules
+        bblock.metadata['shaclShapes'] = inherited_shacl_shapes
 
         self.uplifter = Uplifter(self.bblock)
 
