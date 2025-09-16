@@ -145,14 +145,16 @@ class JsonValidator(Validator):
                         schema_uri = self.bblock.schema.value.with_name(random_fn).as_uri()
                     else:
                         schema_uri = urljoin(self.bblock.schema.value, random_fn)
-                    if schema_ref.startswith('#/'):
+                    if schema_ref.startswith('#'):
+                        # $ref
                         schema_ref = f"{self.bblock.annotated_schema.resolve()}{schema_ref}"
                     elif not is_url(schema_ref):
                         if '#' in schema_ref:
                             path, fragment = schema_ref.split('#', 1)
                             schema_ref = f"{self.bblock.annotated_schema.parent.resolve().joinpath(path)}#{fragment}"
-                            schema_uri = (f"{self.bblock.schema.parent.joinpath(path).with_name(random_fn).as_uri()}"
-                                          f"#{fragment}")
+                            ppath = path.rsplit('/', 1)
+                            newpath = f"{ppath}/{random_fn}" if ppath else random_fn
+                            schema_uri = f"{self.bblock.schema.resolve_ref(newpath)}#{fragment}"
                         else:
                             schema_uri = self.bblock.schema.resolve_ref(schema_ref).with_name(random_fn).as_uri()
                     snippet_schema = {'$ref': schema_ref}
