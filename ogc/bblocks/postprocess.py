@@ -286,7 +286,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                             print(f"  - {annotated}", file=sys.stderr)
                     except Exception as e:
                         if fail_on_error:
-                            raise
+                            raise Exception(f"Error annotating schema for {building_block.identifier}") from e
                         traceback.print_exception(e, file=sys.stderr)
                         if isinstance(e, ContextLoadError):
                             if e.__cause__:
@@ -328,8 +328,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                         building_block.metadata['ontology'] = building_block.ontology.value
                 except Exception as e:
                     if fail_on_error:
-                        raise BuildingBlockError(f'Error processing ontology for {building_block.identifier}')\
-                            from e
+                        raise BuildingBlockError(f'Error processing ontology '
+                                                 f'for {building_block.identifier}') from e
                     print("Exception when processing ontology for", building_block.identifier, file=sys.stderr)
                     traceback.print_exception(e, file=sys.stderr)
 
@@ -337,6 +337,9 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             building_block.metadata['remoteCacheDir'] = (
                     base_url + os.path.relpath(building_block.remote_cache_dir.resolve(), cwd) + '/'
             )
+
+        if isinstance(building_block.metadata.get('schema'), str):
+            building_block.metadata['schema'] = {'application/yaml': building_block.metadata['schema']}
 
         child_bblocks.append(building_block)
 
@@ -366,7 +369,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                         print(f"  - {os.path.relpath(written_context)}", file=sys.stderr)
                 except Exception as e:
                     if fail_on_error:
-                        raise e
+                        raise Exception(f'Error writing context for {building_block.identifier}') from e
                     print(f"[Error] Writing context for {building_block.identifier}: {type(e).__name__}: {e}")
 
     output_bblocks = []

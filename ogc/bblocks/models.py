@@ -451,7 +451,7 @@ class BuildingBlockRegister:
                 self.bblock_paths[bblock.files_path] = bblock
             except Exception as e:
                 if fail_on_error:
-                    raise
+                    raise Exception(f'Error encountered while loading bblock: {bblock_id}') from e
                 print('==== Exception encountered while processing', bblock_id, '====', file=sys.stderr)
                 import traceback
                 traceback.print_exception(e, file=sys.stderr)
