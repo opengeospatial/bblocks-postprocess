@@ -16,6 +16,7 @@ from ogc.bblocks import oas30
 from ogc.bblocks.util import update_refs, PathOrUrl, BBLOCKS_REF_ANNOTATION
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from ogc.bblocks.models import BuildingBlockRegister, BuildingBlock
 
@@ -124,6 +125,14 @@ def annotate_schema(bblock: BuildingBlock,
     # if schema_url and '$id' not in annotated_schema:
     #      annotated_schema['$id'] = schema_url
 
+    return write_annotated_schema(bblock=bblock, bblocks_register=bblocks_register,
+                                  annotated_schema=annotated_schema, oas30_downcompile=oas30_downcompile)
+
+
+def write_annotated_schema(bblock: BuildingBlock,
+                           bblocks_register: BuildingBlockRegister,
+                           annotated_schema,
+                           oas30_downcompile: bool = False):
     result = []
 
     # YAML
@@ -135,14 +144,16 @@ def annotate_schema(bblock: BuildingBlock,
     potential_yaml_refs = {}
 
     def update_json_ref(ref: str):
-        if ref[0] == '#' or not is_url(ref):
+        if ref[0] == '#':
             return ref
         if '#' in ref:
             ref, fragment = ref.split('#', 1)
             fragment = '#' + fragment
         else:
             fragment = ''
-        if ref in bblocks_register.local_bblock_files or ref in bblocks_register.imported_bblock_files:
+        rel_ref = ref if is_url(ref)\
+            else str(bblock.annotated_path.joinpath(ref).resolve().relative_to(Path().resolve()))
+        if rel_ref in bblocks_register.local_bblock_files or ref in bblocks_register.imported_bblock_files:
             return re.sub(r'\.yaml$', r'.json', ref) + fragment
         elif ref.endswith('.yaml'):
             potential_yaml_refs[ref] = True
@@ -161,10 +172,11 @@ def annotate_schema(bblock: BuildingBlock,
     # OAS 3.0
     if oas30_downcompile:
         try:
-            if base_url:
+            if bblocks_register.base_url:
                 oas30_schema_fn = annotated_schema_fn.with_stem('schema-oas3.0')
                 dump_yaml(oas30.schema_to_oas30(annotated_schema_fn,
-                                                urljoin(base_url, str(os.path.relpath(oas30_schema_fn))),
+                                                urljoin(bblocks_register.base_url,
+                                                        str(os.path.relpath(oas30_schema_fn))),
                                                 bblocks_register),
                           oas30_schema_fn)
                 result.append(oas30_schema_fn)
@@ -172,7 +184,8 @@ def annotate_schema(bblock: BuildingBlock,
                 oas30_schema_json_fn = annotated_schema_json_fn.with_stem('schema-oas3.0')
                 with open(oas30_schema_json_fn, 'w') as f:
                     json.dump(oas30.schema_to_oas30(annotated_schema_json_fn,
-                                                    urljoin(base_url, str(os.path.relpath(oas30_schema_json_fn))),
+                                                    urljoin(bblocks_register.base_url,
+                                                            str(os.path.relpath(oas30_schema_json_fn))),
                                                     bblocks_register), f, indent=2)
                 result.append(oas30_schema_json_fn)
         except Exception as e:

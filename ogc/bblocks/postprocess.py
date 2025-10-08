@@ -15,11 +15,12 @@ from urllib.parse import urljoin
 from ogc.na.exceptions import ContextLoadError
 from ogc.na.util import is_url, dump_yaml
 
+from ogc.bblocks.extension import process_extension
 from ogc.bblocks.generate_docs import DocGenerator
 from ogc.bblocks.oas30 import oas31_to_oas30
 from ogc.bblocks.util import write_jsonld_context, CustomJSONEncoder, \
     PathOrUrl, get_git_repo_url
-from ogc.bblocks.schema import annotate_schema, resolve_all_schema_references
+from ogc.bblocks.schema import annotate_schema, resolve_all_schema_references, write_annotated_schema
 from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister, ImportedBuildingBlocks, BuildingBlockError
 from ogc.bblocks.validate import validate_test_resources, report_to_html
 from ogc.bblocks.transform import apply_transforms, transformers
@@ -250,7 +251,19 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         if filter_id is None or building_block.identifier == filter_id:
             if not steps or 'annotate' in steps:
 
-                if building_block.schema.exists:
+                if building_block.extensionPoints:
+                    if building_block.schema.exists or building_block.openapi.exists:
+                        raise ValueError('Extension points are incompatible with schema and openapi definitions')
+                    extended_schema = process_extension(building_block, register=bbr,
+                                                        parent_id=building_block.extensionPoints['baseBuildingBlock'],
+                                                        extensions=building_block.extensionPoints['extensions'])
+
+                    for annotated in write_annotated_schema(bblock=building_block, bblocks_register=bbr,
+                                                            annotated_schema=extended_schema,
+                                                            oas30_downcompile=schemas_oas30_downcompile):
+                        print(f"  - {annotated}", file=sys.stderr)
+
+                elif building_block.schema.exists:
 
                     if building_block.schema.is_url:
                         # Force caching remote file

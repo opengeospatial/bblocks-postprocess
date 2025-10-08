@@ -246,3 +246,22 @@ properties:
     type: array
     items:
       type: string
+  extensionPoints:
+    description: |
+      Extension points can be defined using a base building block and declaring specializations for other building
+      blocks referenced by the base one.
+    type: object
+    required:
+      - baseBuildingBlock
+      - extensions
+    properties:
+      baseBuildingBlock:
+        description: Base building block to extend
+        type: string
+      extensions:
+        description: Map of "source building block -> specialized building block" extensions
+        type: object
+        minProperties: 1
+        patternProperties:
+          '.*':
+            type: string
