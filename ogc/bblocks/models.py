@@ -133,13 +133,18 @@ class BuildingBlock:
                     else:
                         result.append(self.files_path.joinpath(ref).resolve())
 
-        if not result:
+        if not result and default_filenames:
             result = [default_filenames[0]]
+            found_def_fn = False
             for fn in default_filenames:
                 f = self.files_path / fn
                 if f.is_file():
+                    if found_def_fn:
+                        raise ValueError(f"Found multiple default files ({result[0]}, {f}) "
+                                         f"for the '{metadata_property}' metadata property. "
+                                         f"This is usually not intended and can lead to confusion.")
                     result[0] = f
-                    break
+                    found_def_fn = True
 
         if not result:
             return None
