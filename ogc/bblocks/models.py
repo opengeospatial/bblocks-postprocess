@@ -133,9 +133,10 @@ class BuildingBlock:
                     else:
                         result.append(self.files_path.joinpath(ref).resolve())
 
-        if not result and default_filenames:
-            result = [default_filenames[0]]
-            found_def_fn = False
+        if default_filenames:
+            found_def_fn = bool(result)
+            if not result:
+                result = [default_filenames[0]]
             for fn in default_filenames:
                 f = self.files_path / fn
                 if f.is_file():
