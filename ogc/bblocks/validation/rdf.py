@@ -368,6 +368,7 @@ class RdfValidator(Validator):
                 additional_shacl_closures = [c if is_url(c) else self.bblock.files_path.joinpath(c)
                                              for c in additional_shacl_closures]
 
+            shacl_errors_found = False
             for shacl_file, shacl_graph in self.shacl_graphs.items():
 
                 try:
@@ -380,6 +381,9 @@ class RdfValidator(Validator):
 
                     shacl_conforms, shacl_result, shacl_report, focus_nodes = shacl_validate(
                         graph, shacl_graph, ont_graph=ont_graph)
+
+                    if not shacl_conforms:
+                        shacl_errors_found = True
 
                     report.add_entry(ValidationReportEntry(
                         section=ValidationReportSection.SHACL,
@@ -450,6 +454,7 @@ class RdfValidator(Validator):
                             'shaclFile': str(shacl_file),
                         }
                     ))
+                    shacl_errors_found = True
                 except ReportableRuntimeError as e:
                     report.add_entry(ValidationReportEntry(
                         section=ValidationReportSection.SHACL,
@@ -462,4 +467,6 @@ class RdfValidator(Validator):
                             'shaclFile': str(shacl_file),
                         }
                     ))
+                    shacl_errors_found = True
+            return not shacl_errors_found
         return None
