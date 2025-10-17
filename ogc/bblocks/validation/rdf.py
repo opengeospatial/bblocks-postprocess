@@ -430,8 +430,6 @@ class RdfValidator(Validator):
                                 'focusNodes': focus_nodes_payload,
                             }
                         ))
-                        return None
-                    return None
                 except ParseBaseException as e:
                     if e.args:
                         query_lines = e.args[0].splitlines()
@@ -452,7 +450,6 @@ class RdfValidator(Validator):
                             'shaclFile': str(shacl_file),
                         }
                     ))
-                    return None
                 except ReportableRuntimeError as e:
                     report.add_entry(ValidationReportEntry(
                         section=ValidationReportSection.SHACL,
@@ -465,6 +462,4 @@ class RdfValidator(Validator):
                             'shaclFile': str(shacl_file),
                         }
                     ))
-                    return None
-            return None
         return None
