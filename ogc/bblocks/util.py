@@ -166,10 +166,13 @@ class PathOrUrl:
 
     @functools.cache
     def load_yaml(self):
-        if self.is_url:
-            return load_yaml(url=self.url)
-        else:
-            return load_yaml(filename=self.path)
+        try:
+            if self.is_url:
+                return load_yaml(url=self.url)
+            else:
+                return load_yaml(filename=self.path)
+        except Exception as e:
+            raise IOError(f'Error loading YAML file from {self.url if self.is_url else self.path}') from e
 
     @property
     def exists(self):
