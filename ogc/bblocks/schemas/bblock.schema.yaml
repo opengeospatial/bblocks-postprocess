@@ -59,6 +59,7 @@ properties:
       - parameter # OpenAPI parameter
       - header # OpenAPI header
       - cookie # OpenAPI cookie
+      - response # OpenAPI response object
       - api # Partial or full OpenAPI document
       - model # Ontology or data model
   register:
