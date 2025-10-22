@@ -497,18 +497,21 @@ class BuildingBlockRegister:
                     self.imported_bblock_files[d] = identifier
 
         for bblock in self.bblocks.values():
-            found_deps = self._resolve_bblock_deps(bblock)
-            deps = bblock.metadata.get('dependsOn')
-            if isinstance(deps, str):
-                found_deps.add(deps)
-            elif isinstance(deps, list):
-                found_deps.update(deps)
-            if found_deps:
-                bblock.metadata['dependsOn'] = list(found_deps)
-            dep_graph.add_node(bblock.identifier)
-            dep_graph.add_edges_from([(d, bblock.identifier)
-                                      for d in bblock.metadata.get('dependsOn', ())
-                                      if d != bblock.identifier])
+            try:
+                found_deps = self._resolve_bblock_deps(bblock)
+                deps = bblock.metadata.get('dependsOn')
+                if isinstance(deps, str):
+                    found_deps.add(deps)
+                elif isinstance(deps, list):
+                    found_deps.update(deps)
+                if found_deps:
+                    bblock.metadata['dependsOn'] = list(found_deps)
+                dep_graph.add_node(bblock.identifier)
+                dep_graph.add_edges_from([(d, bblock.identifier)
+                                          for d in bblock.metadata.get('dependsOn', ())
+                                          if d != bblock.identifier])
+            except Exception as e:
+                raise Exception(f'Error resolving dependencies for {bblock.identifier}') from e
 
             for a, b in dep_graph.edges:
                 if a not in self.bblocks and a not in self.imported_bblocks:
