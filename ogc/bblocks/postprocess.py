@@ -303,7 +303,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                         dump_yaml(openapi_resolved, building_block.output_openapi)
                         print(f"  - {os.path.relpath(building_block.output_openapi)}", file=sys.stderr)
 
-                        if openapi_resolved.get('openapi', '').startswith('3.1'):
+                        if openapi_resolved.get('openapi', '').startswith('3.1') and schemas_oas30_downcompile:
                             print(f"Downcompiling OpenAPI document to 3.0 for {building_block.identifier}", file=sys.stderr)
                             oas30_doc_fn = building_block.output_openapi_30
                             oas30_doc = oas31_to_oas30(openapi_resolved,
