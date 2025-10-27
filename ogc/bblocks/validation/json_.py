@@ -195,7 +195,7 @@ class JsonValidator(Validator):
                 except Exception as e:
                     if not isinstance(e, jsonschema.exceptions.ValidationError):
                         print(f'Unexpected error encountered when validating '
-                              f'resource {os.path.relpath(filename)} for {self.bblock}:',
+                              f'resource {os.path.relpath(filename)} for {self.bblock.identifier}:',
                               file=sys.stderr)
                         traceback.print_exception(e)
                     report.add_entry(ValidationReportEntry(
