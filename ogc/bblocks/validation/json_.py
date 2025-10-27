@@ -1,5 +1,7 @@
 import json
+import os
 import random
+import sys
 import traceback
 from json import JSONDecodeError
 from pathlib import Path
@@ -192,6 +194,9 @@ class JsonValidator(Validator):
                     ))
                 except Exception as e:
                     if not isinstance(e, jsonschema.exceptions.ValidationError):
+                        print(f'Unexpected error encountered when validating '
+                              f'resource {os.path.relpath(filename)} for {self.bblock}:',
+                              file=sys.stderr)
                         traceback.print_exception(e)
                     report.add_entry(ValidationReportEntry(
                         section=ValidationReportSection.JSON_SCHEMA,
