@@ -1,7 +1,7 @@
 asciidoc
 pyyaml~=6.0
 Mako~=1.2.4
-jsonschema==4.17.3
+jsonschema @ git+https://github.com/ogcincubator/jsonschema@bblocks-postprocess#egg=ogc-na
 ogc-na @ git+https://github.com/opengeospatial/ogc-na-tools@main#egg=ogc-na
 requests~=2.32.0,>=2.32.0
 pyparsing~=3.0.9
