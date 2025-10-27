@@ -23,7 +23,7 @@ jobs:
   upload:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - run: pip install ogc-na
@@ -75,8 +75,9 @@ jobs:
           ]
           
           auth_details = None
-          if 'SPARQL_USERNAME' in os.environ:
+          if os.environ.get('SPARQL_USERNAME', ''):
               auth_details = (os.environ["SPARQL_USERNAME"], os.environ.get("SPARQL_PASSWORD", ""))
+              print(f'Using authentication')
           
           for bblock in bblocks:
               ontology = bblock.get('ontology')
