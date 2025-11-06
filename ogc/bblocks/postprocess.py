@@ -15,7 +15,7 @@ from urllib.parse import urljoin
 from ogc.na.exceptions import ContextLoadError
 from ogc.na.util import is_url, dump_yaml
 
-from ogc.bblocks.extension import process_extension
+from ogc.bblocks.extension import Extender
 from ogc.bblocks.generate_docs import DocGenerator
 from ogc.bblocks.oas30 import oas31_to_oas30
 from ogc.bblocks.util import write_jsonld_context, CustomJSONEncoder, \
@@ -46,9 +46,6 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 schemas_oas30_downcompile=False) -> list[dict]:
 
     cwd = Path().resolve()
-
-    if bbr_config is None:
-        bbr_config = {}
 
     if not isinstance(test_outputs_path, Path):
         test_outputs_path = Path(test_outputs_path)
@@ -247,27 +244,37 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
     else:
         print("No transformers found", file=sys.stderr)
 
+    extender = Extender(bbr)
     for building_block in bbr.bblocks.values():
         if filter_id is None or building_block.identifier == filter_id:
             if not steps or 'annotate' in steps:
 
+                openapi_contents = None
                 if building_block.extensionPoints:
                     if building_block.schema.exists or building_block.openapi.exists:
-                        raise ValueError('Extension points are incompatible with schema and openapi definitions')
-                    extended_schema = process_extension(building_block, register=bbr,
-                                                        parent_id=building_block.extensionPoints['baseBuildingBlock'],
-                                                        extensions=building_block.extensionPoints['extensions'])
+                        raise ValueError('Extension points are incompatible with schema and OpenAPI definitions')
+                    try:
+                        extended_schema, is_openapi = extender.process_extensions(building_block)
+                    except Exception as e:
+                        raise Exception(f'Error processing extension points for {building_block.identifier}') from e
 
-                    for annotated in write_annotated_schema(bblock=building_block, bblocks_register=bbr,
-                                                            annotated_schema=extended_schema,
-                                                            oas30_downcompile=schemas_oas30_downcompile):
-                        print(f"  - {annotated}", file=sys.stderr)
+                    if is_openapi:
+                        openapi_contents = extended_schema
+                    else:
+                        for annotated in write_annotated_schema(bblock=building_block, bblocks_register=bbr,
+                                                                annotated_schema=extended_schema,
+                                                                oas30_downcompile=schemas_oas30_downcompile):
+                            print(f"  - {annotated}", file=sys.stderr)
 
                 elif building_block.schema.exists:
 
+                    if building_block.openapi.exists:
+                        raise ValueError('A schema and an OpenAPI document cannot be provided '
+                                         'for the same building block')
+
                     if building_block.schema.is_url:
                         # Force caching remote file
-                        building_block.schema_contents
+                        _ = building_block.schema_contents
 
                     # Annotate schema
                     print(f"Annotating schema for {building_block.identifier}", file=sys.stderr)
@@ -277,7 +284,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                             # Use URL directly
                             default_jsonld_context = building_block.ldContext
                             # Force caching remote file
-                            building_block.jsonld_context_contents
+                            _ = building_block.jsonld_context_contents
                         else:
                             # Use path relative to bblock.json
                             default_jsonld_context = building_block.files_path / building_block.ldContext
@@ -306,18 +313,22 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                                 print(f"{e}: {e.__cause__}", file=sys.stderr)
                             else:
                                 print(str(e), file=sys.stderr)
+                elif building_block.openapi.exists:
+                    openapi_contents = building_block.openapi.load_yaml()
 
-                if building_block.openapi.exists:
+                if openapi_contents:
                     print(f"Annotating OpenAPI document for {building_block.identifier}", file=sys.stderr)
                     try:
-                        openapi_resolved = resolve_all_schema_references(building_block.openapi.load_yaml(), bbr,
-                                                                         building_block, building_block.openapi, base_url)
+                        openapi_resolved = resolve_all_schema_references(openapi_contents, bbr,
+                                                                         building_block, building_block.openapi,
+                                                                         base_url)
                         building_block.output_openapi.parent.mkdir(parents=True, exist_ok=True)
                         dump_yaml(openapi_resolved, building_block.output_openapi)
                         print(f"  - {os.path.relpath(building_block.output_openapi)}", file=sys.stderr)
 
                         if openapi_resolved.get('openapi', '').startswith('3.1') and schemas_oas30_downcompile:
-                            print(f"Downcompiling OpenAPI document to 3.0 for {building_block.identifier}", file=sys.stderr)
+                            print(f"Downcompiling OpenAPI document to 3.0 for {building_block.identifier}",
+                                  file=sys.stderr)
                             oas30_doc_fn = building_block.output_openapi_30
                             oas30_doc = oas31_to_oas30(openapi_resolved,
                                                        PathOrUrl(oas30_doc_fn).with_base_url(base_url),
@@ -337,7 +348,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                             .with_base_url(base_url)
                     elif building_block.ontology.is_url:
                         # Force cache
-                        building_block.ontology_graph
+                        _ = building_block.ontology_graph
                         building_block.metadata['ontology'] = building_block.ontology.value
                 except Exception as e:
                     if fail_on_error:
