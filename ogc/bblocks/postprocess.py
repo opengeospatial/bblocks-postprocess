@@ -22,7 +22,7 @@ from ogc.bblocks.util import write_jsonld_context, CustomJSONEncoder, \
     PathOrUrl, get_git_repo_url
 from ogc.bblocks.schema import annotate_schema, resolve_all_schema_references, write_annotated_schema
 from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister, ImportedBuildingBlocks, BuildingBlockError
-from ogc.bblocks.validate import validate_test_resources, report_to_html
+from ogc.bblocks.validate import validate_test_resources, write_report
 from ogc.bblocks.transform import apply_transforms, transformers
 
 
@@ -407,14 +407,19 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             print(f"{building_block.identifier} failed postprocessing, skipping...", file=sys.stderr)
 
     full_validation_report_url = None
+    full_validation_report_url_json = None
     if not steps or 'tests' in steps:
-        print(f"Writing full validation report to {test_outputs_path / 'report.html'}", file=sys.stderr)
+        print(f"Writing validation report to {test_outputs_path / 'report.html'} and "
+              f"{test_outputs_path / 'report.json'}", file=sys.stderr)
         if base_url:
             full_validation_report_url = (f"{base_url}{os.path.relpath(Path(test_outputs_path).resolve(), cwd)}"
                                           f"/report.html")
-        report_to_html(json_reports=validation_reports,
-                       report_fn=test_outputs_path / 'report.html',
-                       base_url=base_url)
+            full_validation_report_url_json = (f"{base_url}{os.path.relpath(Path(test_outputs_path).resolve(), cwd)}"
+                                               f"/report.json")
+        write_report(json_reports=validation_reports,
+                     report_fn=test_outputs_path / 'report.html',
+                     json_report_fn=test_outputs_path / 'report.json',
+                     base_url=base_url)
 
     if output_file and (not steps or 'register' in steps):
 
@@ -430,6 +435,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
         if full_validation_report_url:
             output_register_json['validationReport'] = full_validation_report_url
+        if full_validation_report_url_json:
+            output_register_json['validationReportJson'] = full_validation_report_url_json
 
         if additional_metadata:
             output_register_json = {
