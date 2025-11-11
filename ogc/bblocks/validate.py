@@ -119,15 +119,25 @@ def report_to_dict(bblock: BuildingBlock,
     return result
 
 
-def report_to_html(json_reports: list[dict],
-                   base_url: str | None = None,
-                   report_fn: Path | None = None) -> str | None:
+def write_report(json_reports: list[dict],
+                 base_url: str | None = None,
+                 report_fn: Path | None = None,
+                 json_report_fn: Path | None = None) -> str | None:
     pass_count = sum(r['result'] for r in json_reports)
     counts = {
         'total': len(json_reports),
         'passed': pass_count,
         'failed': len(json_reports) - pass_count,
     }
+
+    if json_report_fn:
+        output_report = {
+            'summary': {**counts, 'result': counts['failed'] == 0},
+            'bblocks': {report['bblockId']: report for report in json_reports}
+        }
+        with open(json_report_fn, 'w') as f:
+            json.dump(output_report, f, indent=2)
+
     template = mako_template.Template(filename=str(Path(__file__).parent / 'validation/report.html.mako'))
     try:
         result = template.render(reports=json_reports, counts=counts, report_fn=report_fn, base_url=base_url)
