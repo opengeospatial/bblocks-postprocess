@@ -336,6 +336,7 @@ def validate_test_resources(bblock: BuildingBlock,
                     require_fail=False,
                     prefixes=example.get('prefixes'),
                     file_format=snippet_language,
+                    additional_shacl_closures=snippet.get('shacl-closure'),
                 )
                 if example_result:
                     all_results.append(example_result)

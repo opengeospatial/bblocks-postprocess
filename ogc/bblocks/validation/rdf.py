@@ -123,9 +123,11 @@ class RdfValidator(Validator):
                     self.shacl_errors.append(f"Error processing {shacl_file}: {str(e)}")
             inherited_shacl_shapes[shacl_bblock] = bblock_shacl_files
 
+        self.added_shacl_closures = []
         for shacl_closure in bblock.shaclClosures or ():
             try:
                 self.closure_graph.parse(bblock.resolve_file(shacl_closure), format='turtle')
+                self.added_shacl_closures.append(shacl_closure)
             except HTTPError as e:
                 self.shacl_errors.append(f"Error retrieving {e.url}: {e}")
             except Exception as e:
@@ -364,7 +366,19 @@ class RdfValidator(Validator):
             if not self.shacl_graphs:
                 return None
 
+            if self.added_shacl_closures:
+                report.add_entry(ValidationReportEntry(
+                    section=ValidationReportSection.SHACL,
+                    message="Using building block SHACL closures:\n - " + '\n - '.join(self.added_shacl_closures),
+                    is_error=False,
+                ))
+
             if additional_shacl_closures:
+                report.add_entry(ValidationReportEntry(
+                    section=ValidationReportSection.SHACL,
+                    message="Using snippet SHACL closures:\n - " + '\n - '.join(additional_shacl_closures),
+                    is_error=False,
+                ))
                 additional_shacl_closures = [c if is_url(c) else self.bblock.files_path.joinpath(c)
                                              for c in additional_shacl_closures]
 
