@@ -1,6 +1,16 @@
 transform:
   # Add @type from itemClass with initial capital letter
-  - '.bblocks |= [ .[] | ."@type" = [("bblocks:" + (.itemClass[:1]|ascii_upcase) + .itemClass[1:]), "skos:Concept", "dcat:Dataset"] ]'
+  - |
+    .bblocks |= map(
+      ."@id" = "bblocks://\(.itemIdentifier)"
+      | ."@type" = [("bblocks:" + (.itemClass[:1]|ascii_upcase) + .itemClass[1:]), "skos:Concept", "dcat:Dataset"]
+      | ."skos:prefLabel" = .name
+      | .ldContext |= if . then { "prof:hasArtifact": . , "prof:hasRole": "role:mapping", "dct:format": "application/ld+json" } else null end
+      | .shaclShapes |= (if length > 0 then to_entries | map({ "prof:hasArtifact": .value, "rdfs:seeAlso": "bblocks://\(.key)", "prof:hasRole": "role:validation", "dct:format": "text/turtle", "dct:conformsTo": "shacl:" }) else null end)
+      | .schema |= (if length > 0 then to_entries | map({ "prof:hasArtifact": .value , "prof:hasRole": "role:schema", "dct:format": .key }) else null end)
+      | .dependsOn |= if length > 0 then map("bblocks://\(.)") else null end
+      | .profileOf |= if length > 0 then map("bblocks://\(.)") else null end
+    )
   # Add ConceptScheme
   - |
     if type == "array" then {
@@ -27,8 +37,12 @@ context:
     prof: http://www.w3.org/ns/dx/prof/
     dcat: http://www.w3.org/ns/dcat#
     modspec: http://www.opengis.net/def/ont/modspec/
+    void: http://rdfs.org/ns/void#
+    foaf: http://xmlns.com/foaf/0.1/
+    role: http://www.w3.org/ns/dx/prof/role/
+    shacl: https://www.w3.org/TR/shacl/
+    owl: http://www.w3.org/2002/07/owl#
 
-    itemIdentifier: '@id'
     baseURL: '@id'
     name: rdfs:label
     abstract:
@@ -54,6 +68,9 @@ context:
     dateOfLastChange:
       '@id': dct:modified
       '@type': xsd:date
+    modified:
+      '@id': dct:modified
+      '@type': xsd:dateTime
     scope:
       '@id': bblocks:scope
       '@type': '@id'
@@ -65,12 +82,10 @@ context:
         title: rdfs:label
         link: '@id'
     schema:
-      '@id': bblocks:hasSchema
+      '@id': prof:hasResource
       '@type': '@id'
-      '@container': '@index'
-      '@index': dct:format
     ldContext:
-      '@id': bblocks:hasJsonLdContext
+      '@id': prof:hasResource
       '@type': '@id'
     sourceLdContext:
       '@id': bblocks:hasSourceJsonLdContext
@@ -83,6 +98,8 @@ context:
       '@context':
         mediatype: dct:format
         url: rdfs:isDefinedBy
+    rdfs:isDefinedBy:
+      '@type': '@id'
     hasConcepts:
       '@reverse': skos:inScheme
     dependsOn:
@@ -93,16 +110,29 @@ context:
       '@type': '@id'
     tags: dcat:keyword
     shaclShapes:
-      '@id': bblocks:hasShaclRule
+      '@id': prof:hasResource
       '@type': '@id'
-      '@container': '@index'
-      '@index': rdfs:seeAlso
     validationReport:
       '@id': bblocks:hasValidationReport
       '@type': '@id'
+    validationPassed: bblocks:validationPassed
     imports:
-      '@id': bblocks:imports
+      '@id': owl:imports
       '@type': '@id'
     conformanceClasses:
       '@id': modspec:class
+      '@type': '@id'
+    sparqlEndpoint:
+      '@id': void:sparqlEndpoint
+      '@type': '@id'
+    viewerURL:
+      '@id': foaf:homepage
+      '@type': '@id'
+    dct:conformsTo:
+      '@type': '@id'
+    prof:hasRole:
+      '@type': '@id'
+    prof:hasArtifact:
+      '@type': '@id'
+    rdfs:seeAlso:
       '@type': '@id'
