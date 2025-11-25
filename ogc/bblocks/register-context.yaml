@@ -1,6 +1,7 @@
 transform:
   # Add @type from itemClass with initial capital letter
   - |
+    .baseURL as $CS_URI |
     .bblocks |= map(
       ."@id" = "bblocks://\(.itemIdentifier)"
       | ."@type" = [("bblocks:" + (.itemClass[:1]|ascii_upcase) + .itemClass[1:]), "skos:Concept", "dcat:Dataset"]
@@ -10,6 +11,7 @@ transform:
       | .schema |= (if length > 0 then to_entries | map({ "prof:hasArtifact": .value , "prof:hasRole": "role:schema", "dct:format": .key }) else null end)
       | .dependsOn |= if length > 0 then map("bblocks://\(.)") else null end
       | .profileOf |= if length > 0 then map("bblocks://\(.)") else null end
+      | if $CS_URI then ."skos:topConceptOf" = {"@id": $CS_URI} end
     )
   # Add ConceptScheme
   - |
@@ -22,7 +24,8 @@ transform:
         "@type": ["skos:ConceptScheme", "dcat:Catalog"],
         "name": "Building Blocks - \(.name)",
         "skos:prefLabel": "Building Blocks - \(.name)",
-        "hasConcepts": .bblocks
+        "hasConcepts": .bblocks,
+        "skos:hasTopConcept": (.bblocks | map({"@id": "bblocks://\(.itemIdentifier)"})) 
       } | del(.bblocks) end
   - '{ "@context": { "@base": ($baseUrl // "https://www.opengis.net/def/bblocks/") } } + .'
 
@@ -97,7 +100,9 @@ context:
       '@index': dct:identifier
       '@context':
         mediatype: dct:format
-        url: rdfs:isDefinedBy
+        url:
+          '@id': rdfs:isDefinedBy
+          '@type': '@id'
     rdfs:isDefinedBy:
       '@type': '@id'
     hasConcepts:
