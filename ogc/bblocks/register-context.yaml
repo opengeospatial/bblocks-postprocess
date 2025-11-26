@@ -6,9 +6,9 @@ transform:
       ."@id" = "bblocks://\(.itemIdentifier)"
       | ."@type" = [("bblocks:" + (.itemClass[:1]|ascii_upcase) + .itemClass[1:]), "skos:Concept", "dcat:Dataset"]
       | ."skos:prefLabel" = .name
-      | .ldContext |= if . then { "prof:hasArtifact": . , "prof:hasRole": "role:mapping", "dct:format": "application/ld+json" } else null end
+      | .ldContext |= if . then { "prof:hasArtifact": . , "prof:hasRole": "role:mapping", "dct:format": "application/ld+json", "dct:conformsTo": "https://www.w3.org/TR/json-ld11/" } else null end
       | .shaclShapes |= (if length > 0 then to_entries | map({ "prof:hasArtifact": .value, "rdfs:seeAlso": "bblocks://\(.key)", "prof:hasRole": "role:validation", "dct:format": "text/turtle", "dct:conformsTo": "shacl:" }) else null end)
-      | .schema |= (if length > 0 then to_entries | map({ "prof:hasArtifact": .value , "prof:hasRole": "role:schema", "dct:format": .key }) else null end)
+      | .schema |= (if length > 0 then to_entries | map({ "prof:hasArtifact": .value , "prof:hasRole": "role:schema", "dct:format": .key, "dct:conformsTo": "https://json-schema.org/draft/2020-12/schema" }) else null end)
       | .dependsOn |= if length > 0 then map("bblocks://\(.)") else null end
       | .profileOf |= if length > 0 then map("bblocks://\(.)") else null end
       | if $CS_URI then ."skos:topConceptOf" = {"@id": $CS_URI} end
