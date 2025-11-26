@@ -127,6 +127,9 @@ context:
     conformanceClasses:
       '@id': modspec:class
       '@type': '@id'
+    requirementClasses:
+      '@id': modspec:requirementsClass
+      '@type': '@id'
     sparqlEndpoint:
       '@id': void:sparqlEndpoint
       '@type': '@id'
