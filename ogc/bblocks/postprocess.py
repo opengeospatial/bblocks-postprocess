@@ -43,7 +43,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 git_repo_path: Path | None = None,
                 viewer_path: str | Path | None = None,
                 additional_metadata: dict | None = None,
-                schemas_oas30_downcompile=False) -> list[dict]:
+                schemas_oas30_downcompile=False,
+                local_url_mappings: dict | None = None) -> list[dict]:
 
     cwd = Path().resolve()
 
@@ -70,7 +71,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
     imported_bblocks = ImportedBuildingBlocks(imported_registers,
                                               ignore_git_repos=[get_git_repo_url(git_repo_url)]
                                               if git_repo_url else None,
-                                              remote_cache_dir=remote_cache_dir)
+                                              remote_cache_dir=remote_cache_dir,
+                                              is_local=bool(local_url_mappings))
     bbr = BuildingBlockRegister(registered_items_path,
                                 fail_on_error=fail_on_error,
                                 prefix=id_prefix,

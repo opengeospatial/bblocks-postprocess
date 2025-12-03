@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import dataclasses
+from datetime import datetime
 import json
 import os
 import sys
@@ -24,6 +25,8 @@ from ogc.bblocks.util import get_schema, PathOrUrl, load_file, find_references_y
 from ogc.bblocks.schema import RegisterSchemaResolver
 
 BBLOCK_METADATA_FILE = 'bblock.json'
+
+EPOCH_STR = '1970-01-01T00:00:00'
 
 
 def get_bblock_subdirs(identifier: str) -> Path:
@@ -346,12 +349,13 @@ class BuildingBlock:
 class ImportedBuildingBlocks:
 
     def __init__(self, metadata_urls: list[str] | None, ignore_git_repos: list[str] | None = None,
-                 remote_cache_dir: Path | None = None):
+                 remote_cache_dir: Path | None = None, is_local=False):
         self.bblocks: dict[str, dict] = {}
         self.imported_registers: dict[str, list[str]] = {}
         self.real_metadata_urls: dict[str, str] = {}
         self.ignore_git_repos: list[str] | None = ([x for x in ignore_git_repos if x]
                                                       if ignore_git_repos else None)
+        self.is_local = is_local
         self.remote_cache_dir = remote_cache_dir
         if remote_cache_dir:
             remote_cache_dir.mkdir(exist_ok=True, parents=True)
@@ -372,10 +376,31 @@ class ImportedBuildingBlocks:
 
         metadata_url_trailing = metadata_url + ('' if metadata_url.endswith('/') else '/')
         collected_exceptions = {}
-        for url in (metadata_url,
-                    metadata_url_trailing + 'build/register.json',
-                    metadata_url_trailing + 'register.json'):
+        try_urls = [
+            metadata_url,
+            metadata_url_trailing + 'build/register.json',
+            metadata_url_trailing + 'register.json'
+        ]
+        for i, url in enumerate(try_urls):
             try:
+                local_imported = None
+                local_url = None
+                if i == 1 and self.is_local:
+                    # test build-local/register.json
+                    local_url = metadata_url_trailing + 'build-local/register.json'
+                    tested_locations[local_url] = True
+                    try:
+                        r = requests.get(local_url)
+                        r.raise_for_status()
+                        local_imported = r.json()
+                        if not isinstance(local_imported, dict) or 'bblocks' not in local_imported:
+                            local_imported = None
+                        elif self.remote_cache_dir:
+                            cache_fn = self.remote_cache_dir.joinpath(sha256(url.encode('utf-8')).hexdigest())
+                            with open(cache_fn, 'wb') as f:
+                                f.write(r.content)
+                    except:
+                        pass
                 tested_locations[url] = True
                 r = requests.get(url)
                 if r.ok:
@@ -388,8 +413,18 @@ class ImportedBuildingBlocks:
                             print(f"[WARN] Error writing cache file {cache_fn} for {url}", file=sys.stderr)
                     imported = r.json()
                     if (isinstance(imported, dict) and 'bblocks' in imported) or isinstance(imported, list):
-                        metadata_url = url
+                        if (local_imported
+                                and datetime.fromisoformat(local_imported.get('modified'))
+                                    > datetime.fromisoformat(imported.get('modified'))):
+                            imported = local_imported
+                            metadata_url = local_url
+                        else:
+                            metadata_url = url
                         break
+                elif local_imported:
+                    imported = local_imported
+                    metadata_url = local_url
+                    break
             except Exception as e:
                 collected_exceptions[url] = e
                 imported = None
@@ -589,7 +624,7 @@ class BuildingBlockRegister:
                     # Check if target path in local bblock schemas
                     rel_ref = str(os.path.relpath(source_fn.resolve_ref(ref).resolve()))
                     if not Path(rel_ref).is_file():
-                        raise ValueError(f"Invalid reference to {rel_ref}"
+                        raise ValueError(f"Invalid reference to {ref} (resolved to {rel_ref})"
                                          f" from {bblock.identifier} ({source_fn}) - target file does not exist"
                                          f" - check that the file exists (maybe schema.yaml instead of schema.json?)")
                 else:
