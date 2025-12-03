@@ -285,7 +285,8 @@ if __name__ == '__main__':
                     git_repo_path=git_repo_path,
                     viewer_path=(args.viewer_path or '.') if deploy_viewer else None,
                     additional_metadata=register_additional_metadata,
-                    schemas_oas30_downcompile=schema_oas30_downcompile)
+                    schemas_oas30_downcompile=schema_oas30_downcompile,
+                    local_url_mappings=local_url_mappings)
     finally:
         http_interceptor.disable()
 
