@@ -10,6 +10,7 @@ from urllib.parse import urljoin
 from ogc.bblocks import mimetypes
 from ogc.bblocks.models import BuildingBlock, TransformMetadata, BuildingBlockError
 from ogc.bblocks.transformers import transformers
+from ogc.bblocks.util import sanitize_filename
 
 
 def apply_transforms(bblock: BuildingBlock,
@@ -78,8 +79,12 @@ def apply_transforms(bblock: BuildingBlock,
                 if snippet_mime_type not in supported_input_media_types:
                     continue
 
-                output_fn = output_dir / (f"example_{example_id + 1}_{snippet_id + 1}"
-                                          f".{transform['id']}{default_suffix}")
+                if base_output_filename := example.get('base-output-filename'):
+                    output_fn = output_dir / sanitize_filename(base_output_filename)
+                    output_fn = output_fn.with_name(f"{output_fn.stem}.{transform['id']}{default_suffix}")
+                else:
+                    output_fn = output_dir / (f"example_{example_id + 1}_{snippet_id + 1}"
+                                              f".{transform['id']}{default_suffix}")
 
                 metadata = transform.get('metadata', {})
                 metadata['_prefixes'] = example_prefixes

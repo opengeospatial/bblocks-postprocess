@@ -316,10 +316,10 @@ def validate_test_resources(bblock: BuildingBlock,
                     add_snippets_formats = []
 
                 extension = FORMAT_ALIASES.get(snippet['language'], snippet['language']).replace('/', '.')
-                fn = bblock.files_path / (f"example_{example_id + 1}_{snippet_id + 1}"
-                                          f".{extension}")
+                fn = bblock.files_path / f"example_{example_id + 1}_{snippet_id + 1}"
 
-                output_fn = output_dir / sanitize_filename(example.get('base-output-filename', fn.name))
+                output_fn = (output_dir.joinpath(sanitize_filename(example.get('base-output-filename', fn.name)))
+                             .with_suffix(f'.{extension}'))
                 i = 0
                 while output_fn.stem in output_base_filenames:
                     i += 1
