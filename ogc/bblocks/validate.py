@@ -25,6 +25,8 @@ OUTPUT_SUBDIR = 'output'
 FORMAT_ALIASES = {
     'turtle': 'ttl',
     'json-ld': 'jsonld',
+    'application/ld+json': 'jsonld',
+    'text/turtle': 'ttl',
 }
 DEFAULT_UPLIFT_FORMATS = ['jsonld', 'ttl']
 
@@ -305,6 +307,7 @@ def validate_test_resources(bblock: BuildingBlock,
             example_base_uri = example.get('base-uri')
             snippets = example.get('snippets', ())
             snippet_langs = set(snippet.get('language') for snippet in snippets)
+            snippet_langs.update({FORMAT_ALIASES[l] for l in snippet_langs if l in FORMAT_ALIASES})
             add_snippets = {}
             for snippet_id, snippet in enumerate(snippets):
                 code, lang = snippet.get('code'), snippet.get('language')
