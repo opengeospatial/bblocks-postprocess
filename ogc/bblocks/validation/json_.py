@@ -119,7 +119,7 @@ class JsonValidator(Validator):
                     section=ValidationReportSection.FILES,
                     message=f'Using {filename.name} from {file_from}',
                 ))
-            json_doc = jsonref.replace_refs(json_doc, base_uri=filename.as_uri(), merge_props=True, proxies=False)
+            # json_doc = jsonref.replace_refs(json_doc, base_uri=filename.as_uri(), merge_props=True, proxies=False)
 
             if '@graph' in json_doc:
                 json_doc = json_doc['@graph']
