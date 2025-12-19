@@ -10,6 +10,8 @@ transform:
       | .shaclShapes |= (if length > 0 then to_entries | map({ "prof:hasArtifact": .value, "rdfs:seeAlso": "bblocks://\(.key)", "prof:hasRole": "role:validation", "dct:format": "text/turtle", "dct:conformsTo": "shacl:" }) else null end)
       | .schema |= (if length > 0 then to_entries | map({ "prof:hasArtifact": .value , "prof:hasRole": "role:schema", "dct:format": .key, "dct:conformsTo": "https://json-schema.org/draft/2020-12/schema" }) else null end)
       | .openAPIDocument |= if . then { "prof:hasArtifact": . , "prof:hasRole": "role:schema", "dct:format": "application/yaml", "dct:conformsTo": "https://spec.openapis.org/oas/v3.1.0.html" } else null end
+      | .ontology |= if . then { "prof:hasArtifact": . , "prof:hasRole": "role:specification", "dct:format": "text/turtle", "dct:conformsTo": "http://www.w3.org/2002/07/owl#Ontology" } else null end
+      | .rdfData |= if length > 0 then map({ "prof:hasArtifact": . , "prof:hasRole": "role:data", "dct:format": "text/turtle" }) else [] end
       | .dependsOn |= if length > 0 then map("bblocks://\(.)") else null end
       | .profileOf |= if length > 0 then map("bblocks://\(.)") else null end
       | if $CS_URI then ."skos:topConceptOf" = {"@id": $CS_URI} end
@@ -144,4 +146,10 @@ context:
     prof:hasArtifact:
       '@type': '@id'
     rdfs:seeAlso:
+      '@type': '@id'
+    ontology:
+      '@id': prof:hasResource
+      '@type': '@id'
+    rdfData:
+      '@id': prof:hasResource
       '@type': '@id'
