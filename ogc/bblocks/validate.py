@@ -215,7 +215,7 @@ def _validate_resource(bblock: BuildingBlock,
             }
         ))
 
-    if not any_validator_run:
+    if not any_validator_run and not report.failed:
         return None
 
     failed = report.failed
@@ -319,7 +319,8 @@ def validate_test_resources(bblock: BuildingBlock,
                     add_snippets_formats = []
 
                 extension = FORMAT_ALIASES.get(snippet['language'], snippet['language']).replace('/', '.')
-                fn = bblock.files_path / f"example_{example_id + 1}_{snippet_id + 1}"
+                fn = bblock.files_path / (f"example_{example_id + 1}_{snippet_id + 1}"
+                                          f".{extension}")
 
                 output_fn = (output_dir.joinpath(sanitize_filename(example.get('base-output-filename', fn.name)))
                              .with_suffix(f'.{extension}'))
