@@ -167,7 +167,8 @@ class Extender:
         return result, parent_is_openapi
 
     def _process_openapi(self):
-        raise ValueError('Support for extending OpenAPI documents is not yet implemented.')
+        print('WARNING: Extension points in OpenAPI building blocks are merely declarative. '
+              'No additional postprocessing of the OpenAPI document will be done.')
 
     def _process_schema(self, bblock: BuildingBlock, root_schema: ReferencedSchema, parent_id: str,
                         extensions: dict[str, str], extension_schema_mappings: dict[str, dict[str, str]]):
