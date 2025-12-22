@@ -253,8 +253,6 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
                 openapi_contents = None
                 if building_block.extensionPoints:
-                    if building_block.schema.exists or building_block.openapi.exists:
-                        raise ValueError('Extension points are incompatible with schema and OpenAPI definitions')
                     try:
                         extended_schema, is_openapi = extender.process_extensions(building_block)
                     except Exception as e:
