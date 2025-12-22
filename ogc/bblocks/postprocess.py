@@ -374,6 +374,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             if filter_id is not None and building_block.identifier != filter_id:
                 continue
             if building_block.annotated_schema.is_file():
+                written_context = None
                 try:
                     written_context = write_jsonld_context(building_block.annotated_schema, bbr)
                     if written_context:
@@ -392,9 +393,12 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                             pass
                         print(f"  - {os.path.relpath(written_context)}", file=sys.stderr)
                 except Exception as e:
+                    written_context_msg = f" ({written_context})" if written_context else ''
                     if fail_on_error:
-                        raise Exception(f'Error writing context for {building_block.identifier}') from e
-                    print(f"[Error] Writing context for {building_block.identifier}: {type(e).__name__}: {e}")
+                        raise Exception(f'Error writing context for {building_block.identifier}'
+                                        f'{written_context_msg}') from e
+                    print(f"[Error] Writing context for {building_block.identifier}"
+                          f"{written_context_msg}: {type(e).__name__}: {e}")
 
     output_bblocks = []
     for building_block in child_bblocks:
