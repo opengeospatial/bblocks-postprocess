@@ -313,7 +313,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                                 print(f"{e}: {e.__cause__}", file=sys.stderr)
                             else:
                                 print(str(e), file=sys.stderr)
-                elif building_block.openapi.exists:
+
+                if building_block.openapi.exists:
                     openapi_contents = building_block.openapi.load_yaml()
 
                 if openapi_contents:
