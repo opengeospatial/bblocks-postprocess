@@ -48,7 +48,7 @@ class RegisterSchemaResolver(SchemaResolver):
         return s
 
     def load_contents(self, s: str | Path) -> tuple[dict, bool]:
-        if isinstance(s, str) and is_url(s) and s.startswith(self.register.base_url):
+        if self.register.base_url and isinstance(s, str) and is_url(s) and s.startswith(self.register.base_url):
             s = self.find_schema(s)
         return super().load_contents(s)
 
