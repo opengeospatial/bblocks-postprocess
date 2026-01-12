@@ -286,7 +286,20 @@ if __name__ == '__main__':
                     viewer_path=(args.viewer_path or '.') if deploy_viewer else None,
                     additional_metadata=register_additional_metadata,
                     schemas_oas30_downcompile=schema_oas30_downcompile,
-                    local_url_mappings=local_url_mappings)
+                    local_url_mappings=local_url_mappings,
+                    links=[
+                        {
+                            'rel': 'self',
+                            'href': register_ttl_fn,
+                            'type': 'text/turtle',
+                            'title': 'This Building Blocks Register in RDF Turtle format',
+                        },{
+                            'rel': 'self',
+                            'href': register_jsonld_fn,
+                            'type': 'application/ld+json',
+                            'title': 'This Building Blocks Register in JSON-LD format',
+                        }
+                    ])
     finally:
         http_interceptor.disable()
 

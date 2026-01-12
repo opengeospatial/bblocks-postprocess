@@ -153,3 +153,6 @@ context:
     rdfData:
       '@id': prof:hasResource
       '@type': '@id'
+    links:
+      '@id': prof:hasResource
+      '@context': https://opengeospatial.github.io/bblocks/annotated-schemas/ogc-utils/json-link/context.jsonld
