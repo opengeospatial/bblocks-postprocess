@@ -44,7 +44,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 viewer_path: str | Path | None = None,
                 additional_metadata: dict | None = None,
                 schemas_oas30_downcompile=False,
-                local_url_mappings: dict | None = None) -> list[dict]:
+                local_url_mappings: dict | None = None,
+                links: list[dict] = None) -> list[dict]:
 
     cwd = Path().resolve()
 
@@ -455,6 +456,23 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
         remote_cache_dir_url = f"{base_url}{os.path.relpath(Path(remote_cache_dir).resolve(), cwd)}"
         output_register_json['remoteCacheDir'] = remote_cache_dir_url
+
+        self_link = PathOrUrl(output_file).with_base_url(base_url)
+
+        output_register_json['links'] = [
+            {
+                'rel': 'self',
+                'href': self_link,
+                'type': 'application/json',
+                'title': 'This Building Blocks Register in JSON format',
+            }
+        ]
+        if links:
+            for link in links:
+                output_register_json['links'].append({
+                    **link,
+                    'href': PathOrUrl(link['href']).with_base_url(base_url),
+                })
 
         if output_file == '-':
             print(json.dumps(output_register_json, indent=2, cls=CustomJSONEncoder))
