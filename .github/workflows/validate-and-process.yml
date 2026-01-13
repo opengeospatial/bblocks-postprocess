@@ -228,7 +228,7 @@ jobs:
           sudo find "${{ inputs.annotated_path }}" -name _visited_properties.tsv.gz -delete || true
       - name: Deploy Building Blocks viewer
         id: deploy-viewer
-        if: ${{ inputs.deploy_viewer && github.event.repository.has_pages && !inputs.skip-pages }}
+        if: ${{ inputs.deploy_viewer }}
         run: |
           OLD_WD="$(pwd)"
           REGISTER_FILE="$(realpath "${{ inputs.register_file }}")"
