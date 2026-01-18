@@ -120,19 +120,17 @@ properties:
     items:
       type: string
   concept:
-    description: Link to a conceptual model class for this Building Block, most of the time in the OGC Rainbow.
+    description: Link to RDF resources corresponding to the concept represented in this Building Block
     type: array
     items:
-      type: object
-      required:
-        - label
-        - link
-      properties:
-        label:
-          type: string
-        link:
-          type: string
-          format: uri
+      type: string
+      format: uri
+  rdfType:
+    description: RDF types (or classes) for instances of this Building Block
+    type: array
+    items:
+      type: string
+      format: uri
   schema:
     description: URL for the JSON schema of this Building Block.
     type: string
