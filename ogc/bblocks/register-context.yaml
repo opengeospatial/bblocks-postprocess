@@ -4,7 +4,7 @@ transform:
     .baseURL as $CS_URI |
     .bblocks |= map(
       ."@id" = "bblocks://\(.itemIdentifier)"
-      | ."@type" = [("bblocks:" + (.itemClass[:1]|ascii_upcase) + .itemClass[1:]), "skos:Concept", "dcat:Dataset"]
+      | ."@type" = [("bblocks:" + (.itemClass[:1]|ascii_upcase) + .itemClass[1:]), "skos:Concept", "dcat:Dataset", "bblocks:BBlock"]
       | ."skos:prefLabel" = .name
       | .ldContext |= if . then { "prof:hasArtifact": . , "prof:hasRole": "role:mapping", "dct:format": "application/ld+json", "dct:conformsTo": "https://www.w3.org/TR/json-ld11/" } else null end
       | .shaclShapes |= (if length > 0 then to_entries | map({ "prof:hasArtifact": .value, "rdfs:seeAlso": "bblocks://\(.key)", "prof:hasRole": "role:validation", "dct:format": "text/turtle", "dct:conformsTo": "shacl:" }) else null end)
@@ -24,7 +24,7 @@ transform:
         "skos:prefLabel": "OGC Building Blocks Register",
         "hasConcepts": .
       } else . + {
-        "@type": ["skos:ConceptScheme", "dcat:Catalog"],
+        "@type": ["skos:ConceptScheme", "dcat:Catalog", "bblocks:BBlocksRegister"],
         "name": "Building Blocks - \(.name)",
         "skos:prefLabel": "Building Blocks - \(.name)",
         "hasConcepts": .bblocks,
@@ -156,3 +156,9 @@ context:
     links:
       '@id': prof:hasResource
       '@context': https://opengeospatial.github.io/bblocks/annotated-schemas/ogc-utils/json-link/context.jsonld
+    concept:
+      '@id': skos:closeMatch
+      '@type': '@id'
+    rdfType:
+      '@id': rdfs:subClassOf
+      '@type': '@id'
