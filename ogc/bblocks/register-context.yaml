@@ -13,7 +13,7 @@ transform:
       | .ontology |= if . then { "prof:hasArtifact": . , "prof:hasRole": "role:specification", "dct:format": "text/turtle", "dct:conformsTo": "http://www.w3.org/2002/07/owl#Ontology" } else null end
       | .rdfData |= if length > 0 then map({ "prof:hasArtifact": . , "prof:hasRole": "role:data", "dct:format": "text/turtle" }) else [] end
       | .dependsOn |= if length > 0 then map("bblocks://\(.)") else null end
-      | .profileOf |= if length > 0 then map("bblocks://\(.)") else null end
+      | .isProfileOf |= if length > 0 then if type == "array" then map("bblocks://\(.)") else "bblocks://\(.)" end else null end
       | if $CS_URI then ."skos:topConceptOf" = {"@id": $CS_URI} end
     )
   # Add ConceptScheme
@@ -113,7 +113,7 @@ context:
     dependsOn:
       '@id': bblocks:dependsOn
       '@type': '@id'
-    profileOf:
+    isProfileOf:
       '@id': prof:isProfileOf
       '@type': '@id'
     tags: dcat:keyword
