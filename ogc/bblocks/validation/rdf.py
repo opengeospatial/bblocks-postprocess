@@ -141,7 +141,8 @@ class RdfValidator(Validator):
                     contents: str | None = None,
                     base_uri: str | None = None,
                     prefixes: dict[str, str] | None = None,
-                    file_format: str | None = None) -> Graph | None | bool:
+                    file_format: str | None = None,
+                    resource_url: str | None = None) -> Graph | None | bool:
         graph = False
         if filename.suffix == '.json' or file_format == 'application/json':
             if self.jsonld_error:
@@ -164,7 +165,7 @@ class RdfValidator(Validator):
                 }
             ))
 
-            if contents:
+            if contents is not None:
                 json_doc = load_yaml(content=contents)
             else:
                 json_doc = load_yaml(filename=filename)
@@ -202,7 +203,7 @@ class RdfValidator(Validator):
                 rdflib_logger.addHandler(capture_log_handler)
                 graph = Graph().parse(data=json.dumps(jsonld_uplifted), format='json-ld', base=base_uri)
                 uplift_error = capture_log_handler.getvalue()
-            except (ValueError, SyntaxError) as e:
+            except (ValueError, SyntaxError, IOError) as e:
                 uplift_error = f"{e.__class__.__qualname__}: {e}"
             finally:
                 rdflib_logger.removeHandler(capture_log_handler)
@@ -243,7 +244,7 @@ class RdfValidator(Validator):
 
         elif output_filename.suffix == '.jsonld' or file_format == 'application/ld+json':
 
-            if contents:
+            if contents is not None:
                 jsonld_doc = load_yaml(content=contents)
             else:
                 jsonld_doc = load_yaml(filename=filename)
@@ -274,7 +275,7 @@ class RdfValidator(Validator):
             rdf_format = NATIVE_RDF_LANGS.get(file_format,
                                               'ttl' if output_filename.suffix == '.ttl' else 'json-ld')
             try:
-                if contents:
+                if contents is not None:
                     # Prepend prefixes
                     if prefixes:
                         contents = '\n'.join(f"@prefix {k}: <{v}> ." for k, v in prefixes.items()) + '\n' + contents
@@ -285,14 +286,24 @@ class RdfValidator(Validator):
                     graph = Graph().parse(data=contents, format=rdf_format)
                     report.add_entry(ValidationReportEntry(
                         section=ValidationReportSection.FILES,
-                        message=f'Using {filename.name} from {file_from}',
+                        message=f'Using {resource_url or filename.name} from {file_from}',
                     ))
                 else:
                     graph = Graph().parse(filename, format=rdf_format)
                     report.add_entry(ValidationReportEntry(
                         section=ValidationReportSection.FILES,
-                        message=f'Using {filename.name} from {file_from}',
+                        message=f'Using {resource_url or filename.name} from {file_from}',
                     ))
+            except IOError as e:
+                report.add_entry(ValidationReportEntry(
+                    section=ValidationReportSection.TURTLE,
+                    is_error=True,
+                    message=f'Error while opening file for loading: {e}',
+                    payload={
+                        'exception': e.__class__.__qualname__,
+                    }
+                ))
+                return
             except (ValueError, SyntaxError) as e:
                 report.add_entry(ValidationReportEntry(
                     section=ValidationReportSection.TURTLE,
@@ -312,9 +323,11 @@ class RdfValidator(Validator):
                  additional_shacl_closures: list[str | Path] | None = None,
                  prefixes: dict[str, str] | None = None,
                  file_format: str | None = None,
+                 resource_url: str | None = None,
                  **kwargs) -> bool | None:
         graph = self._load_graph(filename, output_filename, report,
-                                 contents, base_uri, prefixes, file_format=file_format)
+                                 contents, base_uri, prefixes, file_format=file_format,
+                                 resource_url=resource_url)
 
         if graph is False:
             return False

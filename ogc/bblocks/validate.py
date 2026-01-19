@@ -169,18 +169,17 @@ def _validate_resource(bblock: BuildingBlock,
     if require_fail is None:
         require_fail = filename.stem.endswith('-fail') and not example_index
 
-    if resource_url and not is_url(resource_url):
-        resource_url = None
+    resource_url_for_item_source = resource_url if resource_url and is_url(resource_url) else None
 
     if example_index:
-        example_idx, snippet_idx = re.match(r'example_(\d+)_(\d+).*', filename.name).groups()
+        example_idx, snippet_idx = example_index
         source = ValidationItemSource(
             type=ValidationItemSourceType.EXAMPLE,
             filename=output_filename,
             example_index=int(example_idx),
             snippet_index=int(snippet_idx),
             language=file_format,
-            source_url=resource_url,
+            source_url=resource_url_for_item_source,
         )
     else:
         source = ValidationItemSource(
@@ -188,7 +187,7 @@ def _validate_resource(bblock: BuildingBlock,
             filename=filename,
             language=filename.suffix[1:],
             require_fail=require_fail,
-            source_url=resource_url,
+            source_url=resource_url_for_item_source,
         )
     report = ValidationReportItem(source)
 
@@ -201,7 +200,8 @@ def _validate_resource(bblock: BuildingBlock,
                                         additional_shacl_closures=additional_shacl_closures,
                                         schema_ref=schema_ref,
                                         prefixes=prefixes,
-                                        file_format=file_format)
+                                        file_format=file_format,
+                                        resource_url=resource_url)
             any_validator_run = any_validator_run or (result is not False)
 
     except Exception as unknown_exc:
