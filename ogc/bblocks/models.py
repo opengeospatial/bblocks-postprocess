@@ -657,6 +657,12 @@ class BuildingBlockRegister:
             if d not in seen:
                 dependencies.extend(self.find_dependencies(d, seen=seen))
 
+        isProfileOf = metadata.get('isProfileOf', metadata.get('profileOf'))
+        if isProfileOf:
+            for d in isProfileOf if isinstance(isProfileOf, list) else [isProfileOf]:
+                if d not in seen:
+                    dependencies.extend(self.find_dependencies(d, seen=seen))
+
         return dependencies
 
     def get_inherited_shacl_shapes(self, identifier: str) -> dict[str, set[str | Path]]:
