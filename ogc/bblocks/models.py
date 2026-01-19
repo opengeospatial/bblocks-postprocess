@@ -120,6 +120,10 @@ class BuildingBlock:
 
         self.remote_cache_dir = self.annotated_path / 'remote_cache'
 
+        # Fix for profileOf -> isProfileOf
+        if 'profileOf' in self.metadata and 'isProfileOf' not in self.metadata:
+            self.metadata['isProfileOf'] = self.metadata.pop('profileOf')
+
     def _find_path_or_url(self, metadata_property: str,
                           default_filenames: tuple[str, ...]) -> PathOrUrl | list[PathOrUrl] | None:
         value = self.metadata.get(metadata_property)
