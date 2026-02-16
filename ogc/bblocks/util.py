@@ -15,7 +15,7 @@ from urllib.parse import urljoin, urlparse, urlunparse
 import pathvalidate
 import requests
 from ogc.na.annotate_schema import ContextBuilder
-from ogc.na.util import load_yaml, is_url
+from ogc.na.util import load_yaml as na_load_yaml, is_url
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -303,3 +303,18 @@ def find_references_xml(contents) -> set[str]:
     # TODO: Implement for XML schemas
     pass
 
+
+def load_yaml(filename: str | Path | None = None,
+              content: Any | None = None,
+              url: str | None = None,
+              test_alternate_suffix=True,
+              warn_on_suffix_swap=False) -> list | dict:
+    if test_alternate_suffix and filename:
+        p = Path(filename)
+        if p.suffix in ('.yml', '.yaml') and not p.is_file():
+            p = p.with_suffix('.yml' if p.suffix == '.yaml' else '.yaml')
+            if p.is_file():
+                if warn_on_suffix_swap:
+                    print(f"WARNING: {filename} not found, using {p} with alternate extension", file=sys.stderr)
+                filename = p
+    return na_load_yaml(filename, content, url, safe=True)

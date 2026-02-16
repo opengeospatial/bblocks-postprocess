@@ -12,9 +12,9 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 from jsonpointer import resolve_pointer
-from ogc.na.util import is_url, load_yaml, dump_yaml
+from ogc.na.util import is_url, dump_yaml
 
-from ogc.bblocks.util import load_file_cached, PathOrUrl
+from ogc.bblocks.util import load_file_cached, load_yaml, PathOrUrl
 
 if TYPE_CHECKING:
     from typing import Any, Callable, Unpack

@@ -10,12 +10,10 @@ import sys
 from argparse import ArgumentParser
 from pathlib import Path
 
-from ogc.na.util import load_yaml
-
 from ogc.bblocks.postprocess import postprocess
 from ogc.na import ingest_json, update_vocabs
 
-from ogc.bblocks.util import get_github_repo
+from ogc.bblocks.util import get_github_repo, load_yaml
 
 MAIN_BBR = 'https://opengeospatial.github.io/bblocks/register.json'
 DEFAULT_IMPORT_MARKER = 'default'
@@ -207,8 +205,6 @@ if __name__ == '__main__':
         schema_oas30_downcompile = bb_config.get('schema-oas30-downcompile', False)
 
     bb_local_config_file = Path('bblocks-config-local.yml')
-    if not bb_local_config_file.is_file():
-        bb_local_config_file = Path('bblocks-config-local.yaml')
     local_url_mappings = None
     if bb_local_config_file.is_file():
         bb_local_config = load_yaml(filename=bb_local_config_file)

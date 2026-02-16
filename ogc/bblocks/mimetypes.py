@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ogc.na.util import load_yaml
+from ogc.bblocks.util import load_yaml
 
 _known_mimetypes = None
 

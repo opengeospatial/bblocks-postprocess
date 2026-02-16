@@ -16,7 +16,7 @@ from urllib.parse import urlparse, urljoin
 import jsonschema
 import networkx as nx
 import requests
-from ogc.na.util import is_url, load_yaml
+from ogc.bblocks.util import is_url, load_yaml
 from rdflib import Graph
 
 from ogc.bblocks import mimetypes
@@ -78,13 +78,15 @@ class BuildingBlock:
         fp = metadata_file.parent
         self.files_path = fp
 
-        self.schema = self._find_path_or_url('schema', ('schema.yaml', 'schema.json'))
-        self.openapi = self._find_path_or_url('openAPIDocument', ('openapi.yaml',))
+        self.schema = self._find_path_or_url('schema', ('schema.yaml', 'schema.yml', 'schema.json'))
+        self.openapi = self._find_path_or_url('openAPIDocument', ('openapi.yaml', 'openapi.yml'))
 
         ap = fp / 'assets'
         self.assets_path = ap if ap.is_dir() else None
 
         self.examples_file = fp / 'examples.yaml'
+        if not self.examples_file.is_file() and (alt_ef := fp / 'examples.yml').is_file():
+            self.examples_file = alt_ef
         self._load_examples()
 
         self.tests_dir = fp / 'tests'
@@ -113,6 +115,8 @@ class BuildingBlock:
         self.output_ontology = self.annotated_path / 'ontology.ttl'
 
         self.transforms_path = fp / 'transforms.yaml'
+        if not self.transforms_path.is_file() and (alt_tp := fp / 'transforms.yml').is_file():
+            self.transforms_path = alt_tp
 
         self.rdf_data_paths: list[PathOrUrl] | PathOrUrl = self._find_path_or_url('rdfData', ('data.ttl',))
         if not isinstance(self.rdf_data_paths, list):
@@ -170,30 +174,30 @@ class BuildingBlock:
         return self.metadata.get(item, default)
 
     def _load_examples(self):
-        examples = None
         prefixes = {}
-        if self.examples_file.is_file():
+        try:
             examples = load_yaml(self.examples_file)
-            if not examples:
-                return None
-            try:
-                jsonschema.validate(examples, get_schema('examples'))
-            except Exception as e:
-                raise BuildingBlockError(f'Error validating building block examples (examples.yaml)'
-                                         f' for {self.identifier}') from e
+        except FileNotFoundError as e:
+            return None
 
-            if isinstance(examples, dict):
-                prefixes = examples.get('prefixes', {})
-                examples = examples['examples']
+        try:
+            jsonschema.validate(examples, get_schema('examples'))
+        except Exception as e:
+            raise BuildingBlockError(f'Error validating building block examples ({self.examples_file.name})'
+                                     f' for {self.identifier}') from e
 
-            for example in examples:
-                for snippet in example.get('snippets', ()):
-                    if 'ref' in snippet:
-                        # Load snippet code from "ref"
-                        ref = snippet['ref'] if is_url(snippet['ref']) else self.files_path / snippet['ref']
-                        snippet['code'] = load_file(ref)
-                if prefixes:
-                    example['prefixes'] = {**prefixes, **example.get('prefixes', {})}
+        if isinstance(examples, dict):
+            prefixes = examples.get('prefixes', {})
+            examples = examples['examples']
+
+        for example in examples:
+            for snippet in example.get('snippets', ()):
+                if 'ref' in snippet:
+                    # Load snippet code from "ref"
+                    ref = snippet['ref'] if is_url(snippet['ref']) else self.files_path / snippet['ref']
+                    snippet['code'] = load_file(ref)
+            if prefixes:
+                example['prefixes'] = {**prefixes, **example.get('prefixes', {})}
 
         self.example_prefixes = prefixes
         self.examples = examples
@@ -257,14 +261,15 @@ class BuildingBlock:
         if 'semantic_uplift' not in self._lazy_properties:
             fn = self.files_path / 'semantic-uplift.yaml'
             semantic_uplift = {}
-            if fn.is_file():
+            try:
                 semantic_uplift = load_yaml(fn)
                 if not semantic_uplift:
                     semantic_uplift = {}
-                try:
-                    jsonschema.validate(semantic_uplift, get_schema('semantic-uplift'))
-                except Exception as e:
-                    raise BuildingBlockError(f'Error validating semantic uplift metadata for {self.identifier}') from e
+                jsonschema.validate(semantic_uplift, get_schema('semantic-uplift'))
+            except FileNotFoundError:
+                pass
+            except Exception as e:
+                raise BuildingBlockError(f'Error validating semantic uplift metadata for {self.identifier}') from e
             self._lazy_properties['semantic_uplift'] = semantic_uplift
         return self._lazy_properties['semantic_uplift']
 
@@ -272,8 +277,11 @@ class BuildingBlock:
     def transforms(self) -> list:
         if 'transforms' not in self._lazy_properties:
             transforms = {}
-            if self.transforms_path.is_file():
+            try:
                 transforms = load_yaml(self.transforms_path)
+            except FileNotFoundError:
+                pass
+            if transforms:
                 try:
                     jsonschema.validate(transforms, get_schema('transforms'))
                     if transforms:
@@ -308,25 +316,25 @@ class BuildingBlock:
 
     def get_extra_test_resources(self) -> Generator[dict, None, None]:
         extra_tests_file = self.files_path / 'tests.yaml'
-        if extra_tests_file.is_file():
-            extra_tests: list[dict] = cast(list[dict], load_yaml(extra_tests_file))
-            if not extra_tests:
-                return
-            try:
-                jsonschema.validate(extra_tests, get_schema('tests'))
-            except Exception as e:
-                raise BuildingBlockError('Error validating extra tests (tests.yaml)') from e
+        try:
+            extra_tests: list[dict] = load_yaml(extra_tests_file)
+        except FileNotFoundError:
+            return
+        try:
+            jsonschema.validate(extra_tests, get_schema('tests'))
+        except Exception as e:
+            raise BuildingBlockError('Error validating extra tests (tests.yaml)') from e
 
-            for test in extra_tests:
-                ref = self.resolve_file(test['ref'])
-                test['ref'] = ref
-                test['contents'] = load_file(ref)
-                if not test.get('output-filename'):
-                    if isinstance(ref, Path):
-                        test['output-filename'] = ref.name
-                    else:
-                        test['output-filename'] = os.path.basename(urlparse(ref).path)
-                yield test
+        for test in extra_tests:
+            ref = self.resolve_file(test['ref'])
+            test['ref'] = ref
+            test['contents'] = load_file(ref)
+            if not test.get('output-filename'):
+                if isinstance(ref, Path):
+                    test['output-filename'] = ref.name
+                else:
+                    test['output-filename'] = os.path.basename(urlparse(ref).path)
+            yield test
 
     def resolve_file(self, fn_or_url):
         if isinstance(fn_or_url, Path) or (isinstance(fn_or_url, str) and not is_url(fn_or_url)):

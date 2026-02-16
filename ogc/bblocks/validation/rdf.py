@@ -8,7 +8,7 @@ from typing import Sequence
 from urllib.error import HTTPError
 
 import pyshacl
-from ogc.na.util import load_yaml, is_url, copy_triples
+from ogc.na.util import is_url, copy_triples
 from pyparsing import ParseBaseException
 from pyshacl.errors import ReportableRuntimeError
 from rdflib import Graph
@@ -18,6 +18,7 @@ from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister
 from ogc.bblocks.validation import Validator, ValidationItemSourceType, ValidationReportSection, ValidationReportEntry, \
     ValidationReportItem, uplift
 from ogc.bblocks.validation.uplift import Uplifter
+from ogc.bblocks.util import load_yaml
 
 
 NATIVE_RDF_LANGS = {

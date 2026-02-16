@@ -2,9 +2,9 @@
 import json
 from typing import AnyStr
 
-from ogc.na.util import load_yaml
 from rdflib import Graph
 
+from ogc.bblocks.util import load_yaml
 from ogc.bblocks.models import TransformMetadata, Transformer
 from ogc.na import ingest_json
 
