@@ -1,7 +1,6 @@
 import json
 from typing import AnyStr
 
-from ogc.na.util import load_yaml
 from pyld import jsonld
 from rdflib import Graph
 

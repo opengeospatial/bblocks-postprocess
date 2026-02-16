@@ -10,10 +10,10 @@ from typing import Any
 from urllib.parse import urljoin
 
 from ogc.na.annotate_schema import SchemaResolver, SchemaAnnotator
-from ogc.na.util import load_yaml, dump_yaml, is_url
+from ogc.na.util import dump_yaml, is_url
 
 from ogc.bblocks import oas30
-from ogc.bblocks.util import update_refs, PathOrUrl, BBLOCKS_REF_ANNOTATION
+from ogc.bblocks.util import update_refs, load_yaml, PathOrUrl, BBLOCKS_REF_ANNOTATION
 
 from typing import TYPE_CHECKING
 
@@ -70,7 +70,7 @@ def annotate_schema(bblock: BuildingBlock,
     if not schema_fn and not schema_url:
         return result
 
-    override_schema = load_yaml(filename=schema_fn, url=schema_url)
+    override_schema = load_yaml(filename=schema_fn, url=schema_url, test_alternate_suffix=False)
     override_schema = resolve_all_schema_references(override_schema, bblocks_register, bblock,
                                                     bblock.schema, base_url)
 

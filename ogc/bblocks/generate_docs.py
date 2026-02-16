@@ -15,7 +15,7 @@ from mako import exceptions
 
 from ogc.bblocks import util
 from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister
-from ogc.na.util import load_yaml
+from ogc.bblocks.util import load_yaml
 
 import git
 

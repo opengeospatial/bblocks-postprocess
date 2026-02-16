@@ -14,7 +14,7 @@ import jsonref
 import jsonschema
 import requests
 from jsonschema.validators import validator_for
-from ogc.na.util import load_yaml, is_url
+from ogc.bblocks.util import load_yaml, is_url
 from yaml import MarkedYAMLError
 
 from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister
