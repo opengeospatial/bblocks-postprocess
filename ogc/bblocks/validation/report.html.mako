@@ -75,6 +75,19 @@ def get_source_url(source):
                     border-width: var(--bs-accordion-border-width);
                 }
             }
+            .anchor {
+                color: black;
+                opacity: 0;
+                text-decoration: none;
+                margin-left: 0.5em;
+                margin-right: 0.5em;
+            }
+            .anchor-container:hover .anchor {
+                opacity: 60%;
+            }
+            .anchor-container:hover .anchor:hover {
+                opacity: 100%;
+            }
         </style>
     </head>
     <body>
@@ -94,13 +107,14 @@ def get_source_url(source):
                 <div class="accordion mt-2" id="bblock-reports">
                     % for report in reports:
                         <div class="accordion-item bblock-report" data-bblock-id="${e(report['bblockId'])}" id="bblock-${e(report['bblockId'])}">
-                            <h2 class="accordion-header bblock-title">
+                            <h2 class="accordion-header bblock-title anchor-container">
                                 <button class="accordion-button ${'collapsed' if report['result'] else ''}" type="button"
                                     data-bs-toggle="collapse"
                                     data-bs-target="#bblock-collapse-${e(report['bblockId'].replace('.', '\\.'))}">
                                     <div class="flex-fill">
                                         ${e(report['bblockName'])}
                                         <small class="ms-2 bblock-id">${e(report['bblockId'])}</small>
+                                        <a class="anchor" href="#bblock-${e(report['bblockId'])}">¶</a>
                                     </div>
 
                                     <span class="badge text-bg-${'success' if report['result'] else 'danger'} me-2">
@@ -142,9 +156,9 @@ def get_source_url(source):
                                         </div>
                                     % endif
                                     % for item in report['items']:
-                                        <div class="card mb-2 validation-item ${'require-fail' if item['source']['requireFail'] else ''}">
+                                        <div class="card mb-2 validation-item ${'require-fail' if item['source']['requireFail'] else ''}" id="item-${e(report['bblockId'])}-${loop.index + 1}">
                                             <div class="card-body">
-                                                <div class="card-title mb-0">
+                                                <div class="card-title mb-0 anchor-container">
                                                     <button type="button" class="btn btn-sm btn-primary collapsed"
                                                             data-bs-toggle="collapse" data-bs-target="#${get_uid()}"
                                                             aria-expanded="false" aria-controls="${last_uid}"
@@ -157,6 +171,7 @@ def get_source_url(source):
                                                     % if item['source']['requireFail']:
                                                         <span class="badge text-bg-info">Requires fail</span>
                                                     % endif
+                                                    <a class="anchor" href="#item-${e(report['bblockId'])}-${loop.index + 1}">¶</a>
                                                     <div class="float-end">
                                                         % if item['result']:
                                                             <span class="badge text-bg-success me-2">Passed</span>
@@ -207,13 +222,20 @@ def get_source_url(source):
                         accordionEntries.forEach(e => e.classList.remove('show'));
                     }
                 });
-                if (location.hash.startsWith('#bblock-')) {
+                if (/^#(bblock|item)-/.test(location.hash)) {
                     const highlight = document.querySelector(location.hash.replaceAll('.', '\\.'));
                     if (highlight) {
-                        highlight.querySelector('.accordion-collapse').classList.add('show');
+                        highlight.closest('.accordion-collapse').classList.add('show');
                         highlight.classList.add('highlighted');
                     }
                 }
+                document.addEventListener('click', ev => {
+                    if (!ev.target.classList.contains('anchor') || !ev.target.href) {
+                      return;
+                    }
+                    ev.stopPropagation();
+                    navigator?.clipboard?.writeText(ev.target.href);
+                });
             });
         </script>
     </body>
