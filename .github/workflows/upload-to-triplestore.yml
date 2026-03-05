@@ -54,8 +54,8 @@ jobs:
           
           ontologies = resources.get('ontologies') is True
           
-          if not sparql_endpoint or not all((ontologies,)):
-              logging.info('No SPARQL endpoint or no uploads enabled. Exiting.')
+          if not sparql_endpoint:
+              logging.info('No SPARQL endpoint enabled. Exiting.')
               sys.exit()
           
           with urllib.request.urlopen(os.environ['REGISTER_URL']) as f:
