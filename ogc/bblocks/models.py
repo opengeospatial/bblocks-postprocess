@@ -94,6 +94,7 @@ class BuildingBlock:
         self.annotated_path = annotated_path / self.subdirs
         self.annotated_schema = self.annotated_path / 'schema.yaml'
         self.jsonld_context = self.annotated_path / 'context.jsonld'
+        self.resolved_properties = self.annotated_path / 'resolvedProperties.json'
         self.output_openapi = self.annotated_path / 'openapi.yaml'
         self.output_openapi_30 = self.output_openapi.with_stem(f"{self.output_openapi.stem}-oas30")
 

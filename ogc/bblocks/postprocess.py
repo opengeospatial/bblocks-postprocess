@@ -137,6 +137,10 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             bblock.metadata['ldContext'] = PathOrUrl(bblock.jsonld_context).with_base_url(
                 base_url, cwd if base_url else output_file_root
             )
+        if bblock.resolved_properties.is_file():
+            bblock.metadata['resolvedSchemaProperties'] = PathOrUrl(bblock.resolved_properties).with_base_url(
+                base_url, cwd if base_url else output_file_root
+            )
         elif bblock.metadata.get('ldContext') and not is_url(bblock.metadata['ldContext']):
             # Unprocessed JSON-LD context instead of generated from annotations
             ld_context_path = bblock.files_path / bblock.metadata['ldContext']
@@ -378,7 +382,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             if building_block.annotated_schema.is_file():
                 written_context = None
                 try:
-                    written_context = write_jsonld_context(building_block.annotated_schema, bbr)
+                    written_context, written_resolved = write_jsonld_context(building_block.annotated_schema, bbr)
                     if written_context:
                         try:
                             nodejsrun = subprocess.run([
@@ -394,6 +398,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                             # node not installed
                             pass
                         print(f"  - {os.path.relpath(written_context)}", file=sys.stderr)
+                    if written_resolved:
+                        print(f"  - {os.path.relpath(written_resolved)}", file=sys.stderr)
                 except Exception as e:
                     written_context_msg = f" ({written_context})" if written_context else ''
                     if fail_on_error:
