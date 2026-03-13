@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import dataclasses
 import functools
 import json
 import os.path
@@ -14,7 +15,7 @@ from urllib.parse import urljoin, urlparse, urlunparse
 
 import pathvalidate
 import requests
-from ogc.na.annotate_schema import ContextBuilder
+from ogc.na.annotate_schema import ContextBuilder, ResolvedProperty
 from ogc.na.util import load_yaml as na_load_yaml, is_url
 
 from typing import TYPE_CHECKING
@@ -194,25 +195,48 @@ class PathOrUrl:
         return f"PathOrUrl[{t}={self.value}]"
 
 
-def write_jsonld_context(annotated_schema: Path | str, bblocks_register: BuildingBlockRegister) -> Path | None:
+def write_jsonld_context(annotated_schema: Path | str,
+                         bblocks_register: BuildingBlockRegister) -> tuple[Path | None, Path | None]:
     if not isinstance(annotated_schema, Path):
         annotated_schema = Path(annotated_schema)
     ctx_builder = ContextBuilder(annotated_schema, schema_resolver=bblocks_register.schema_resolver)
-    if not ctx_builder.context.get('@context'):
-        return None
-    context_fn = annotated_schema.resolve().parent / 'context.jsonld'
-    with open(context_fn, 'w') as f:
-        json.dump(ctx_builder.context, f, indent=2)
-    with open(context_fn.parent / '_visited_properties.tsv', 'w', newline='') as f:
-        writer = csv.writer(f, delimiter='\t')
-        writer.writerow(['path', '@id'])
-        for e in ctx_builder.visited_properties.items():
-            writer.writerow(e)
-    with open(context_fn.parent / '_unbound_local_properties.tsv', 'w', newline='') as fm:
-        fm.write('path\n')
-        for mp in ctx_builder.missed_properties:
-            fm.write(f"{mp}\n")
-    return context_fn
+    output_dir = annotated_schema.resolve().parent
+
+    context_fn = None
+    if ctx_builder.context.get('@context'):
+        context_fn = output_dir / 'context.jsonld'
+        with open(context_fn, 'w') as f:
+            json.dump(ctx_builder.context, f, indent=2)
+        with open(output_dir / '_visited_properties.tsv', 'w', newline='') as f:
+            writer = csv.writer(f, delimiter='\t')
+            writer.writerow(['path', '@id'])
+            for e in ctx_builder.visited_properties.items():
+                writer.writerow(e)
+        with open(output_dir / '_unbound_local_properties.tsv', 'w', newline='') as fm:
+            fm.write('path\n')
+            for mp in ctx_builder.missed_properties:
+                fm.write(f"{mp}\n")
+
+    resolved_fn = None
+    if ctx_builder.resolved_properties:
+        resolved_fn = output_dir / 'resolvedProperties.json'
+        resolved_list = []
+        for rp in ctx_builder.resolved_properties.values():
+            d = dataclasses.asdict(rp)
+            d['sources'] = [
+                {
+                    'path': str(s),
+                    'bblockId': (bblocks_register.local_bblock_files.get(os.path.relpath(s))
+                                 or bblocks_register.imported_bblock_files.get(str(s))),
+                }
+                for s in rp.sources
+            ]
+            d['effectiveId'] = rp.effective_id
+            resolved_list.append(d)
+        with open(resolved_fn, 'w') as f:
+            json.dump(resolved_list, f, indent=2)
+
+    return context_fn, resolved_fn
 
 
 def update_refs(schema: Any, updater: Callable[[str], str]):
