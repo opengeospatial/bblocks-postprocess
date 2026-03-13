@@ -209,9 +209,8 @@ def write_jsonld_context(annotated_schema: Path | str,
             json.dump(ctx_builder.context, f, indent=2)
         with open(output_dir / '_visited_properties.tsv', 'w', newline='') as f:
             writer = csv.writer(f, delimiter='\t')
-            writer.writerow(['path', '@id'])
-            for e in ctx_builder.visited_properties.items():
-                writer.writerow(e)
+            writer.writerow(['path', '@id', 'schema'])
+            writer.writerows((k, *v) for k, v in ctx_builder.visited_properties.items())
         with open(output_dir / '_unbound_local_properties.tsv', 'w', newline='') as fm:
             fm.write('path\n')
             for mp in ctx_builder.missed_properties:
@@ -224,15 +223,14 @@ def write_jsonld_context(annotated_schema: Path | str,
         for rp in ctx_builder.resolved_properties.values():
             d = dataclasses.asdict(rp)
             d['sources'] = [
-                {
-                    'path': str(s),
-                    'bblockId': (bblocks_register.local_bblock_files.get(os.path.relpath(s))
-                                 or bblocks_register.imported_bblock_files.get(str(s))),
-                }
+                f"bblocks://{bblock_id}" if (bblock_id := (
+                    bblocks_register.local_bblock_files.get(os.path.relpath(s))
+                    or bblocks_register.imported_bblock_files.get(str(s))
+                )) else str(s)
                 for s in rp.sources
             ]
             d['effectiveId'] = rp.effective_id
-            resolved_list.append(d)
+            resolved_list.append({k: v for k, v in d.items() if v is not None and v != [] and v is not False})
         with open(resolved_fn, 'w') as f:
             json.dump(resolved_list, f, indent=2)
 
