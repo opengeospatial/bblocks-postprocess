@@ -6,6 +6,7 @@ import os.path
 import re
 import subprocess
 import sys
+import tempfile
 from argparse import ArgumentParser
 import datetime
 from pathlib import Path
@@ -48,6 +49,9 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 links: list[dict] = None) -> list[dict]:
 
     cwd = Path().resolve()
+
+    _sandbox = tempfile.TemporaryDirectory(prefix='bblocks_sandbox_')
+    sandbox_dir = Path(_sandbox.name)
 
     if not isinstance(test_outputs_path, Path):
         test_outputs_path = Path(test_outputs_path)
@@ -189,7 +193,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
         if not light and (not steps or 'transforms' in steps) and bblock.transforms:
             print(f"  > Running transforms for {bblock.identifier}", file=sys.stderr)
-            apply_transforms(bblock, outputs_path=test_outputs_path, base_url=base_url)
+            apply_transforms(bblock, outputs_path=test_outputs_path, base_url=base_url,
+                             sandbox_dir=sandbox_dir)
 
         if bblock.examples:
             for example in bblock.examples:
@@ -489,6 +494,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 json.dump(output_register_json, f, indent=2, cls=CustomJSONEncoder)
 
     print(f"Finished processing {len(output_bblocks)} building blocks", file=sys.stderr)
+    _sandbox.cleanup()
     return output_bblocks
 
 

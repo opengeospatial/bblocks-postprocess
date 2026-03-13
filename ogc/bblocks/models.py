@@ -732,6 +732,7 @@ class TransformMetadata:
     transform_content: AnyStr
     input_data: AnyStr
     metadata: dict | None = None
+    sandbox_dir: Path | None = None
 
 
 class Transformer:
