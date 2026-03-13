@@ -8,15 +8,17 @@ from ogc.bblocks.models import Transformer
 
 transformers: dict[str, Transformer] = {}
 
-for mod_file in Path(__file__).parent.glob('*.py'):
-    if mod_file.name.startswith('_'):
-        continue
-    mod_name = f".{mod_file.stem}"
-    module = importlib.import_module(mod_name, package=__name__)
 
-    for cls_name, cls in inspect.getmembers(module, inspect.isclass):
+def _register_module(module) -> None:
+    for _, cls in inspect.getmembers(module, inspect.isclass):
         if issubclass(cls, Transformer) and cls is not Transformer:
-            # noinspection PyArgumentList
             transformer = cls()
             for tt in transformer.transform_types:
-                    transformers[tt] = transformer
+                transformers[tt] = transformer
+
+
+for _mod_file in Path(__file__).parent.glob('*.py'):
+    if _mod_file.name.startswith('_'):
+        continue
+    _mod = importlib.import_module(f".{_mod_file.stem}", package=__name__)
+    _register_module(_mod)

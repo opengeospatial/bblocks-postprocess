@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import shutil
 import os.path
+import subprocess
+import sys
 import traceback
 from pathlib import Path
 from urllib.parse import urljoin
@@ -12,11 +14,41 @@ from ogc.bblocks.models import BuildingBlock, TransformMetadata, BuildingBlockEr
 from ogc.bblocks.transformers import transformers
 from ogc.bblocks.util import sanitize_filename
 
+_SUBPROCESS_TRANSFORM_TYPES = ('python', 'node')
+
+
+def _ensure_sandbox(sandbox_dir: Path, bblock: BuildingBlock) -> None:
+    """Install any dependencies declared in this bblock's transforms into the sandbox."""
+    pip_deps = []
+    npm_deps = []
+
+    for transform in bblock.transforms:
+        deps = (transform.get('metadata') or {}).get('dependencies', {})
+        if pip := deps.get('pip'):
+            pip_deps.extend(pip if isinstance(pip, list) else [pip])
+        if npm := deps.get('npm'):
+            npm_deps.extend(npm if isinstance(npm, list) else [npm])
+
+    if pip_deps:
+        venv_dir = sandbox_dir / 'venv'
+        if not venv_dir.exists():
+            subprocess.run([sys.executable, '-m', 'venv', str(venv_dir)], check=True)
+        pip_bin = venv_dir / 'bin' / 'pip'
+        print(f"  > Installing pip dependencies: {pip_deps}", file=sys.stderr)
+        subprocess.run([str(pip_bin), 'install', '--quiet', '--disable-pip-version-check', *pip_deps], check=True)
+
+    if npm_deps:
+        node_dir = sandbox_dir / 'node'
+        node_dir.mkdir(exist_ok=True)
+        print(f"  > Installing npm dependencies: {npm_deps}", file=sys.stderr)
+        subprocess.run(['npm', 'install', '--prefix', str(node_dir), *npm_deps], check=True)
+
 
 def apply_transforms(bblock: BuildingBlock,
                      outputs_path: str | Path,
                      output_subpath='transforms',
-                     base_url: str | None = None):
+                     base_url: str | None = None,
+                     sandbox_dir: Path | None = None):
 
     if not bblock.transforms:
         return
@@ -25,6 +57,10 @@ def apply_transforms(bblock: BuildingBlock,
     output_dir = Path(outputs_path) / bblock.subdirs / output_subpath
     shutil.rmtree(output_dir, ignore_errors=True)
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Install dependencies for subprocess transforms before processing any snippets
+    if sandbox_dir and any(t.get('type') in _SUBPROCESS_TRANSFORM_TYPES for t in bblock.transforms):
+        _ensure_sandbox(sandbox_dir, bblock)
 
     for transform in bblock.transforms:
 
@@ -94,7 +130,8 @@ def apply_transforms(bblock: BuildingBlock,
                                                        target_mime_type=target_mime_type,
                                                        transform_content=transform['code'],
                                                        metadata=metadata,
-                                                       input_data=snippet['code'])
+                                                       input_data=snippet['code'],
+                                                       sandbox_dir=sandbox_dir)
 
                 try:
                     transform_result = transformer.transform(transform_metadata)
