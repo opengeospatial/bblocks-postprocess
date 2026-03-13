@@ -68,6 +68,17 @@ on:
           blocks as well as local ones. 0 means "only local", and a negative number means
           "all imports".
         default: 0
+      fallback_rainbow_instances:
+        type: string
+        description: |
+          JSON array of Rainbow proxy URLs for linked data semantic lookups.
+          Each URL should accept a ?uri= query parameter.
+        default: '["https://defs.opengis.net/prez-backend/object","https://defs-hosted.opengis.net/prez-hosted-b/object"]'
+      fallback_sparql_endpoints:
+        type: string
+        description: |
+          JSON array of SPARQL endpoint URLs used as a fallback for linked data lookups.
+        default: '[]'
       before_postprocess:
         type: string
         description: |
@@ -268,12 +279,19 @@ jobs:
           </html>
           EOF
           
+          BBLOCKS_RAINBOW='${{ inputs.fallback_rainbow_instances }}'
+          BBLOCKS_RAINBOW="${BBLOCKS_RAINBOW:-[]}"
+          BBLOCKS_SPARQL='${{ inputs.fallback_sparql_endpoints }}'
+          BBLOCKS_SPARQL="${BBLOCKS_SPARQL:-[]}"
+
           cat << EOF > config.js
           window.bblocksRegister = '${{ steps.get-pages-url.outputs.result }}/${{ inputs.register_file }}';
           window.bblocksViewer = {
             title: $(jq '.name // "${{ github.event.repository.name }}"' < "$REGISTER_FILE"),
             showImported: ${{ inputs.viewer_show_imported }},
             baseUrl: '${PAGES_PATH}${BASE_URL}',
+            bblocksFallbackRainbowInstances: ${BBLOCKS_RAINBOW},
+            bblocksFallbackSparqlEndpoints: ${BBLOCKS_SPARQL},
           };
           EOF
           
