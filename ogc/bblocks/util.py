@@ -231,7 +231,7 @@ def write_jsonld_context(annotated_schema: Path | str,
                 ))
             ]
             d['effectiveId'] = rp.effective_id
-            return {k: v for k, v in d.items() if v is not None and v != [] and v is not False}
+            return {k: v for k, v in d.items() if v is not None and (k == 'const' or (v != [] and v is not False))}
 
         # Assign short numeric IDs to def keys to minimise file size
         key_map = {k: str(i) for i, k in enumerate(ctx_builder.resolved_property_defs)}
