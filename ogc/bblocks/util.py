@@ -219,20 +219,41 @@ def write_jsonld_context(annotated_schema: Path | str,
     resolved_fn = None
     if ctx_builder.resolved_properties:
         resolved_fn = output_dir / 'resolvedProperties.json'
-        resolved_list = []
-        for rp in ctx_builder.resolved_properties.values():
+
+        def _serialize_rp(rp):
             d = dataclasses.asdict(rp)
             d['sources'] = [
-                f"bblocks://{bblock_id}" if (bblock_id := (
+                f"bblocks://{bblock_id}"
+                for s in rp.sources
+                if (bblock_id := (
                     bblocks_register.local_bblock_files.get(os.path.relpath(s))
                     or bblocks_register.imported_bblock_files.get(str(s))
-                )) else str(s)
-                for s in rp.sources
+                ))
             ]
             d['effectiveId'] = rp.effective_id
-            resolved_list.append({k: v for k, v in d.items() if v is not None and v != [] and v is not False})
+            return {k: v for k, v in d.items() if v is not None and v != [] and v is not False}
+
+        # Assign short numeric IDs to def keys to minimise file size
+        key_map = {k: str(i) for i, k in enumerate(ctx_builder.resolved_property_defs)}
+
+        def _with_short_ref(d):
+            if 'ref' in d and d['ref'] in key_map:
+                d['ref'] = key_map[d['ref']]
+            return d
+
+        properties_list = [_with_short_ref(_serialize_rp(rp))
+                           for rp in ctx_builder.resolved_properties.values()]
+        defs = {
+            key_map[k]: [_with_short_ref(_serialize_rp(e)) for e in entries]
+            for k, entries in ctx_builder.resolved_property_defs.items()
+        }
         with open(resolved_fn, 'w') as f:
-            json.dump(resolved_list, f, indent=2)
+            json.dump({'defs': defs, 'properties': properties_list}, f, separators=(',', ':'))
+
+        max_size = 1.5 * 1024 * 1024  # 1.5 MB
+        if resolved_fn.stat().st_size > max_size:
+            resolved_fn.unlink()
+            resolved_fn = None
 
     return context_fn, resolved_fn
 
