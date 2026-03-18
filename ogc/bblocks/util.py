@@ -250,11 +250,6 @@ def write_jsonld_context(annotated_schema: Path | str,
         with open(resolved_fn, 'w') as f:
             json.dump({'defs': defs, 'properties': properties_list}, f, separators=(',', ':'))
 
-        max_size = 1.5 * 1024 * 1024  # 1.5 MB
-        if resolved_fn.stat().st_size > max_size:
-            resolved_fn.unlink()
-            resolved_fn = None
-
     return context_fn, resolved_fn
 
 

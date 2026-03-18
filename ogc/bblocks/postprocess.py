@@ -138,9 +138,11 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 base_url, cwd if base_url else output_file_root
             )
         if bblock.resolved_properties.is_file():
-            bblock.metadata['resolvedSchemaProperties'] = PathOrUrl(bblock.resolved_properties).with_base_url(
-                base_url, cwd if base_url else output_file_root
-            )
+            max_size = 1.5 * 1024 * 1024  # 1.5 MB
+            if bblock.resolved_properties.stat().st_size <= max_size:
+                bblock.metadata['resolvedSchemaProperties'] = PathOrUrl(bblock.resolved_properties).with_base_url(
+                    base_url, cwd if base_url else output_file_root
+                )
         elif bblock.metadata.get('ldContext') and not is_url(bblock.metadata['ldContext']):
             # Unprocessed JSON-LD context instead of generated from annotations
             ld_context_path = bblock.files_path / bblock.metadata['ldContext']
