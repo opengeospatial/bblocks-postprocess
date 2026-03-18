@@ -688,7 +688,8 @@ class BuildingBlockRegister:
                 dep_id = dep['itemIdentifier']
                 dep_shapes = dep.get('shaclShapes')
                 if not dep_shapes and (dep_shapes := dep.get('shaclRules')):
-                    print(f'WARNING: Building Block {dep_id} uses deprecated shaclRules metadata property')
+                    print(f'WARNING: Building Block {dep_id} uses deprecated shaclRules metadata property',
+                          file=sys.stderr)
                 if dep_shapes:
                     if isinstance(dep_shapes, list):
                         shapes.setdefault(dep.get('itemIdentifier'), set()).update(dep_shapes)
@@ -709,7 +710,8 @@ class BuildingBlockRegister:
             for first_level_id, declared_shapes in third_party_shapes[dep_id].items():
                 if declared_shapes != dep_shapes:
                     print(f"WARNING: Building Block {first_level_id} has potentially"
-                          f" stale SHACL shapes defined for {dep_id}")
+                          f" stale SHACL shapes defined for {dep_id}",
+                          file=sys.stderr)
 
         return shapes
 
