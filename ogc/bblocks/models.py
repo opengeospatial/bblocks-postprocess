@@ -675,20 +675,43 @@ class BuildingBlockRegister:
         return dependencies
 
     def get_inherited_shacl_shapes(self, identifier: str) -> dict[str, set[str | Path]]:
-        rules: dict[str, set[str | Path]] = {}
+        shapes: dict[str, set[str | Path]] = {}
+        # Collects shapes declared by dependencies about their own dependencies
+        # Can be used to detect stale repositories that rely on shape URLs that no longer exist
+        # format: dict[second_level_dep_id, dict[first_level_dep_id, set[url]]]
+        third_party_shapes: dict[str, dict[str, set[str]]] = {}
         for dep in self.find_dependencies(identifier):
             if isinstance(dep, BuildingBlock):
                 if dep.shacl_shapes:
-                    rules[dep.identifier] = dep.shacl_shapes
+                    shapes[dep.identifier] = dep.shacl_shapes
             else:
-                dep_rules = dep.get('shaclShapes', dep.get('shaclRules'))
-                if dep_rules:
-                    if isinstance(dep_rules, list):
-                        rules.setdefault(dep.get('itemIdentifier'), set()).update(dep_rules)
-                    elif isinstance(dep_rules, dict):
-                        for inh_id, inh_rules in dep_rules.items():
-                            rules.setdefault(inh_id, set()).update(inh_rules)
-        return rules
+                dep_id = dep['itemIdentifier']
+                dep_shapes = dep.get('shaclShapes')
+                if not dep_shapes and (dep_shapes := dep.get('shaclRules')):
+                    print(f'WARNING: Building Block {dep_id} uses deprecated shaclRules metadata property')
+                if dep_shapes:
+                    if isinstance(dep_shapes, list):
+                        shapes.setdefault(dep.get('itemIdentifier'), set()).update(dep_shapes)
+                    elif isinstance(dep_shapes, dict):
+                        for inh_id, inh_shapes in dep_shapes.items():
+                            if inh_id == dep_id:
+                                shapes.setdefault(inh_id, set()).update(inh_shapes)
+                            else:
+                                third_party_shapes.setdefault(inh_id, {})[dep_id] = set(inh_shapes)
+
+        # Look for inconsistent shape declarations in dependencies
+        for dep_id, dep_shapes in shapes.items():
+            if not dep_id in third_party_shapes:
+                continue
+            if not dep_shapes or not all(isinstance(x, str) for x in dep_shapes):
+                # Skip blocks with empty and non-URL shacl shapes
+                continue
+            for first_level_id, declared_shapes in third_party_shapes[dep_id].items():
+                if declared_shapes != dep_shapes:
+                    print(f"WARNING: Building Block {first_level_id} has potentially"
+                          f" stale SHACL shapes defined for {dep_id}")
+
+        return shapes
 
     def get(self, identifier: str):
         return self.bblocks.get(identifier, self.imported_bblocks.get(identifier))
