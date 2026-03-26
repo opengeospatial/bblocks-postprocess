@@ -6,11 +6,37 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import AnyStr
 
-from ogc.bblocks.models import TransformMetadata, Transformer
+from ogc.bblocks.models import TransformMetadata, TransformResult, Transformer
 
 transform_type = 'python'
+
+
+def _strip_harness_frames(stderr: str, harness_path: str) -> str:
+    lines = stderr.splitlines(keepends=True)
+    result = []
+    skip_next = False
+    for line in lines:
+        if skip_next:
+            skip_next = False
+            continue
+        if f'File "{harness_path}"' in line:
+            skip_next = True
+            continue
+        result.append(line)
+    return ''.join(result)
+
+
+def _decode_output(raw: bytes) -> tuple[str | bytes | None, bool]:
+    if not raw:
+        return None, False
+    try:
+        text = raw.decode('utf-8')
+        if '\x00' in text:
+            return raw, True
+        return text, False
+    except UnicodeDecodeError:
+        return raw, True
 
 
 class PythonTransformer(Transformer):
@@ -18,7 +44,7 @@ class PythonTransformer(Transformer):
     def __init__(self):
         super().__init__([transform_type], [], [])
 
-    def do_transform(self, metadata: TransformMetadata) -> AnyStr | None:
+    def transform(self, metadata: TransformMetadata) -> TransformResult:
         sandbox_dir = metadata.sandbox_dir
         if sandbox_dir:
             python_bin = sandbox_dir / 'venv' / 'bin' / 'python'
@@ -39,11 +65,9 @@ import sys as _sys
 transform_metadata = {json.dumps(transform_metadata_dict)}
 input_data = _sys.stdin.read()
 output_data = None
-
-{metadata.transform_content}
-
+exec(compile({repr(metadata.transform_content)}, '<transform>', 'exec'), globals())
 if output_data is not None:
-    _sys.stdout.write(output_data)
+    _sys.stdout.buffer.write(output_data if isinstance(output_data, bytes) else output_data.encode('utf-8'))
 """
 
         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
@@ -53,14 +77,15 @@ if output_data is not None:
         try:
             result = subprocess.run(
                 [str(python_bin), harness_path],
-                input=metadata.input_data,
+                input=metadata.input_data.encode('utf-8') if isinstance(metadata.input_data, str) else metadata.input_data,
                 capture_output=True,
-                text=True,
             )
         finally:
             Path(harness_path).unlink(missing_ok=True)
 
+        stderr = _strip_harness_frames(result.stderr.decode('utf-8', errors='replace'), harness_path) or None
         if result.returncode != 0:
-            raise RuntimeError(f"Python transform failed:\n{result.stderr}")
+            return TransformResult(output=None, success=False, stderr=stderr)
 
-        return result.stdout or None
+        output, binary = _decode_output(result.stdout)
+        return TransformResult(output=output, success=True, stderr=stderr, binary=binary)

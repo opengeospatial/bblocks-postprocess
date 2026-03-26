@@ -5,12 +5,11 @@ import shutil
 import os.path
 import subprocess
 import sys
-import traceback
 from pathlib import Path
 from urllib.parse import urljoin
 
 from ogc.bblocks import mimetypes
-from ogc.bblocks.models import BuildingBlock, TransformMetadata, BuildingBlockError
+from ogc.bblocks.models import BuildingBlock, TransformMetadata, TransformResult, BuildingBlockError
 from ogc.bblocks.transformers import transformers
 from ogc.bblocks.util import sanitize_filename
 
@@ -134,16 +133,23 @@ def apply_transforms(bblock: BuildingBlock,
                                                        sandbox_dir=sandbox_dir)
 
                 try:
-                    transform_result = transformer.transform(transform_metadata)
-                    if transform_result:
-                        snippet_transform_results = snippet.setdefault('transformResults', {})
-                        output_rel_path = str(os.path.relpath(output_fn, cwd))
-                        if base_url:
-                            output_rel_path = urljoin(base_url, output_rel_path)
-                        snippet_transform_results[transform['id']] = output_rel_path
-                        with open(output_fn, 'w') as f:
-                            f.write(transform_result)
-                except:
-                    with open(output_fn.with_stem(output_fn.name + '.error'), 'w') as f:
-                        f.write('Error generating transformed file:\n')
-                        f.write(traceback.format_exc())
+                    result = transformer.transform(transform_metadata)
+                except Exception as e:
+                    result = TransformResult(output=None, success=False,
+                                             stderr=f"{type(e).__name__}: {e}")
+
+                entry = {'success': result.success}
+                if result.stderr:
+                    entry['stderr'] = result.stderr
+                if result.binary:
+                    entry['binary'] = True
+                if result.output:
+                    mode = 'wb' if result.binary else 'w'
+                    with open(output_fn, mode) as f:
+                        f.write(result.output)
+                    output_rel_path = str(os.path.relpath(output_fn, cwd))
+                    if base_url:
+                        output_rel_path = urljoin(base_url, output_rel_path)
+                    entry['url'] = output_rel_path
+                snippet_transform_results = snippet.setdefault('transformResults', {})
+                snippet_transform_results[transform['id']] = entry

@@ -735,6 +735,14 @@ class TransformMetadata:
     sandbox_dir: Path | None = None
 
 
+@dataclasses.dataclass
+class TransformResult:
+    output: str | bytes | None
+    success: bool
+    stderr: str | None = None
+    binary: bool = False
+
+
 class Transformer:
 
     def __init__(self, transform_types: list[str],
@@ -743,8 +751,9 @@ class Transformer:
         self.default_inputs = [] if default_inputs is None else [mimetypes.lookup(m) or m for m in default_inputs]
         self.default_outputs = [] if default_outputs is None else [mimetypes.lookup(m) or m for m in default_outputs]
 
-    def transform(self, metadata: TransformMetadata) -> AnyStr | None:
-        return self.do_transform(metadata)
+    def transform(self, metadata: TransformMetadata) -> TransformResult:
+        output = self.do_transform(metadata)
+        return TransformResult(output=output, success=True)
 
     def do_transform(self, metadata: TransformMetadata) -> AnyStr | None:
         raise NotImplementedError
