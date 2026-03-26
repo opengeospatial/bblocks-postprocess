@@ -1,5 +1,4 @@
 const jsonld = require('jsonld');
-const util = require('util');
 const fs = require('fs');
 
 if (process.argv.length !== 3) {
@@ -8,8 +7,7 @@ if (process.argv.length !== 3) {
 }
 
 const filename = process.argv[2];
-const readFile = util.promisify(fs.readFile);
-readFile(filename, 'utf-8')
+fs.promises.readFile(filename, 'utf-8')
     .then(data => JSON.parse(data))
     .then(context => jsonld.toRDF(context, {format: 'application/n-quads'}))
     .catch(e => {
