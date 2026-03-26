@@ -2,15 +2,27 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import AnyStr
 
-from ogc.bblocks.models import TransformMetadata, Transformer
+from ogc.bblocks.models import TransformMetadata, TransformResult, Transformer
 
 transform_type = 'node'
+
+
+def _decode_output(raw: bytes) -> tuple[str | bytes | None, bool]:
+    if not raw:
+        return None, False
+    try:
+        text = raw.decode('utf-8')
+        if '\x00' in text:
+            return raw, True
+        return text, False
+    except UnicodeDecodeError:
+        return raw, True
 
 
 class NodeTransformer(Transformer):
@@ -18,10 +30,10 @@ class NodeTransformer(Transformer):
     def __init__(self):
         super().__init__([transform_type], [], [])
 
-    def do_transform(self, metadata: TransformMetadata) -> AnyStr | None:
+    def transform(self, metadata: TransformMetadata) -> TransformResult:
         node_bin = shutil.which('node')
         if not node_bin:
-            raise RuntimeError("'node' executable not found")
+            return TransformResult(output=None, success=False, stderr="'node' executable not found")
 
         sandbox_dir = metadata.sandbox_dir
         node_path = str(sandbox_dir / 'node' / 'node_modules') if sandbox_dir else None
@@ -42,7 +54,7 @@ let outputData = null;
 {metadata.transform_content}
 
 if (outputData !== null) {{
-    process.stdout.write(outputData);
+    process.stdout.write(typeof outputData === 'string' ? outputData : Buffer.from(outputData));
 }}
 """
 
@@ -50,25 +62,24 @@ if (outputData !== null) {{
             f.write(harness)
             harness_path = f.name
 
-        env = None
+        env = os.environ.copy()
         if node_path:
-            import os
-            env = os.environ.copy()
             existing = env.get('NODE_PATH', '')
             env['NODE_PATH'] = f"{node_path}:{existing}" if existing else node_path
 
         try:
             result = subprocess.run(
                 [node_bin, harness_path],
-                input=metadata.input_data,
+                input=metadata.input_data.encode('utf-8') if isinstance(metadata.input_data, str) else metadata.input_data,
                 capture_output=True,
-                text=True,
                 env=env,
             )
         finally:
             Path(harness_path).unlink(missing_ok=True)
 
+        stderr = result.stderr.decode('utf-8', errors='replace').replace(harness_path, '<transform>') or None
         if result.returncode != 0:
-            raise RuntimeError(f"Node transform failed:\n{result.stderr}")
+            return TransformResult(output=None, success=False, stderr=stderr)
 
-        return result.stdout or None
+        output, binary = _decode_output(result.stdout)
+        return TransformResult(output=output, success=True, stderr=stderr, binary=binary)
