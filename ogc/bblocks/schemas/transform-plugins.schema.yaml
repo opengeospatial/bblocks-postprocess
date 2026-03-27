@@ -1,0 +1,44 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+title: transform-plugins.yml
+description: Declares external transformer plugins to load at postprocessing startup.
+type: object
+properties:
+  plugins:
+    type: array
+    items:
+      type: object
+      required:
+        - modules
+      properties:
+        pip:
+          description: >
+            One or more pip install specifiers for packages that provide the plugin modules.
+            Accepts any specifier that `pip install` understands (package name, version
+            constraint, GitHub URL, etc.).
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+              minItems: 1
+        modules:
+          description: >
+            One or more dotted Python module paths to import. Each module is scanned for
+            classes that implement the Transformer duck type (a non-empty `transform_types`
+            list and a callable `transform` method).
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+              minItems: 1
+        url:
+          type: string
+          format: uri
+          description: >
+            URL for this plugin (e.g. its repository or PyPI page). If omitted, the
+            postprocessor attempts to derive one automatically from the `pip` specifier.
+            Provide this to override the derived URL or to supply one when auto-detection
+            is not possible (e.g. for local file installs).
+      additionalProperties: false
+additionalProperties: false
