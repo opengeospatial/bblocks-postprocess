@@ -51,6 +51,60 @@ $defs:
         description: |
           Additional metadata to pass to the transform. Must be an object, the values of which can be anything.
         type: object
+    allOf:
+      - if:
+          properties:
+            type:
+              const: python
+        then:
+          $ref: '#/$defs/pythonTransform'
+      - if:
+          properties:
+            type:
+              const: node
+        then:
+          $ref: '#/$defs/nodeTransform'
+
+  pipOrNpmPackageList:
+    description: One or more package specifiers, as accepted by pip/npm install.
+    oneOf:
+      - type: string
+      - type: array
+        items:
+          type: string
+        minItems: 1
+
+  pythonTransform:
+    properties:
+      metadata:
+        properties:
+          dependencies:
+            properties:
+              python:
+                type: string
+                description: >
+                  Minimum Python version required to run this transform, as a PEP 440
+                  version specifier (e.g. ">=3.10"). The postprocessor will skip the
+                  transform if the running Python version does not satisfy this constraint.
+              pip:
+                description: One or more pip package specifiers to install before running this transform.
+                $ref: '#/$defs/pipOrNpmPackageList'
+
+  nodeTransform:
+    properties:
+      metadata:
+        properties:
+          dependencies:
+            properties:
+              node:
+                type: string
+                description: >
+                  Minimum Node.js version required to run this transform, as a semver
+                  range (e.g. ">=18"). The postprocessor will skip the transform if the
+                  running Node version does not satisfy this constraint.
+              npm:
+                description: One or more npm package names to install before running this transform.
+                $ref: '#/$defs/pipOrNpmPackageList'
 
   transformList:
     description: List of transforms for the Building Block

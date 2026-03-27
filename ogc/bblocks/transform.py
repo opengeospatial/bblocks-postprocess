@@ -5,6 +5,8 @@ import shutil
 import os.path
 import subprocess
 import sys
+from packaging.version import Version
+from packaging.specifiers import SpecifierSet, InvalidSpecifier
 from pathlib import Path
 from urllib.parse import urljoin
 
@@ -14,6 +16,27 @@ from ogc.bblocks.transformers import transformers
 from ogc.bblocks.util import sanitize_filename
 
 _SUBPROCESS_TRANSFORM_TYPES = ('python', 'node')
+
+_PYTHON_VERSION = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+_node_version_cache: str | None = None
+
+
+def _get_node_version() -> str | None:
+    global _node_version_cache
+    if _node_version_cache is None:
+        try:
+            result = subprocess.run(['node', '--version'], capture_output=True, text=True)
+            _node_version_cache = result.stdout.strip().lstrip('v')
+        except Exception:
+            _node_version_cache = ''
+    return _node_version_cache or None
+
+
+def _satisfies(current_version: str, constraint: str) -> bool:
+    try:
+        return Version(current_version) in SpecifierSet(constraint)
+    except (InvalidSpecifier, Exception):
+        return True  # unparseable constraint: don't block
 
 
 def _ensure_sandbox(sandbox_dir: Path, bblock: BuildingBlock) -> None:
@@ -62,6 +85,19 @@ def apply_transforms(bblock: BuildingBlock,
         _ensure_sandbox(sandbox_dir, bblock)
 
     for transform in bblock.transforms:
+
+        deps = (transform.get('metadata') or {}).get('dependencies', {})
+        if transform.get('type') == 'python':
+            if (constraint := deps.get('python')) and not _satisfies(_PYTHON_VERSION, constraint):
+                print(f"  > Skipping transform '{transform['id']}': requires Python {constraint} "
+                      f"(running {_PYTHON_VERSION})", file=sys.stderr)
+                continue
+        elif transform.get('type') == 'node':
+            node_ver = _get_node_version()
+            if (constraint := deps.get('node')) and (not node_ver or not _satisfies(node_ver, constraint)):
+                print(f"  > Skipping transform '{transform['id']}': requires Node {constraint} "
+                      f"(running {node_ver or 'unknown'})", file=sys.stderr)
+                continue
 
         transformer = transformers.get(transform['type'])
         default_media_types = {
@@ -122,7 +158,8 @@ def apply_transforms(bblock: BuildingBlock,
                                               f".{transform['id']}{default_suffix}")
 
                 metadata = transform.get('metadata', {})
-                metadata['_prefixes'] = example_prefixes
+                if example_prefixes:
+                    metadata['_prefixes'] = example_prefixes
 
                 transform_metadata = TransformMetadata(type=transform['type'],
                                                        source_mime_type=snippet_mime_type,
