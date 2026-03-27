@@ -24,7 +24,7 @@ from ogc.bblocks.util import write_jsonld_context, CustomJSONEncoder, \
 from ogc.bblocks.schema import annotate_schema, resolve_all_schema_references, write_annotated_schema
 from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister, ImportedBuildingBlocks, BuildingBlockError
 from ogc.bblocks.validate import validate_test_resources, write_report
-from ogc.bblocks.transform import apply_transforms, transformers
+from ogc.bblocks.transform import apply_transforms, load_transform_plugins, transformers
 
 
 def postprocess(registered_items_path: str | Path = 'registereditems',
@@ -52,6 +52,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
     _sandbox = tempfile.TemporaryDirectory(prefix='bblocks_sandbox_')
     sandbox_dir = Path(_sandbox.name)
+    transform_plugins = load_transform_plugins(sandbox_dir)
 
     if not isinstance(test_outputs_path, Path):
         test_outputs_path = Path(test_outputs_path)
@@ -466,6 +467,9 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         if imported_bblocks.real_metadata_urls:
             output_register_json['imports'] = list(imported_bblocks.real_metadata_urls.values())
         output_register_json['bblocks'] = output_bblocks
+
+        if transform_plugins:
+            output_register_json['transformPlugins'] = transform_plugins
 
         remote_cache_dir_url = f"{base_url}{os.path.relpath(Path(remote_cache_dir).resolve(), cwd)}"
         output_register_json['remoteCacheDir'] = remote_cache_dir_url
