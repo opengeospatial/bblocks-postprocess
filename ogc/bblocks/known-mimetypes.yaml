@@ -46,3 +46,9 @@ yaml:
   extensions:
     - yaml
     - yml
+
+csv:
+  label: CSV
+  mimeType: text/csv
+  extensions:
+    - csv
