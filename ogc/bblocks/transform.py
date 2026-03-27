@@ -17,6 +17,27 @@ from ogc.bblocks.util import sanitize_filename
 
 _SUBPROCESS_TRANSFORM_TYPES = ('python', 'node')
 
+
+def _normalize_media_type(mt: str | dict) -> dict:
+    if isinstance(mt, str):
+        entry = mimetypes.lookup(mt)
+        if entry:
+            result = {'mimeType': entry['mimeType']}
+            if 'label' in entry:
+                result['label'] = entry['label']
+            if 'defaultExtension' in entry:
+                result['defaultExtension'] = entry['defaultExtension']
+            return result
+        return {'mimeType': mimetypes.normalize(mt)}
+    else:
+        result = dict(mt)
+        result['mimeType'] = mimetypes.normalize(mt.get('mimeType', ''))
+        if 'label' not in result:
+            entry = mimetypes.lookup(result['mimeType'])
+            if entry and 'label' in entry:
+                result['label'] = entry['label']
+        return result
+
 _PYTHON_VERSION = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
 _node_version_cache: str | None = None
 
@@ -115,8 +136,7 @@ def apply_transforms(bblock: BuildingBlock,
                 else:
                     io['mediaTypes'] = []
             else:
-                io['mediaTypes'] = [(mimetypes.lookup(mt) or mt) if isinstance(mt, str) else mt
-                                    for mt in media_types]
+                io['mediaTypes'] = [_normalize_media_type(mt) for mt in media_types]
 
         if not transformer or not bblock.examples:
             continue
