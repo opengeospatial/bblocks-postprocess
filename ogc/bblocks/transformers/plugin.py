@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from base64 import b64decode
@@ -30,10 +31,13 @@ class PluginTransformer:
             subprocess.run([sys.executable, '-m', 'venv', str(venv_dir)], check=True)
             if self.pip_deps:
                 pip_bin = venv_dir / 'bin' / 'pip'
+                env = os.environ.copy()
+                env['GIT_TERMINAL_PROMPT'] = '0'
                 subprocess.run(
                     [str(pip_bin), 'install', '--quiet',
                      '--disable-pip-version-check', *self.pip_deps],
                     check=True,
+                    env=env,
                 )
         return venv_dir
 
