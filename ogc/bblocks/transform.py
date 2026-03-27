@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import re
 import shutil
 import os.path
 import subprocess
@@ -10,12 +11,40 @@ from packaging.specifiers import SpecifierSet, InvalidSpecifier
 from pathlib import Path
 from urllib.parse import urljoin
 
+import yaml
+
 from ogc.bblocks import mimetypes
 from ogc.bblocks.models import BuildingBlock, TransformMetadata, TransformResult, BuildingBlockError
 from ogc.bblocks.transformers import transformers
 from ogc.bblocks.util import sanitize_filename
 
 _SUBPROCESS_TRANSFORM_TYPES = ('python', 'node')
+
+
+def _pip_to_url(pip_spec: str) -> str | None:
+    """Derive a human-facing URL from a pip install specifier, or None if not applicable."""
+    if not pip_spec:
+        return None
+    # Local paths — no meaningful URL
+    if pip_spec.startswith(('/', './', '../')):
+        return None
+    # Git URL: git+https://.../.git[@ref]
+    if pip_spec.startswith('git+'):
+        url = pip_spec[4:]                        # strip git+
+        url = re.sub(r'@[^@]*$', '', url)         # strip @ref
+        url = re.sub(r'\.git$', '', url.rstrip('/'))  # strip .git
+        return url
+    # Plain archive/wheel URL
+    if pip_spec.startswith(('https://', 'http://')):
+        return pip_spec
+    # Standard package name, possibly with version specifier or extras
+    name = re.split(r'[>=<!~\[@\s]', pip_spec)[0].strip()
+    if name:
+        return f'https://pypi.org/project/{name}'
+    return None
+
+_PLUGINS_FILE = 'transform-plugins.yml'
+
 
 
 def _normalize_media_type(mt: str | dict) -> dict:
@@ -87,6 +116,85 @@ def _ensure_sandbox(sandbox_dir: Path, bblock: BuildingBlock) -> None:
         subprocess.run(['npm', 'install', '--prefix', str(node_dir), *npm_deps], check=True)
 
 
+def load_transform_plugins(sandbox_dir: Path) -> list[dict]:
+    """Read transform-plugins.yml, create per-plugin venvs, and register PluginTransformers.
+
+    Returns the raw plugin list from transform-plugins.yml (for inclusion in register.json),
+    or an empty list if the file does not exist or declares no plugins.
+    """
+    from ogc.bblocks.transformers.plugin import PluginTransformer
+
+    plugins_path = Path(_PLUGINS_FILE)
+    if not plugins_path.exists():
+        return []
+
+    with open(plugins_path) as f:
+        config = yaml.safe_load(f)
+
+    if not config or 'plugins' not in config:
+        return []
+
+    output_plugins = []
+
+    for plugin in config.get('plugins', []):
+        pip_deps = plugin.get('pip', [])
+        if isinstance(pip_deps, str):
+            pip_deps = [pip_deps]
+
+        modules = plugin.get('modules', [])
+        if isinstance(modules, str):
+            modules = [modules]
+
+        output_modules = []
+
+        for module_path in modules:
+            # Create venv and run discovery via the harness
+            venv_dir = PluginTransformer(module_path, pip_deps, []).ensure_venv(sandbox_dir)
+            discovered = PluginTransformer.discover(venv_dir, module_path)
+
+            if not discovered:
+                print(f"  Warning: no transform types found in plugin '{module_path}'",
+                      file=sys.stderr)
+                continue
+
+            output_transformers = []
+            for entry in discovered:
+                types = entry.get('types', [])
+                if not types:
+                    continue
+                pt = PluginTransformer(module_path, pip_deps, types)
+                pt.default_inputs = entry.get('default_inputs', [])
+                pt.default_outputs = entry.get('default_outputs', [])
+                print(f"  > Registered plugin '{module_path}' ({entry.get('class', '?')}) "
+                      f"for types: {types}", file=sys.stderr)
+                for tt in types:
+                    transformers[tt] = pt
+                output_transformers.append({
+                    'class': entry.get('class'),
+                    'types': types,
+                    'defaultInputs': pt.default_inputs,
+                    'defaultOutputs': pt.default_outputs,
+                })
+
+            if output_transformers:
+                output_modules.append({'module': module_path, 'transformers': output_transformers})
+
+        if output_modules:
+            output_entry = {'modules': output_modules}
+            original_pip = plugin.get('pip')
+            if original_pip:
+                output_entry['pip'] = original_pip
+                if explicit_url := plugin.get('url'):
+                    output_entry['urls'] = [explicit_url]
+                else:
+                    urls = [u for s in pip_deps for u in [_pip_to_url(s)] if u]
+                    if urls:
+                        output_entry['urls'] = urls
+            output_plugins.append(output_entry)
+
+    return output_plugins
+
+
 def apply_transforms(bblock: BuildingBlock,
                      outputs_path: str | Path,
                      output_subpath='transforms',
@@ -122,8 +230,8 @@ def apply_transforms(bblock: BuildingBlock,
 
         transformer = transformers.get(transform['type'])
         default_media_types = {
-            'inputs': transformer.default_inputs,
-            'outputs': transformer.default_outputs,
+            'inputs': getattr(transformer, 'default_inputs', []),
+            'outputs': getattr(transformer, 'default_outputs', []),
         } if transformer else None
 
         # Normalize types
