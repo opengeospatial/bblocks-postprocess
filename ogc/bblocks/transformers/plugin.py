@@ -33,6 +33,7 @@ class PluginTransformer:
                 pip_bin = venv_dir / 'bin' / 'pip'
                 env = os.environ.copy()
                 env['GIT_TERMINAL_PROMPT'] = '0'
+                env['GIT_ASKPASS'] = 'echo'
                 subprocess.run(
                     [str(pip_bin), 'install', '--quiet',
                      '--disable-pip-version-check', *self.pip_deps],
