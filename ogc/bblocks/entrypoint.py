@@ -182,8 +182,15 @@ if __name__ == '__main__':
     register_additional_metadata = {}
     sparql_conf = {}
     schema_oas30_downcompile = False
+    bb_config = {}
     if bb_config_file and bb_config_file.is_file():
-        bb_config = load_yaml(filename=bb_config_file)
+        bb_config = load_yaml(filename=bb_config_file) or {}
+    for override_name in ('bblocks-config-override.yml', 'bblocks-config-override.yaml'):
+        bb_override_config_file = Path(override_name)
+        if bb_override_config_file.is_file():
+            bb_config.update(load_yaml(filename=bb_override_config_file) or {})
+            break
+    if bb_config:
         id_prefix = bb_config.get('identifier-prefix', id_prefix)
         if id_prefix and id_prefix[-1] != '.':
             id_prefix += '.'
