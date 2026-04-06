@@ -68,6 +68,8 @@ def report_to_dict(bblock: BuildingBlock,
                 source['language'] = item.source.language
             if item.source.source_url:
                 source['sourceUrl'] = item.source.source_url
+            if item.source.transform_id:
+                source['transformId'] = item.source.transform_id
 
             sections = []
             for section_enum, entries in item.sections.items():
@@ -243,8 +245,7 @@ def validate_transform_output(
         transform_id: str,
         output_file: Path,
         profile_output_base: Path,
-        base_url: str | None = None,
-) -> dict:
+) -> ValidationReportItem:
     """Validate a transform output file against a profile building block.
 
     profile_output_base is the path (with extension) inside the per-profile
@@ -252,10 +253,9 @@ def validate_transform_output(
     .with_suffix('.ttl') / '.jsonld' on it, so the extension must be present
     to avoid stripping part of the stem.
 
-    Returns a compact dict: {result, sections, [upliftedFiles]}.
+    Returns the ValidationReportItem so the caller can collect items across
+    snippets and write a consolidated _report.json per profile.
     """
-    cwd = Path().resolve()
-
     validators = [
         JsonValidator(profile_bblock, bblocks_register),
         RdfValidator(profile_bblock, bblocks_register),
@@ -289,35 +289,7 @@ def validate_transform_output(
     status = 'failed' if report.failed else 'passed'
     report.write_text(profile_bblock, profile_output_base.with_suffix(f'.validation_{status}.txt'))
 
-    result: dict = {'result': not report.failed, 'sections': []}
-    for section_enum, entries in report.sections.items():
-        if not entries:
-            continue
-        section = {
-            'name': section_enum.name,
-            'title': section_enum.value,
-            'entries': [],
-        }
-        for entry in entries:
-            entry_dict: dict = {'isError': entry.is_error, 'message': entry.message}
-            if entry.payload:
-                for k, v in entry.payload.items():
-                    if isinstance(v, Path):
-                        v = str(os.path.relpath(v.resolve(), cwd))
-                        if base_url:
-                            v = urljoin(base_url, v)
-                    entry_dict[k] = v
-            section['entries'].append(entry_dict)
-        result['sections'].append(section)
-
-    uplifted = {}
-    for fmt, (fn, _) in report.uplifted_files.items():
-        rel = str(os.path.relpath(fn.resolve(), cwd))
-        uplifted[fmt] = urljoin(base_url, rel) if base_url else rel
-    if uplifted:
-        result['upliftedFiles'] = uplifted
-
-    return result
+    return report
 
 
 def validate_test_resources(bblock: BuildingBlock,
