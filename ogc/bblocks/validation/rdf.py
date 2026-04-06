@@ -18,7 +18,7 @@ from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister
 from ogc.bblocks.validation import Validator, ValidationItemSourceType, ValidationReportSection, ValidationReportEntry, \
     ValidationReportItem, uplift
 from ogc.bblocks.validation.uplift import Uplifter
-from ogc.bblocks.util import load_yaml
+from ogc.bblocks.util import load_yaml, PathOrUrl
 
 
 NATIVE_RDF_LANGS = {
@@ -100,8 +100,12 @@ class RdfValidator(Validator):
         self.jsonld_url = bblock.metadata.get('ldContext')
 
         try:
-            if bblock.jsonld_context.is_file():
-                self.jsonld_context = load_yaml(filename=bblock.jsonld_context)
+            ctx = bblock.jsonld_context
+            if ctx is not None and ctx.is_file():
+                if isinstance(ctx, PathOrUrl) and ctx.is_url:
+                    self.jsonld_context = ctx.load_yaml()
+                else:
+                    self.jsonld_context = load_yaml(filename=ctx)
         except Exception as e:
             self.jsonld_error = f"Error loading JSON-LD context: {type(e).__name__}: {e}"
 
@@ -145,7 +149,7 @@ class RdfValidator(Validator):
                     file_format: str | None = None,
                     resource_url: str | None = None) -> Graph | None | bool:
         graph = False
-        if filename.suffix == '.json' or file_format == 'application/json':
+        if filename.suffix in ('.json', '.geojson') or file_format in ('application/json', 'application/geo+json'):
             if self.jsonld_error:
                 report.add_entry(ValidationReportEntry(
                     section=ValidationReportSection.JSON_LD,

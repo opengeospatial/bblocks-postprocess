@@ -29,22 +29,22 @@ class PluginTransformer:
     def ensure_venv(self, sandbox_dir: Path) -> Path:
         slug = self.module_path.replace('.', '_')
         venv_dir = sandbox_dir / 'plugins' / slug / 'venv'
-        needs_setup = venv_needs_recreate(venv_dir)
-        if needs_setup:
-            logger.info("Setting up plugin venv for '%s'%s",
-                        self.module_path, f" (pip: {self.pip_deps})" if self.pip_deps else "")
-            with log_indent():
-                ensure_venv(venv_dir)
-                if self.pip_deps:
-                    pip_bin = venv_dir / 'bin' / 'pip'
-                    env = os.environ.copy()
-                    env['GIT_TERMINAL_PROMPT'] = '0'
-                    env['GIT_ASKPASS'] = 'echo'
-                    run_logged(
-                        [str(pip_bin), 'install', '--disable-pip-version-check', *self.pip_deps],
-                        label='pip',
-                        env=env,
-                    )
+        if self.pip_deps:
+            logger.info("Installing plugin pip dependencies for '%s': %s", self.module_path, self.pip_deps)
+        elif not venv_dir.exists():
+            logger.info("Setting up plugin venv for '%s'", self.module_path)
+        with log_indent():
+            ensure_venv(venv_dir)
+            if self.pip_deps:
+                pip_bin = venv_dir / 'bin' / 'pip'
+                env = os.environ.copy()
+                env['GIT_TERMINAL_PROMPT'] = '0'
+                env['GIT_ASKPASS'] = 'echo'
+                run_logged(
+                    [str(pip_bin), 'install', '--disable-pip-version-check', *self.pip_deps],
+                    label='pip',
+                    env=env,
+                )
         return venv_dir
 
     @staticmethod

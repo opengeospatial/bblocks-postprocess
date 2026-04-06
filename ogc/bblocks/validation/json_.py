@@ -83,9 +83,9 @@ class JsonValidator(Validator):
         self.schema_validator = None
 
         try:
-            if bblock.annotated_schema.is_file():
+            if bblock.annotated_schema and bblock.annotated_schema.is_file():
                 self.schema_validator = get_json_validator(bblock.annotated_schema_contents,
-                                                           bblock.annotated_schema.resolve().as_uri(),
+                                                           bblock.annotated_schema.as_uri(),
                                                            register)
         except Exception as e:
             self.schema_error = f"Error creating JSON validator: {type(e).__name__}: {e}"
@@ -97,8 +97,8 @@ class JsonValidator(Validator):
                  resource_url: str | None = None,
                  **kwargs) -> bool | None:
 
-        if filename.suffix not in ('.json', '.jsonld', '.yaml', '.yml')\
-                and file_format not in ('application/json', 'application/x-yaml'):
+        if filename.suffix not in ('.json', '.jsonld', '.yaml', '.yml', '.geojson')\
+                and file_format not in ('application/json', 'application/x-yaml', 'application/geo+json'):
             return False
 
         if report.source.type == ValidationItemSourceType.EXAMPLE:

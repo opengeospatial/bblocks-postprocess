@@ -362,6 +362,50 @@ class BuildingBlock:
         return result
 
 
+class ImportedBBlockProxy:
+    """Wraps an imported bblock dict to expose the BuildingBlock interface needed by validators."""
+
+    def __init__(self, data: dict, remote_cache_dir: Path | None = None):
+        self.identifier: str = data['itemIdentifier']
+        self.name: str = data.get('name', self.identifier)
+        self.metadata: dict = dict(data)  # mutable copy so validators can write back (e.g. shaclShapes)
+        self.remote_cache_dir: Path = remote_cache_dir or Path('.transforms-sandbox/remote_cache')
+        self.shaclClosures = []
+        self.files_path: Path = Path('.')  # no local files; only needed for non-URL SHACL (never the case here)
+
+        # Schema: compiled register stores {"application/json": url, "application/yaml": url}
+        schema = data.get('schema')
+        schema_url = None
+        if isinstance(schema, dict):
+            schema_url = (schema.get('application/json')
+                          or schema.get('application/yaml')
+                          or next(iter(schema.values()), None))
+        elif isinstance(schema, str):
+            schema_url = schema
+        self.annotated_schema: PathOrUrl | None = PathOrUrl(schema_url) if schema_url else None
+        self.schema: PathOrUrl | None = self.annotated_schema
+
+        # JSON-LD context
+        ld_context_url = data.get('ldContext')
+        self.jsonld_context: PathOrUrl | None = PathOrUrl(ld_context_url) if ld_context_url else None
+
+        self._annotated_schema_contents: str | None = None
+
+    @property
+    def annotated_schema_contents(self) -> str | None:
+        if self._annotated_schema_contents is None and self.annotated_schema:
+            self._annotated_schema_contents = load_file(self.annotated_schema, self.remote_cache_dir)
+        return self._annotated_schema_contents
+
+    @property
+    def semantic_uplift(self) -> dict:
+        return {}
+
+    def resolve_file(self, fn_or_url):
+        """For imported bblocks all SHACL shapes are absolute URLs; pass through unchanged."""
+        return fn_or_url
+
+
 class ImportedBuildingBlocks:
 
     def __init__(self, metadata_urls: list[str] | None, ignore_git_repos: list[str] | None = None,
