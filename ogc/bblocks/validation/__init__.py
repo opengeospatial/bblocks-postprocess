@@ -34,6 +34,7 @@ class Validator(ABC):
 class ValidationItemSourceType(Enum):
     TEST_RESOURCE = 'Test resource'
     EXAMPLE = 'Example'
+    TRANSFORM_OUTPUT = 'Transform output'
 
 
 class ValidationReportSection(Enum):
@@ -56,6 +57,7 @@ class ValidationItemSource:
     language: str | None = None
     require_fail: bool = False
     source_url: str | None = None
+    transform_id: str | None = None
 
 
 @dataclasses.dataclass

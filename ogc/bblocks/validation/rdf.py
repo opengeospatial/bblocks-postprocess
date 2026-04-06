@@ -272,7 +272,12 @@ class RdfValidator(Validator):
 
         elif (output_filename.suffix in ('.ttl', '.jsonld', '.rdf')
               or file_format in NATIVE_RDF_LANGS):
-            file_from = 'examples' if report.source.type == ValidationItemSourceType.EXAMPLE else 'test resources'
+            if report.source.type == ValidationItemSourceType.EXAMPLE:
+                file_from = 'examples'
+            elif report.source.type == ValidationItemSourceType.TRANSFORM_OUTPUT:
+                file_from = 'transform outputs'
+            else:
+                file_from = 'test resources'
             rdf_format = NATIVE_RDF_LANGS.get(file_format,
                                               'ttl' if output_filename.suffix == '.ttl' else 'json-ld')
             try:

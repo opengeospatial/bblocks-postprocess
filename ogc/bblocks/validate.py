@@ -237,6 +237,87 @@ def _validate_resource(bblock: BuildingBlock,
     return report
 
 
+def validate_transform_output(
+        profile_bblock: BuildingBlock,
+        bblocks_register: BuildingBlockRegister,
+        transform_id: str,
+        output_file: Path,
+        profile_output_base: Path,
+        base_url: str | None = None,
+) -> dict:
+    """Validate a transform output file against a profile building block.
+
+    profile_output_base is the path stem (no extension) used for validation
+    side-outputs: .jsonld, .ttl, and .validation_{passed|failed}.txt files.
+
+    Returns a compact dict: {result, sections, [upliftedFiles]}.
+    """
+    cwd = Path().resolve()
+
+    validators = [
+        JsonValidator(profile_bblock, bblocks_register),
+        RdfValidator(profile_bblock, bblocks_register),
+    ]
+
+    mime_type = mimetypes.from_extension(output_file.suffix[1:]) if output_file.suffix else None
+
+    source = ValidationItemSource(
+        type=ValidationItemSourceType.TRANSFORM_OUTPUT,
+        filename=output_file,
+        transform_id=transform_id,
+        language=mime_type,
+    )
+    report = ValidationReportItem(source)
+
+    try:
+        for validator in validators:
+            validator.validate(
+                output_file, profile_output_base, report,
+                file_format=mime_type,
+            )
+    except Exception as unknown_exc:
+        report.add_entry(ValidationReportEntry(
+            section=ValidationReportSection.UNKNOWN,
+            message=','.join(traceback.format_exception(unknown_exc)),
+            is_error=True,
+            is_global=False,
+            payload={'exception': unknown_exc.__class__.__qualname__}
+        ))
+
+    status = 'failed' if report.failed else 'passed'
+    report.write_text(profile_bblock, profile_output_base.with_suffix(f'.validation_{status}.txt'))
+
+    result: dict = {'result': not report.failed, 'sections': []}
+    for section_enum, entries in report.sections.items():
+        if not entries:
+            continue
+        section = {
+            'name': section_enum.name,
+            'title': section_enum.value,
+            'entries': [],
+        }
+        for entry in entries:
+            entry_dict: dict = {'isError': entry.is_error, 'message': entry.message}
+            if entry.payload:
+                for k, v in entry.payload.items():
+                    if isinstance(v, Path):
+                        v = str(os.path.relpath(v.resolve(), cwd))
+                        if base_url:
+                            v = urljoin(base_url, v)
+                    entry_dict[k] = v
+            section['entries'].append(entry_dict)
+        result['sections'].append(section)
+
+    uplifted = {}
+    for fmt, (fn, _) in report.uplifted_files.items():
+        rel = str(os.path.relpath(fn.resolve(), cwd))
+        uplifted[fmt] = urljoin(base_url, rel) if base_url else rel
+    if uplifted:
+        result['upliftedFiles'] = uplifted
+
+    return result
+
+
 def validate_test_resources(bblock: BuildingBlock,
                             bblocks_register: BuildingBlockRegister,
                             outputs_path: Path | None = None,

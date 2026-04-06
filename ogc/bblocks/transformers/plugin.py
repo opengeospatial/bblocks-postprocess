@@ -11,6 +11,7 @@ from base64 import b64decode
 from pathlib import Path
 
 from ogc.bblocks.log import run_logged, log_indent
+from ogc.bblocks.sandbox import ensure_venv, venv_needs_recreate
 from ogc.bblocks.models import TransformMetadata, TransformResult
 
 _HARNESS = Path(__file__).parent / '_plugin_harness.py'
@@ -28,11 +29,12 @@ class PluginTransformer:
     def ensure_venv(self, sandbox_dir: Path) -> Path:
         slug = self.module_path.replace('.', '_')
         venv_dir = sandbox_dir / 'plugins' / slug / 'venv'
-        if not venv_dir.exists():
+        needs_setup = venv_needs_recreate(venv_dir)
+        if needs_setup:
             logger.info("Setting up plugin venv for '%s'%s",
                         self.module_path, f" (pip: {self.pip_deps})" if self.pip_deps else "")
             with log_indent():
-                run_logged([sys.executable, '-m', 'venv', str(venv_dir)], label='venv')
+                ensure_venv(venv_dir)
                 if self.pip_deps:
                     pip_bin = venv_dir / 'bin' / 'pip'
                     env = os.environ.copy()

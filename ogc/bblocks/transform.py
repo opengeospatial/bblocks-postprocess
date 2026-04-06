@@ -17,11 +17,13 @@ from urllib.parse import urljoin
 import yaml
 
 from ogc.bblocks.log import run_logged, log_indent
+from ogc.bblocks.sandbox import ensure_venv
 
 from ogc.bblocks import mimetypes
-from ogc.bblocks.models import BuildingBlock, TransformMetadata, TransformResult, BuildingBlockError
+from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister, TransformMetadata, TransformResult, BuildingBlockError
 from ogc.bblocks.transformers import transformers
 from ogc.bblocks.util import sanitize_filename
+from ogc.bblocks.validate import validate_transform_output
 
 _SUBPROCESS_TRANSFORM_TYPES = ('python', 'node')
 
@@ -110,8 +112,7 @@ def _ensure_sandbox(sandbox_dir: Path, bblock: BuildingBlock) -> None:
         venv_dir = sandbox_dir / 'venv'
         logger.info("Installing pip dependencies: %s", pip_deps)
         with log_indent():
-            if not venv_dir.exists():
-                run_logged([sys.executable, '-m', 'venv', str(venv_dir)], label='venv')
+            ensure_venv(venv_dir)
             pip_bin = venv_dir / 'bin' / 'pip'
             run_logged([str(pip_bin), 'install', '--disable-pip-version-check', *pip_deps], label='pip')
 
@@ -201,11 +202,58 @@ def load_transform_plugins(sandbox_dir: Path) -> list[dict]:
     return output_plugins
 
 
+def _validate_transform_output(bblock: BuildingBlock,
+                               bblocks_register: BuildingBlockRegister,
+                               transform_id: str,
+                               output_fn: Path,
+                               profile_uris: list[str],
+                               base_url: str | None,
+                               entry: dict) -> None:
+    """Resolve profile URIs, run validation for each, and populate entry in place."""
+    profile_results = []
+    multi = len(profile_uris) > 1
+
+    for profile_uri in profile_uris:
+        profile_id = profile_uri[len('bblocks://'):] if profile_uri.startswith('bblocks://') else profile_uri
+        profile_bblock = bblocks_register.get(profile_id)
+        if not isinstance(profile_bblock, BuildingBlock):
+            logger.warning("Skipping validation of transform '%s' output against profile '%s': "
+                           "not a local building block", transform_id, profile_id)
+            continue
+
+        profile_slug = profile_id.replace('.', '-')
+        profile_output_base = (output_fn.parent / f"{output_fn.stem}.{profile_slug}"
+                               if multi else output_fn.with_suffix(''))
+
+        logger.info("Validating transform '%s' output against profile '%s'", transform_id, profile_id)
+        with log_indent():
+            try:
+                result = validate_transform_output(
+                    profile_bblock=profile_bblock,
+                    bblocks_register=bblocks_register,
+                    transform_id=transform_id,
+                    output_file=output_fn,
+                    profile_output_base=profile_output_base,
+                    base_url=base_url,
+                )
+            except Exception as e:
+                logger.error("Error validating transform '%s' output against profile '%s': %s",
+                             transform_id, profile_id, e, exc_info=e)
+                result = {'result': False, 'sections': [],
+                          'error': f"{type(e).__name__}: {e}"}
+
+        profile_results.append({'profile': profile_id, **result})
+
+    if profile_results:
+        entry['profilesValidation'] = profile_results
+
+
 def apply_transforms(bblock: BuildingBlock,
                      outputs_path: str | Path,
                      output_subpath='transforms',
                      base_url: str | None = None,
-                     sandbox_dir: Path | None = None):
+                     sandbox_dir: Path | None = None,
+                     bblocks_register: BuildingBlockRegister | None = None):
 
     if not bblock.transforms:
         return
@@ -326,5 +374,13 @@ def apply_transforms(bblock: BuildingBlock,
                     if base_url:
                         output_rel_path = urljoin(base_url, output_rel_path)
                     entry['url'] = output_rel_path
+
+                    profiles = (transform.get('outputs') or {}).get('profiles', [])
+                    if profiles and bblocks_register and not result.binary:
+                        _validate_transform_output(
+                            bblock, bblocks_register, transform['id'],
+                            output_fn, profiles, base_url, entry,
+                        )
+
                 snippet_transform_results = snippet.setdefault('transformResults', {})
                 snippet_transform_results[transform['id']] = entry

@@ -7,7 +7,7 @@ import os.path
 import re
 import subprocess
 import sys
-import tempfile
+from ogc.bblocks.sandbox import SANDBOX_DIR_NAME
 from argparse import ArgumentParser
 import datetime
 from pathlib import Path
@@ -55,8 +55,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
     cwd = Path().resolve()
 
-    _sandbox = tempfile.TemporaryDirectory(prefix='bblocks_sandbox_')
-    sandbox_dir = Path(_sandbox.name)
+    sandbox_dir = Path(SANDBOX_DIR_NAME)
+    sandbox_dir.mkdir(exist_ok=True)
     transform_plugins = load_transform_plugins(sandbox_dir)
 
     if not isinstance(test_outputs_path, Path):
@@ -200,7 +200,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         if not light and (not steps or 'transforms' in steps) and bblock.transforms:
             logger.info("Running transforms")
             apply_transforms(bblock, outputs_path=test_outputs_path, base_url=base_url,
-                             sandbox_dir=sandbox_dir)
+                             sandbox_dir=sandbox_dir, bblocks_register=bbr)
 
         if bblock.examples:
             for example in bblock.examples:
@@ -503,7 +503,6 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 json.dump(output_register_json, f, indent=2, cls=CustomJSONEncoder)
 
     logger.info("Finished processing %d building blocks", len(output_bblocks))
-    _sandbox.cleanup()
     return output_bblocks
 
 
