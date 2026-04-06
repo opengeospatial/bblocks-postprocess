@@ -4,8 +4,11 @@ from __future__ import annotations
 import dataclasses
 from datetime import datetime
 import json
+import logging
 import os
 import sys
+
+logger = logging.getLogger(__name__)
 from collections import deque
 from functools import lru_cache
 from hashlib import sha256
@@ -423,7 +426,7 @@ class ImportedBuildingBlocks:
                             with open(cache_fn, 'wb') as f:
                                 f.write(r.content)
                         except:
-                            print(f"[WARN] Error writing cache file {cache_fn} for {url}", file=sys.stderr)
+                            logger.warning("Error writing cache file %s for %s", cache_fn, url)
                     imported = r.json()
                     if (isinstance(imported, dict) and 'bblocks' in imported) or isinstance(imported, list):
                         if (local_imported
@@ -506,10 +509,7 @@ class BuildingBlockRegister:
             except Exception as e:
                 if fail_on_error:
                     raise Exception(f'Error encountered while loading bblock: {bblock_id}') from e
-                print('==== Exception encountered while processing', bblock_id, '====', file=sys.stderr)
-                import traceback
-                traceback.print_exception(e, file=sys.stderr)
-                print('=========', file=sys.stderr)
+                logger.error("Exception encountered while processing %s", bblock_id, exc_info=e)
 
         dep_graph = nx.DiGraph()
 
@@ -575,11 +575,9 @@ class BuildingBlockRegister:
 
         cycles = list(nx.simple_cycles(dep_graph))
         if cycles:
-            cycles_str = '\n - '.join(' -> '.join(reversed(c)) + ' -> ' + c[-1] for c in cycles)
-            print("=== WARNING!! ===", file=sys.stderr)
-            print(f"Circular dependencies found: \n - {cycles_str}", file=sys.stderr)
-            print("Circular dependency support is experimental", file=sys.stderr)
-            print("=== WARNING!! ===", file=sys.stderr)
+            cycles_str = ' - ' + '\n - '.join(' -> '.join(reversed(c)) + ' -> ' + c[-1] for c in cycles)
+            logger.warning("Circular dependencies found:\n%s\nCircular dependency support is experimental",
+                           cycles_str)
         while cycles:
             #for cycle in cycles:
             #    dep_graph.remove_edge(cycle[0], cycle[1])
@@ -688,8 +686,7 @@ class BuildingBlockRegister:
                 dep_id = dep['itemIdentifier']
                 dep_shapes = dep.get('shaclShapes')
                 if not dep_shapes and (dep_shapes := dep.get('shaclRules')):
-                    print(f'WARNING: Building Block {dep_id} uses deprecated shaclRules metadata property',
-                          file=sys.stderr)
+                    logger.warning("Building Block %s uses deprecated shaclRules metadata property", dep_id)
                 if dep_shapes:
                     if isinstance(dep_shapes, list):
                         shapes.setdefault(dep.get('itemIdentifier'), set()).update(dep_shapes)
@@ -709,9 +706,8 @@ class BuildingBlockRegister:
                 continue
             for first_level_id, declared_shapes in third_party_shapes[dep_id].items():
                 if declared_shapes != dep_shapes:
-                    print(f"WARNING: Building Block {first_level_id} has potentially"
-                          f" stale SHACL shapes defined for {dep_id}",
-                          file=sys.stderr)
+                    logger.warning("Building Block %s has potentially stale SHACL shapes defined for %s",
+                                   first_level_id, dep_id)
 
         return shapes
 

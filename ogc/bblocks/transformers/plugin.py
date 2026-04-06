@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
 import sys
+
+logger = logging.getLogger(__name__)
 from base64 import b64decode
 from pathlib import Path
 
@@ -25,9 +28,8 @@ class PluginTransformer:
         slug = self.module_path.replace('.', '_')
         venv_dir = sandbox_dir / 'plugins' / slug / 'venv'
         if not venv_dir.exists():
-            print(f"  > Setting up plugin venv for '{self.module_path}'"
-                  + (f" (pip: {self.pip_deps})" if self.pip_deps else ""),
-                  file=sys.stderr)
+            logger.info("Setting up plugin venv for '%s'%s",
+                        self.module_path, f" (pip: {self.pip_deps})" if self.pip_deps else "")
             subprocess.run([sys.executable, '-m', 'venv', str(venv_dir)], check=True)
             if self.pip_deps:
                 pip_bin = venv_dir / 'bin' / 'pip'

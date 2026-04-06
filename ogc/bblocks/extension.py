@@ -1,6 +1,8 @@
 import logging
 import os
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
 from pathlib import Path
 from typing import Callable, Any, cast
 from urllib.parse import urljoin
@@ -167,8 +169,8 @@ class Extender:
         return result, parent_is_openapi
 
     def _process_openapi(self):
-        print('WARNING: Extension points in OpenAPI building blocks are merely declarative. '
-              'No additional postprocessing of the OpenAPI document will be done.')
+        logger.warning("Extension points in OpenAPI building blocks are merely declarative."
+                       " No additional postprocessing of the OpenAPI document will be done.")
 
     def _process_schema(self, bblock: BuildingBlock, root_schema: ReferencedSchema, parent_id: str,
                         extensions: dict[str, str], extension_schema_mappings: dict[str, dict[str, str]]):

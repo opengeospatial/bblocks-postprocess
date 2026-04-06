@@ -3,12 +3,15 @@
 # to properly monkey-patch urllib and requests
 from ogc.bblocks import http_interceptor
 import datetime
+import logging
 import os
 import shutil
 import subprocess
 import sys
 from argparse import ArgumentParser
 from pathlib import Path
+
+from ogc.bblocks.log import setup_logging, log_indent
 
 from ogc.bblocks.postprocess import postprocess
 from ogc.na import ingest_json, update_vocabs
@@ -118,7 +121,21 @@ if __name__ == '__main__':
         action='store_true',
     )
 
+    parser.add_argument(
+        '--log-level',
+        default='INFO',
+        help='Logging level (DEBUG, INFO, WARNING, ERROR)',
+    )
+
+    parser.add_argument(
+        '--log-file',
+        default=None,
+        help='Optional log file; if provided, all messages are also written there with full timestamps',
+    )
+
     args = parser.parse_args()
+    setup_logging(args.log_level, args.log_file)
+    logger = logging.getLogger(__name__)
 
     fail_on_error = args.fail_on_error in ('true', 'on', 'yes', '1')
     clean = args.clean in ('true', 'on', 'yes', '1')
@@ -131,23 +148,26 @@ if __name__ == '__main__':
     else:
         version = ''
 
-    print(f"""Running {version}with the following configuration:
-- register_file: {args.register_file}
-- items_dir: {args.items_dir}
-- generated_docs_path: {args.generated_docs_path}
-- base_url: {args.base_url}
-- templates_dir: {str(templates_dir)}
-- annotated_path: {str(args.annotated_path)}
-- fail_on_error: {fail_on_error}
-- clean: {clean}
-- config_file: {bb_config_file}
-- test_outputs_path: {args.test_outputs_path}
-- github_base_url: {args.github_base_url}
-- filter: {args.filter}
-- steps: {args.steps}
-- deploy_viewer: {deploy_viewer}
-- viewer_path: {args.viewer_path}
-    """, file=sys.stderr)
+    logger.info("Running %swith the following configuration:\n"
+                "- register_file: %s\n"
+                "- items_dir: %s\n"
+                "- generated_docs_path: %s\n"
+                "- base_url: %s\n"
+                "- templates_dir: %s\n"
+                "- annotated_path: %s\n"
+                "- fail_on_error: %s\n"
+                "- clean: %s\n"
+                "- config_file: %s\n"
+                "- test_outputs_path: %s\n"
+                "- github_base_url: %s\n"
+                "- filter: %s\n"
+                "- steps: %s\n"
+                "- deploy_viewer: %s\n"
+                "- viewer_path: %s",
+                version, args.register_file, args.items_dir, args.generated_docs_path,
+                args.base_url, templates_dir, args.annotated_path, fail_on_error, clean,
+                bb_config_file, args.test_outputs_path, args.github_base_url,
+                args.filter, args.steps, deploy_viewer, args.viewer_path)
 
     register_file = Path(args.register_file)
     register_jsonld_fn = register_file.with_name('bblocks.jsonld')
@@ -159,21 +179,21 @@ if __name__ == '__main__':
     # Clean old output
     if clean and not args.filter and not args.steps:
         for old_file in register_file, register_jsonld_fn, register_ttl_fn:
-            print(f"Deleting {old_file}", file=sys.stderr)
+            logger.info("Deleting %s", old_file)
             old_file.unlink(missing_ok=True)
         cwd = Path().resolve()
         for old_dir in args.generated_docs_path, args.annotated_path, args.test_outputs_path:
             # Only delete if not current path and not ancestor
             old_dir = Path(old_dir).resolve()
             if old_dir != cwd and old_dir not in cwd.parents:
-                print(f"Deleting {old_dir} recursively", file=sys.stderr)
+                logger.info("Deleting %s recursively", old_dir)
                 shutil.rmtree(old_dir, ignore_errors=True)
 
     # Fix git config
     try:
         subprocess.run(['git', 'config', '--global', '--add', 'safe.directory', '*'])
     except Exception as e:
-        print(f"Error configuring git safe.directory: {e}", file=sys.stderr)
+        logger.warning("Error configuring git safe.directory: %s", e)
 
     # Read local bblocks-config.yaml, if present
     id_prefix = 'ogc.'
@@ -255,22 +275,21 @@ if __name__ == '__main__':
                 base_url = f"https://{gh_repo[0]}.github.io/{gh_repo[1]}/"
             if not github_base_url:
                 github_base_url = f"https://github.com/{gh_repo[0]}/{gh_repo[1]}/"
-            print(f"Autodetected GitHub repo {gh_repo[0]}/{gh_repo[1]}")
+            logger.info("Autodetected GitHub repo %s/%s", gh_repo[0], gh_repo[1])
 
         if github_base_url:
             register_additional_metadata['gitHubRepository'] = github_base_url
     except Exception as e:
-        print(f"[WARN] Could not autodetect base_url / github_base_url ({e})", file=sys.stderr)
-        pass
+        logger.warning("Could not autodetect base_url / github_base_url: %s", e)
 
     steps = args.steps.split(',') if args.steps else None
 
     # 1. Postprocess BBs
-    print(f"Running postprocess...", file=sys.stderr)
+    logger.info("Running postprocess...")
     try:
         if local_url_mappings:
-            print('Enabling local URL mappings:\n ' + '\n '.join(f"{k}: {v}" for k, v in local_url_mappings.items()),
-                  file=sys.stderr)
+            logger.info("Enabling local URL mappings:\n%s",
+                        ' - ' + '\n - '.join(f"{k}: {v}" for k, v in local_url_mappings.items()))
             http_interceptor.enable(local_url_mappings)
         postprocess(registered_items_path=items_dir,
                     output_file=args.register_file,
@@ -307,9 +326,10 @@ if __name__ == '__main__':
         http_interceptor.disable()
 
     # 2. Uplift register.json
-    print(f"Running semantic uplift of {register_file}", file=sys.stderr)
-    print(f" - {register_jsonld_fn}", file=sys.stderr)
-    print(f" - {register_ttl_fn}", file=sys.stderr)
+    logger.info("Running semantic uplift of %s", register_file)
+    with log_indent():
+        logger.info("- %s", register_jsonld_fn)
+        logger.info("- %s", register_ttl_fn)
     # TODO: Entailments
     uplift_args = register_additional_metadata.copy()
     uplift_args.setdefault('baseUrl', base_url or 'https://www.opengis.net/def/bblocks/')
@@ -326,10 +346,10 @@ if __name__ == '__main__':
         if sparql_gsp:
             if os.environ.get('SPARQL_USERNAME'):
                 auth = (os.environ['SPARQL_USERNAME'], os.environ.get('SPARQL_PASSWORD'))
-                print(f"Pushing {register_ttl_fn} to SPARQL GSP at {sparql_gsp} (user {auth[0]})", file=sys.stderr)
+                logger.info("Pushing %s to SPARQL GSP at %s (user %s)", register_ttl_fn, sparql_gsp, auth[0])
             else:
                 auth = None
-                print(f"Pushing {register_ttl_fn} to SPARQL GSP at {sparql_gsp}", file=sys.stderr)
+                logger.info("Pushing %s to SPARQL GSP at %s", register_ttl_fn, sparql_gsp)
             sparql_graph = sparql_conf.get('graph') or base_url
             try:
                 update_vocabs.load_vocab(register_ttl_fn,
@@ -337,6 +357,6 @@ if __name__ == '__main__':
                                          graph_uri=sparql_graph,
                                          auth_details=auth)
             except Exception as e:
-                print(f" !! Error uploading to SPARQL GSP: {e}", file=sys.stderr)
+                logger.error("Error uploading to SPARQL GSP: %s", e)
 
-    print(f"Finished Building Blocks postprocessing", file=sys.stderr)
+    logger.info("Finished Building Blocks postprocessing")

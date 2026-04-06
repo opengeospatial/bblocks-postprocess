@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import itertools
 import json
+import logging
 import os.path
 import re
 import subprocess
@@ -12,6 +13,10 @@ import datetime
 from pathlib import Path
 import traceback
 from urllib.parse import urljoin
+
+from ogc.bblocks.log import log_indent
+
+logger = logging.getLogger(__name__)
 
 from ogc.na.exceptions import ContextLoadError
 from ogc.na.util import is_url, dump_yaml
@@ -178,7 +183,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
         if not light:
             if not steps or 'tests' in steps:
-                print(f"  > Running tests for {bblock.identifier}", file=sys.stderr)
+                logger.info("Running tests")
                 validation_passed, test_count, json_report = validate_test_resources(
                     bblock,
                     bblocks_register=bbr,
@@ -193,7 +198,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                     bblock.metadata['testOutputs'] = f"{test_outputs_base_url}{bblock.subdirs}/"
 
         if not light and (not steps or 'transforms' in steps) and bblock.transforms:
-            print(f"  > Running transforms for {bblock.identifier}", file=sys.stderr)
+            logger.info("Running transforms")
             apply_transforms(bblock, outputs_path=test_outputs_path, base_url=base_url,
                              sandbox_dir=sandbox_dir)
 
@@ -224,7 +229,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                     )
 
         if not light and (not steps or 'doc' in steps):
-            print(f"  > Generating documentation for {bblock.identifier}", file=sys.stderr)
+            logger.info("Generating documentation")
             doc_generator.generate_doc(bblock)
 
         if base_url:
@@ -254,10 +259,9 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             filter_id = bb_filter
 
     if transformers:
-        print("Available transformers:", file=sys.stderr)
-        print('  - ' + '\n  - '.join(tt for tt in sorted(transformers)))
+        logger.info("Available transformers:\n%s", ' - ' + '\n - '.join(sorted(transformers)))
     else:
-        print("No transformers found", file=sys.stderr)
+        logger.info("No transformers found")
 
     extender = Extender(bbr)
     for building_block in bbr.bblocks.values():
@@ -274,10 +278,11 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                     if is_openapi:
                         openapi_contents = extended_schema
                     else:
-                        for annotated in write_annotated_schema(bblock=building_block, bblocks_register=bbr,
-                                                                annotated_schema=extended_schema,
-                                                                oas30_downcompile=schemas_oas30_downcompile):
-                            print(f"  - {annotated}", file=sys.stderr)
+                        with log_indent():
+                            for annotated in write_annotated_schema(bblock=building_block, bblocks_register=bbr,
+                                                                    annotated_schema=extended_schema,
+                                                                    oas30_downcompile=schemas_oas30_downcompile):
+                                logger.info("- %s", annotated)
 
                 elif building_block.schema.exists:
 
@@ -290,7 +295,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                         _ = building_block.schema_contents
 
                     # Annotate schema
-                    print(f"Annotating schema for {building_block.identifier}", file=sys.stderr)
+                    logger.info("Annotating schema for %s", building_block.identifier)
 
                     if building_block.ldContext:
                         if is_url(building_block.ldContext):
@@ -311,46 +316,44 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                         building_block.metadata['ldContext'] = str(default_jsonld_context)
 
                     try:
-                        for annotated in annotate_schema(building_block,
-                                                         bblocks_register=bbr,
-                                                         context=default_jsonld_context,
-                                                         base_url=base_url,
-                                                         oas30_downcompile=schemas_oas30_downcompile):
-                            print(f"  - {annotated}", file=sys.stderr)
+                        with log_indent():
+                            for annotated in annotate_schema(building_block,
+                                                             bblocks_register=bbr,
+                                                             context=default_jsonld_context,
+                                                             base_url=base_url,
+                                                             oas30_downcompile=schemas_oas30_downcompile):
+                                logger.info("- %s", annotated)
                     except Exception as e:
                         if fail_on_error:
                             raise Exception(f"Error annotating schema for {building_block.identifier}") from e
-                        traceback.print_exception(e, file=sys.stderr)
-                        if isinstance(e, ContextLoadError):
-                            if e.__cause__:
-                                print(f"{e}: {e.__cause__}", file=sys.stderr)
-                            else:
-                                print(str(e), file=sys.stderr)
+                        logger.error("Error annotating schema for %s", building_block.identifier, exc_info=e)
 
                 if building_block.openapi.exists:
                     openapi_contents = building_block.openapi.load_yaml()
 
                 if openapi_contents:
-                    print(f"Annotating OpenAPI document for {building_block.identifier}", file=sys.stderr)
+                    logger.info("Annotating OpenAPI document for %s", building_block.identifier)
                     try:
                         openapi_resolved = resolve_all_schema_references(openapi_contents, bbr,
                                                                          building_block, building_block.openapi,
                                                                          base_url)
                         building_block.output_openapi.parent.mkdir(parents=True, exist_ok=True)
                         dump_yaml(openapi_resolved, building_block.output_openapi)
-                        print(f"  - {os.path.relpath(building_block.output_openapi)}", file=sys.stderr)
+                        with log_indent():
+                            logger.info("- %s", os.path.relpath(building_block.output_openapi))
 
-                        if openapi_resolved.get('openapi', '').startswith('3.1') and schemas_oas30_downcompile:
-                            print(f"Downcompiling OpenAPI document to 3.0 for {building_block.identifier}",
-                                  file=sys.stderr)
-                            oas30_doc_fn = building_block.output_openapi_30
-                            oas30_doc = oas31_to_oas30(openapi_resolved,
-                                                       PathOrUrl(oas30_doc_fn).with_base_url(base_url),
-                                                       bbr)
-                            dump_yaml(oas30_doc, oas30_doc_fn)
-                            print(f"  - {os.path.relpath(oas30_doc_fn)}", file=sys.stderr)
+                            if openapi_resolved.get('openapi', '').startswith('3.1') and schemas_oas30_downcompile:
+                                logger.info("Downcompiling OpenAPI document to 3.0 for %s",
+                                            building_block.identifier)
+                                oas30_doc_fn = building_block.output_openapi_30
+                                oas30_doc = oas31_to_oas30(openapi_resolved,
+                                                           PathOrUrl(oas30_doc_fn).with_base_url(base_url),
+                                                           bbr)
+                                dump_yaml(oas30_doc, oas30_doc_fn)
+                                logger.info("- %s", os.path.relpath(oas30_doc_fn))
                     except Exception as e:
-                        print(f"WARNING: {type(e).__name__} while downcompiling OpenAPI to 3.0:", e)
+                        logger.warning("%s while processing OpenAPI document for %s: %s",
+                                       type(e).__name__, building_block.identifier, e)
 
             if building_block.ontology.exists:
                 building_block.metadata.pop('ontology', None)
@@ -368,8 +371,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                     if fail_on_error:
                         raise BuildingBlockError(f'Error processing ontology '
                                                  f'for {building_block.identifier}') from e
-                    print("Exception when processing ontology for", building_block.identifier, file=sys.stderr)
-                    traceback.print_exception(e, file=sys.stderr)
+                    logger.error("Exception when processing ontology for %s",
+                                 building_block.identifier, exc_info=e)
 
         if base_url and building_block.remote_cache_dir.is_dir():
             building_block.metadata['remoteCacheDir'] = (
@@ -382,55 +385,57 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         child_bblocks.append(building_block)
 
     if not steps or 'jsonld' in steps:
-        print(f"Writing JSON-LD contexts", file=sys.stderr)
-        # Create JSON-lD contexts
-        for building_block in child_bblocks:
-            if filter_id is not None and building_block.identifier != filter_id:
-                continue
-            if building_block.annotated_schema.is_file():
-                written_context = None
-                try:
-                    written_context, written_resolved = write_jsonld_context(building_block.annotated_schema, bbr)
-                    if written_context:
-                        try:
-                            nodejsrun = subprocess.run([
-                                'node',
-                                str(Path(__file__).parent.joinpath('validation/validate-jsonld.js')),
-                                str(written_context),
-                            ], capture_output=True)
-                            if nodejsrun.returncode == 26:  # validation error
-                                raise ValueError(nodejsrun.stdout.decode())
-                            elif nodejsrun.returncode == 0:
-                                written_context = f"{written_context} (validated)"
-                        except FileNotFoundError:
-                            # node not installed
-                            pass
-                        print(f"  - {os.path.relpath(written_context)}", file=sys.stderr)
-                    if written_resolved:
-                        print(f"  - {os.path.relpath(written_resolved)}", file=sys.stderr)
-                except Exception as e:
-                    written_context_msg = f" ({written_context})" if written_context else ''
-                    if fail_on_error:
-                        raise Exception(f'Error writing context for {building_block.identifier}'
-                                        f'{written_context_msg}') from e
-                    print(f"[Error] Writing context for {building_block.identifier}"
-                          f"{written_context_msg}: {type(e).__name__}: {e}")
+        logger.info("Writing JSON-LD contexts")
+        # Create JSON-LD contexts
+        with log_indent():
+            for building_block in child_bblocks:
+                if filter_id is not None and building_block.identifier != filter_id:
+                    continue
+                if building_block.annotated_schema.is_file():
+                    written_context = None
+                    try:
+                        written_context, written_resolved = write_jsonld_context(building_block.annotated_schema, bbr)
+                        if written_context:
+                            try:
+                                nodejsrun = subprocess.run([
+                                    'node',
+                                    str(Path(__file__).parent.joinpath('validation/validate-jsonld.js')),
+                                    str(written_context),
+                                ], capture_output=True)
+                                if nodejsrun.returncode == 26:  # validation error
+                                    raise ValueError(nodejsrun.stdout.decode())
+                                elif nodejsrun.returncode == 0:
+                                    written_context = f"{written_context} (validated)"
+                            except FileNotFoundError:
+                                # node not installed
+                                pass
+                            logger.info("- %s", os.path.relpath(written_context))
+                        if written_resolved:
+                            logger.info("- %s", os.path.relpath(written_resolved))
+                    except Exception as e:
+                        written_context_msg = f" ({written_context})" if written_context else ''
+                        if fail_on_error:
+                            raise Exception(f'Error writing context for {building_block.identifier}'
+                                            f'{written_context_msg}') from e
+                        logger.error("Error writing context for %s%s",
+                                     building_block.identifier, written_context_msg, exc_info=e)
 
     output_bblocks = []
     for building_block in child_bblocks:
         light = filter_id is not None and building_block.identifier != filter_id
         lightmsg = ' (light)' if light else ''
-        print(f"Postprocessing building block {building_block.identifier}{lightmsg}", file=sys.stderr)
-        if do_postprocess(building_block, light=light):
-            output_bblocks.append(building_block.metadata)
-        else:
-            print(f"{building_block.identifier} failed postprocessing, skipping...", file=sys.stderr)
+        logger.info("Postprocessing building block %s%s", building_block.identifier, lightmsg)
+        with log_indent():
+            if do_postprocess(building_block, light=light):
+                output_bblocks.append(building_block.metadata)
+            else:
+                logger.error("%s failed postprocessing, skipping...", building_block.identifier)
 
     full_validation_report_url = None
     full_validation_report_url_json = None
     if not steps or 'tests' in steps:
-        print(f"Writing validation report to {test_outputs_path / 'report.html'} and "
-              f"{test_outputs_path / 'report.json'}", file=sys.stderr)
+        logger.info("Writing validation report to %s and %s",
+                    test_outputs_path / 'report.html', test_outputs_path / 'report.json')
         if base_url:
             full_validation_report_url = (f"{base_url}{os.path.relpath(Path(test_outputs_path).resolve(), cwd)}"
                                           f"/report.html")
@@ -497,7 +502,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             with open(output_file, 'w') as f:
                 json.dump(output_register_json, f, indent=2, cls=CustomJSONEncoder)
 
-    print(f"Finished processing {len(output_bblocks)} building blocks", file=sys.stderr)
+    logger.info("Finished processing %d building blocks", len(output_bblocks))
     _sandbox.cleanup()
     return output_bblocks
 

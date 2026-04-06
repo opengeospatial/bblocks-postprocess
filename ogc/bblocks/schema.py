@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import sys
+
+logger = logging.getLogger(__name__)
 
 from pathlib import Path
 from typing import Any
@@ -166,8 +169,8 @@ def write_annotated_schema(bblock: BuildingBlock,
         json.dump(annotated_schema, f, indent=2)
     result.append(annotated_schema_json_fn)
     if potential_yaml_refs:
-        print('\n[WARNING] Potential YAML $ref\'s found in JSON version of schema:\n -',
-              '\n - '.join(potential_yaml_refs.keys()), '\n\n')
+        logger.warning("Potential YAML $ref's found in JSON version of schema:\n%s",
+                       ' - ' + '\n - '.join(potential_yaml_refs.keys()))
 
     # OAS 3.0
     if oas30_downcompile:
@@ -189,7 +192,7 @@ def write_annotated_schema(bblock: BuildingBlock,
                                                     bblocks_register), f, indent=2)
                 result.append(oas30_schema_json_fn)
         except Exception as e:
-            print('Error building OAS 3.0 documents:', e, file=sys.stderr)
+            logger.error("Error building OAS 3.0 documents: %s", e)
 
     return result
 
