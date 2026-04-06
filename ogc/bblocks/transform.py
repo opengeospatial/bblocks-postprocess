@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import json
 import logging
 import re
 import shutil
@@ -23,7 +24,7 @@ from ogc.bblocks import mimetypes
 from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister, ImportedBBlockProxy, TransformMetadata, TransformResult, BuildingBlockError
 from ogc.bblocks.transformers import transformers
 from ogc.bblocks.util import sanitize_filename
-from ogc.bblocks.validate import validate_transform_output
+from ogc.bblocks.validate import validate_transform_output, report_to_dict
 
 _SUBPROCESS_TRANSFORM_TYPES = ('python', 'node')
 
@@ -202,63 +203,6 @@ def load_transform_plugins(sandbox_dir: Path) -> list[dict]:
     return output_plugins
 
 
-def _validate_transform_output(bblock: BuildingBlock,
-                               bblocks_register: BuildingBlockRegister,
-                               transform_id: str,
-                               output_fn: Path,
-                               profile_uris: list[str],
-                               base_url: str | None,
-                               entry: dict,
-                               sandbox_dir: Path | None = None) -> None:
-    """Resolve profile URIs, run validation for each, and populate entry in place."""
-    profile_results = []
-
-    for profile_uri in profile_uris:
-        profile_id = profile_uri[len('bblocks://'):] if profile_uri.startswith('bblocks://') else profile_uri
-        profile_bblock = bblocks_register.get(profile_id)
-        if profile_bblock is None:
-            logger.warning("Skipping validation of transform '%s' output against profile '%s': "
-                           "building block not found", transform_id, profile_id)
-            continue
-        if not isinstance(profile_bblock, BuildingBlock):
-            remote_cache_dir = (sandbox_dir / 'remote_cache') if sandbox_dir else None
-            profile_bblock = ImportedBBlockProxy(profile_bblock, remote_cache_dir=remote_cache_dir)
-
-        # Place all uplift side-outputs in a per-profile subdir so they never
-        # collide regardless of how many profiles are declared.
-        # If the output has no known extension (default_suffix was ''), append '._'
-        # as a sentinel so rdf.py's .with_suffix('.ttl') has something to replace
-        # without eating into the stem (transform id part).
-        profile_subdir = output_fn.parent / profile_id
-        profile_subdir.mkdir(exist_ok=True)
-        if output_fn.suffix and mimetypes.from_extension(output_fn.suffix.lstrip('.')):
-            profile_output_base = profile_subdir / output_fn.name
-        else:
-            profile_output_base = profile_subdir / (output_fn.name + '._')
-
-        logger.info("Validating transform '%s' output against profile '%s'", transform_id, profile_id)
-        with log_indent():
-            try:
-                result = validate_transform_output(
-                    profile_bblock=profile_bblock,
-                    bblocks_register=bblocks_register,
-                    transform_id=transform_id,
-                    output_file=output_fn,
-                    profile_output_base=profile_output_base,
-                    base_url=base_url,
-                )
-            except Exception as e:
-                logger.error("Error validating transform '%s' output against profile '%s': %s",
-                             transform_id, profile_id, e, exc_info=e)
-                result = {'result': False, 'sections': [],
-                          'error': f"{type(e).__name__}: {e}"}
-
-        profile_results.append({'profile': profile_id, **result})
-
-    if profile_results:
-        entry['profilesValidation'] = profile_results
-
-
 def apply_transforms(bblock: BuildingBlock,
                      outputs_path: str | Path,
                      output_subpath='transforms',
@@ -273,6 +217,11 @@ def apply_transforms(bblock: BuildingBlock,
     output_dir = Path(outputs_path) / bblock.subdirs / output_subpath
     shutil.rmtree(output_dir, ignore_errors=True)
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Collects ValidationReportItems per profile across all snippets/transforms,
+    # so we can write one consolidated _report.json per profile at the end.
+    # format: profile_id -> (profile_bblock, profile_subdir, [ValidationReportItem])
+    profile_validation: dict[str, tuple] = {}
 
     # Install dependencies for subprocess transforms before processing any snippets
     if sandbox_dir and any(t.get('type') in _SUBPROCESS_TRANSFORM_TYPES for t in bblock.transforms):
@@ -387,12 +336,70 @@ def apply_transforms(bblock: BuildingBlock,
                     entry['url'] = output_rel_path
 
                     profiles = (transform.get('outputs') or {}).get('profiles', [])
-                    if profiles and bblocks_register and not result.binary:
-                        _validate_transform_output(
-                            bblock, bblocks_register, transform['id'],
-                            output_fn, profiles, base_url, entry,
-                            sandbox_dir=sandbox_dir,
-                        )
+                    if profiles and bblocks_register:
+                        profiles_validation = {}
+                        for profile_uri in profiles:
+                            profile_id = (profile_uri[len('bblocks://'):]
+                                          if profile_uri.startswith('bblocks://') else profile_uri)
+                            profile_bblock = bblocks_register.get(profile_id)
+                            if profile_bblock is None:
+                                logger.warning("Skipping validation against profile '%s': "
+                                               "building block not found", profile_id)
+                                continue
+                            if not isinstance(profile_bblock, BuildingBlock):
+                                remote_cache_dir = (sandbox_dir / 'remote_cache') if sandbox_dir else None
+                                profile_bblock = ImportedBBlockProxy(profile_bblock,
+                                                                      remote_cache_dir=remote_cache_dir)
+
+                            profile_subdir = output_fn.parent / profile_id
+                            profile_subdir.mkdir(exist_ok=True)
+                            if output_fn.suffix and mimetypes.from_extension(output_fn.suffix.lstrip('.')):
+                                profile_output_base = profile_subdir / output_fn.name
+                            else:
+                                profile_output_base = profile_subdir / (output_fn.name + '._')
+
+                            logger.info("Validating transform '%s' output against profile '%s'",
+                                        transform['id'], profile_id)
+                            with log_indent():
+                                try:
+                                    report_item = validate_transform_output(
+                                        profile_bblock=profile_bblock,
+                                        bblocks_register=bblocks_register,
+                                        transform_id=transform['id'],
+                                        output_file=output_fn,
+                                        profile_output_base=profile_output_base,
+                                    )
+                                except Exception as e:
+                                    logger.error("Error validating transform '%s' output against "
+                                                 "profile '%s': %s", transform['id'], profile_id,
+                                                 e, exc_info=e)
+                                    continue
+
+                            if profile_id not in profile_validation:
+                                profile_validation[profile_id] = (profile_bblock, profile_subdir, [])
+                            profile_validation[profile_id][2].append(report_item)
+
+                            report_rel = str(os.path.relpath(
+                                (profile_subdir / '_report.json').resolve(), cwd))
+                            uplifted = {
+                                fmt: urljoin(base_url, str(os.path.relpath(fn.resolve(), cwd)))
+                                     if base_url else str(os.path.relpath(fn.resolve(), cwd))
+                                for fmt, (fn, _) in report_item.uplifted_files.items()
+                            }
+                            profiles_validation[profile_id] = {
+                                'result': not report_item.failed,
+                                'report': urljoin(base_url, report_rel) if base_url else report_rel,
+                                **(({'upliftedFiles': uplifted}) if uplifted else {}),
+                            }
+
+                        if profiles_validation:
+                            entry['profilesValidation'] = profiles_validation
 
                 snippet_transform_results = snippet.setdefault('transformResults', {})
                 snippet_transform_results[transform['id']] = entry
+
+    # Write one consolidated _report.json per profile subdir
+    for profile_id, (profile_bblock, profile_subdir, report_items) in profile_validation.items():
+        json_report = report_to_dict(bblock=profile_bblock, items=report_items, base_url=base_url)
+        with open(profile_subdir / '_report.json', 'w') as f:
+            json.dump(json_report, f, indent=2)

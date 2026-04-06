@@ -17,7 +17,7 @@ import jsonref
 import jsonschema
 import requests
 from jsonschema.validators import validator_for
-from ogc.bblocks.util import load_yaml, is_url
+from ogc.bblocks.util import load_yaml, is_url, PathOrUrl
 from yaml import MarkedYAMLError
 
 from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister
@@ -84,8 +84,11 @@ class JsonValidator(Validator):
 
         try:
             if bblock.annotated_schema and bblock.annotated_schema.is_file():
+                schema = bblock.annotated_schema
+                schema_uri = (schema.as_uri() if isinstance(schema, PathOrUrl)
+                              else schema.resolve().as_uri())
                 self.schema_validator = get_json_validator(bblock.annotated_schema_contents,
-                                                           bblock.annotated_schema.as_uri(),
+                                                           schema_uri,
                                                            register)
         except Exception as e:
             self.schema_error = f"Error creating JSON validator: {type(e).__name__}: {e}"
