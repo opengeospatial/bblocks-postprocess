@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import subprocess
 import sys
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -55,6 +56,20 @@ class BBlocksFormatter(logging.Formatter):
         lines = msg.splitlines()
         msg = prefix + (('\n' + padding).join(lines) if lines else '')
         return _append_exc_info(self, record, msg)
+
+
+def run_logged(args: list, label: str, log_level: int = logging.INFO, **kwargs) -> None:
+    """Run a subprocess and log each output line through the logging framework."""
+    _logger = logging.getLogger('ogc.bblocks')
+    with subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                          text=True, **kwargs) as proc:
+        for line in proc.stdout:
+            line = line.rstrip()
+            if line:
+                _logger.log(log_level, "[%s] %s", label, line)
+    if proc.returncode != 0:
+        _logger.error("[%s] Process exited with code %d", label, proc.returncode)
+        raise subprocess.CalledProcessError(proc.returncode, args)
 
 
 def setup_logging(level: str = 'INFO', log_file: str | None = None):

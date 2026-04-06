@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 from base64 import b64decode
 from pathlib import Path
 
+from ogc.bblocks.log import run_logged, log_indent
 from ogc.bblocks.models import TransformMetadata, TransformResult
 
 _HARNESS = Path(__file__).parent / '_plugin_harness.py'
@@ -30,18 +31,18 @@ class PluginTransformer:
         if not venv_dir.exists():
             logger.info("Setting up plugin venv for '%s'%s",
                         self.module_path, f" (pip: {self.pip_deps})" if self.pip_deps else "")
-            subprocess.run([sys.executable, '-m', 'venv', str(venv_dir)], check=True)
-            if self.pip_deps:
-                pip_bin = venv_dir / 'bin' / 'pip'
-                env = os.environ.copy()
-                env['GIT_TERMINAL_PROMPT'] = '0'
-                env['GIT_ASKPASS'] = 'echo'
-                subprocess.run(
-                    [str(pip_bin), 'install', '--quiet',
-                     '--disable-pip-version-check', *self.pip_deps],
-                    check=True,
-                    env=env,
-                )
+            with log_indent():
+                run_logged([sys.executable, '-m', 'venv', str(venv_dir)], label='venv')
+                if self.pip_deps:
+                    pip_bin = venv_dir / 'bin' / 'pip'
+                    env = os.environ.copy()
+                    env['GIT_TERMINAL_PROMPT'] = '0'
+                    env['GIT_ASKPASS'] = 'echo'
+                    run_logged(
+                        [str(pip_bin), 'install', '--disable-pip-version-check', *self.pip_deps],
+                        label='pip',
+                        env=env,
+                    )
         return venv_dir
 
     @staticmethod

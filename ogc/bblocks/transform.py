@@ -16,6 +16,8 @@ from urllib.parse import urljoin
 
 import yaml
 
+from ogc.bblocks.log import run_logged, log_indent
+
 from ogc.bblocks import mimetypes
 from ogc.bblocks.models import BuildingBlock, TransformMetadata, TransformResult, BuildingBlockError
 from ogc.bblocks.transformers import transformers
@@ -106,17 +108,19 @@ def _ensure_sandbox(sandbox_dir: Path, bblock: BuildingBlock) -> None:
 
     if pip_deps:
         venv_dir = sandbox_dir / 'venv'
-        if not venv_dir.exists():
-            subprocess.run([sys.executable, '-m', 'venv', str(venv_dir)], check=True)
-        pip_bin = venv_dir / 'bin' / 'pip'
         logger.info("Installing pip dependencies: %s", pip_deps)
-        subprocess.run([str(pip_bin), 'install', '--quiet', '--disable-pip-version-check', *pip_deps], check=True)
+        with log_indent():
+            if not venv_dir.exists():
+                run_logged([sys.executable, '-m', 'venv', str(venv_dir)], label='venv')
+            pip_bin = venv_dir / 'bin' / 'pip'
+            run_logged([str(pip_bin), 'install', '--disable-pip-version-check', *pip_deps], label='pip')
 
     if npm_deps:
         node_dir = sandbox_dir / 'node'
         node_dir.mkdir(exist_ok=True)
         logger.info("Installing npm dependencies: %s", npm_deps)
-        subprocess.run(['npm', 'install', '--prefix', str(node_dir), *npm_deps], check=True)
+        with log_indent():
+            run_logged(['npm', 'install', '--prefix', str(node_dir), *npm_deps], label='npm')
 
 
 def load_transform_plugins(sandbox_dir: Path) -> list[dict]:
