@@ -233,10 +233,11 @@ jobs:
         uses: EndBug/add-and-commit@v9
         with:
           message: Building blocks postprocessing
-      - name: Remove _visited_properties.tsv from pages
+      - name: Remove build artifacts from pages
         run: |
           sudo find "${{ inputs.annotated_path }}" -name _visited_properties.tsv -delete || true
           sudo find "${{ inputs.annotated_path }}" -name _visited_properties.tsv.gz -delete || true
+          rm -rf .transforms-sandbox
       - name: Deploy Building Blocks viewer
         id: deploy-viewer
         if: ${{ inputs.deploy_viewer }}
