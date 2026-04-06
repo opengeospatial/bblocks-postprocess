@@ -20,7 +20,7 @@ from ogc.bblocks.log import run_logged, log_indent
 from ogc.bblocks.sandbox import ensure_venv
 
 from ogc.bblocks import mimetypes
-from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister, TransformMetadata, TransformResult, BuildingBlockError
+from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister, ImportedBBlockProxy, TransformMetadata, TransformResult, BuildingBlockError
 from ogc.bblocks.transformers import transformers
 from ogc.bblocks.util import sanitize_filename
 from ogc.bblocks.validate import validate_transform_output
@@ -208,22 +208,33 @@ def _validate_transform_output(bblock: BuildingBlock,
                                output_fn: Path,
                                profile_uris: list[str],
                                base_url: str | None,
-                               entry: dict) -> None:
+                               entry: dict,
+                               sandbox_dir: Path | None = None) -> None:
     """Resolve profile URIs, run validation for each, and populate entry in place."""
     profile_results = []
-    multi = len(profile_uris) > 1
 
     for profile_uri in profile_uris:
         profile_id = profile_uri[len('bblocks://'):] if profile_uri.startswith('bblocks://') else profile_uri
         profile_bblock = bblocks_register.get(profile_id)
-        if not isinstance(profile_bblock, BuildingBlock):
+        if profile_bblock is None:
             logger.warning("Skipping validation of transform '%s' output against profile '%s': "
-                           "not a local building block", transform_id, profile_id)
+                           "building block not found", transform_id, profile_id)
             continue
+        if not isinstance(profile_bblock, BuildingBlock):
+            remote_cache_dir = (sandbox_dir / 'remote_cache') if sandbox_dir else None
+            profile_bblock = ImportedBBlockProxy(profile_bblock, remote_cache_dir=remote_cache_dir)
 
-        profile_slug = profile_id.replace('.', '-')
-        profile_output_base = (output_fn.parent / f"{output_fn.stem}.{profile_slug}"
-                               if multi else output_fn.with_suffix(''))
+        # Place all uplift side-outputs in a per-profile subdir so they never
+        # collide regardless of how many profiles are declared.
+        # If the output has no known extension (default_suffix was ''), append '._'
+        # as a sentinel so rdf.py's .with_suffix('.ttl') has something to replace
+        # without eating into the stem (transform id part).
+        profile_subdir = output_fn.parent / profile_id
+        profile_subdir.mkdir(exist_ok=True)
+        if output_fn.suffix and mimetypes.from_extension(output_fn.suffix.lstrip('.')):
+            profile_output_base = profile_subdir / output_fn.name
+        else:
+            profile_output_base = profile_subdir / (output_fn.name + '._')
 
         logger.info("Validating transform '%s' output against profile '%s'", transform_id, profile_id)
         with log_indent():
@@ -380,6 +391,7 @@ def apply_transforms(bblock: BuildingBlock,
                         _validate_transform_output(
                             bblock, bblocks_register, transform['id'],
                             output_fn, profiles, base_url, entry,
+                            sandbox_dir=sandbox_dir,
                         )
 
                 snippet_transform_results = snippet.setdefault('transformResults', {})

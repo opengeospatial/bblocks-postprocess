@@ -52,3 +52,11 @@ csv:
   mimeType: text/csv
   extensions:
     - csv
+
+geojson:
+  label: GeoJSON
+  mimeType: application/geo+json
+  aliases:
+    - geojson
+  extensions:
+    - geojson

@@ -247,8 +247,10 @@ def validate_transform_output(
 ) -> dict:
     """Validate a transform output file against a profile building block.
 
-    profile_output_base is the path stem (no extension) used for validation
-    side-outputs: .jsonld, .ttl, and .validation_{passed|failed}.txt files.
+    profile_output_base is the path (with extension) inside the per-profile
+    subdirectory, used as the base for side-output naming: rdf.py calls
+    .with_suffix('.ttl') / '.jsonld' on it, so the extension must be present
+    to avoid stripping part of the stem.
 
     Returns a compact dict: {result, sections, [upliftedFiles]}.
     """
