@@ -1,8 +1,11 @@
 import json
+import logging
 import os
 import random
 import sys
 import traceback
+
+logger = logging.getLogger(__name__)
 from json import JSONDecodeError
 from pathlib import Path
 from time import time
@@ -197,10 +200,8 @@ class JsonValidator(Validator):
                     ))
                 except Exception as e:
                     if not isinstance(e, jsonschema.exceptions.ValidationError):
-                        print(f'Unexpected error encountered when validating '
-                              f'resource {os.path.relpath(filename)} for {self.bblock.identifier}:',
-                              file=sys.stderr)
-                        traceback.print_exception(e)
+                        logger.error("Unexpected error encountered when validating resource %s for %s",
+                                     os.path.relpath(filename), self.bblock.identifier, exc_info=e)
                     report.add_entry(ValidationReportEntry(
                         section=ValidationReportSection.JSON_SCHEMA,
                         message=f"{type(e).__name__}: {e}",

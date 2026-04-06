@@ -4,9 +4,12 @@ import csv
 import dataclasses
 import functools
 import json
+import logging
 import os.path
 import re
 import sys
+
+logger = logging.getLogger(__name__)
 from collections import deque
 from hashlib import sha256
 from pathlib import Path
@@ -59,8 +62,8 @@ def load_file(fn, remote_cache_dir: Path | None = None):
                 with open(remote_cache_dir / url_hash, 'wb') as f:
                     f.write(r.content)
             except Exception as e:
-                print(f"Warning: could not store cached version of remote file in {remote_cache_dir / url_hash}: {e}",
-                      file=sys.stderr)
+                logger.warning("Could not store cached version of remote file in %s: %s",
+                               remote_cache_dir / url_hash, e)
 
         return r.text
     with open(fn) as f:
@@ -353,6 +356,6 @@ def load_yaml(filename: str | Path | None = None,
             p = p.with_suffix('.yml' if p.suffix == '.yaml' else '.yaml')
             if p.is_file():
                 if warn_on_suffix_swap:
-                    print(f"WARNING: {filename} not found, using {p} with alternate extension", file=sys.stderr)
+                    logger.warning("%s not found, using %s with alternate extension", filename, p)
                 filename = p
     return na_load_yaml(filename, content, url, safe=True)

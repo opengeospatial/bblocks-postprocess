@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import logging
 import re
 import shutil
 import os.path
 import subprocess
 import sys
+
+logger = logging.getLogger(__name__)
 from packaging.version import Version
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 from pathlib import Path
@@ -106,13 +109,13 @@ def _ensure_sandbox(sandbox_dir: Path, bblock: BuildingBlock) -> None:
         if not venv_dir.exists():
             subprocess.run([sys.executable, '-m', 'venv', str(venv_dir)], check=True)
         pip_bin = venv_dir / 'bin' / 'pip'
-        print(f"  > Installing pip dependencies: {pip_deps}", file=sys.stderr)
+        logger.info("Installing pip dependencies: %s", pip_deps)
         subprocess.run([str(pip_bin), 'install', '--quiet', '--disable-pip-version-check', *pip_deps], check=True)
 
     if npm_deps:
         node_dir = sandbox_dir / 'node'
         node_dir.mkdir(exist_ok=True)
-        print(f"  > Installing npm dependencies: {npm_deps}", file=sys.stderr)
+        logger.info("Installing npm dependencies: %s", npm_deps)
         subprocess.run(['npm', 'install', '--prefix', str(node_dir), *npm_deps], check=True)
 
 
@@ -153,8 +156,7 @@ def load_transform_plugins(sandbox_dir: Path) -> list[dict]:
             discovered = PluginTransformer.discover(venv_dir, module_path)
 
             if not discovered:
-                print(f"  Warning: no transform types found in plugin '{module_path}'",
-                      file=sys.stderr)
+                logger.warning("No transform types found in plugin '%s'", module_path)
                 continue
 
             output_transformers = []
@@ -165,8 +167,8 @@ def load_transform_plugins(sandbox_dir: Path) -> list[dict]:
                 pt = PluginTransformer(module_path, pip_deps, types)
                 pt.default_inputs = entry.get('default_inputs', [])
                 pt.default_outputs = entry.get('default_outputs', [])
-                print(f"  > Registered plugin '{module_path}' ({entry.get('class', '?')}) "
-                      f"for types: {types}", file=sys.stderr)
+                logger.info("Registered plugin '%s' (%s) for types: %s",
+                            module_path, entry.get('class', '?'), types)
                 for tt in types:
                     transformers[tt] = pt
                 output_transformers.append({
@@ -218,14 +220,14 @@ def apply_transforms(bblock: BuildingBlock,
         deps = (transform.get('metadata') or {}).get('dependencies', {})
         if transform.get('type') == 'python':
             if (constraint := deps.get('python')) and not _satisfies(_PYTHON_VERSION, constraint):
-                print(f"  > Skipping transform '{transform['id']}': requires Python {constraint} "
-                      f"(running {_PYTHON_VERSION})", file=sys.stderr)
+                logger.info("Skipping transform '%s': requires Python %s (running %s)",
+                            transform['id'], constraint, _PYTHON_VERSION)
                 continue
         elif transform.get('type') == 'node':
             node_ver = _get_node_version()
             if (constraint := deps.get('node')) and (not node_ver or not _satisfies(node_ver, constraint)):
-                print(f"  > Skipping transform '{transform['id']}': requires Node {constraint} "
-                      f"(running {node_ver or 'unknown'})", file=sys.stderr)
+                logger.info("Skipping transform '%s': requires Node %s (running %s)",
+                            transform['id'], constraint, node_ver or 'unknown')
                 continue
 
         transformer = transformers.get(transform['type'])
@@ -259,10 +261,9 @@ def apply_transforms(bblock: BuildingBlock,
             default_suffix = '.' + default_output_media_type['defaultExtension']
         else:
             default_suffix = ''
-            print(f"  WARNING: output media type '{default_output_media_type['mimeType']}' for transform"
-                  f" {transform['id']} in {bblock.identifier} has no known file extension;"
-                  f" output files will have no extension. Declare a 'defaultExtension' to avoid this.",
-                  file=sys.stderr)
+            logger.warning("Output media type '%s' for transform %s in %s has no known file extension;"
+                           " output files will have no extension. Declare a 'defaultExtension' to avoid this.",
+                           default_output_media_type['mimeType'], transform['id'], bblock.identifier)
         target_mime_type = default_output_media_type['mimeType']
 
         bblock_prefixes = bblock.example_prefixes or {}

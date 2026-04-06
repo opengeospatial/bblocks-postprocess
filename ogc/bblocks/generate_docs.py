@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import logging
 import os.path
 import sys
 from os.path import relpath
+
+logger = logging.getLogger(__name__)
 from pathlib import Path
 from argparse import ArgumentParser
 from typing import Sequence
@@ -38,7 +41,7 @@ class DocTemplate:
         try:
             return self._template.render(**kwargs)
         except:
-            print(exceptions.text_error_template().render(), file=sys.stderr)
+            logger.error(exceptions.text_error_template().render())
             raise
 
 
@@ -66,18 +69,15 @@ class DocGenerator:
             self.output_dir.joinpath(template.dir_name).mkdir(parents=True, exist_ok=True)
 
         try:
-            print("Current path:", Path().resolve(), file=sys.stderr)
             git_repo = git.Repo()
             self.git_repos = {None: util.get_git_repo_url(git_repo.remotes[0].url)}
             for submodule_path, submodule_url in util.get_git_submodules():
                 self.git_repos[Path(submodule_path).resolve()] = util.get_git_repo_url(submodule_url)
-            print("Found git repos:\n -",
-                  '\n - '.join(f"{os.path.relpath(k) if k else 'Default'}: {v}" for k, v in self.git_repos.items()),
-                  file=sys.stderr)
+            logger.info("Found git repos:\n%s",
+                        ' - ' + '\n - '.join(f"{os.path.relpath(k) if k else 'Default'}: {v}"
+                                             for k, v in self.git_repos.items()))
         except Exception as e:
-            print(f"Error obtaining git information", file=sys.stderr)
-            import traceback
-            traceback.print_exception(e)
+            logger.warning("Error obtaining git information", exc_info=e)
             self.git_repos = None
 
     def generate_doc(self, bblock: BuildingBlock):
