@@ -57,6 +57,9 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
     sandbox_dir = Path(SANDBOX_DIR_NAME)
     sandbox_dir.mkdir(exist_ok=True)
+    gitignore = sandbox_dir / '.gitignore'
+    if not gitignore.exists():
+        gitignore.write_text('*\n')
     transform_plugins = load_transform_plugins(sandbox_dir)
 
     if not isinstance(test_outputs_path, Path):
