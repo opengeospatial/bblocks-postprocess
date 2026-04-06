@@ -101,7 +101,12 @@ class JsonValidator(Validator):
                 and file_format not in ('application/json', 'application/x-yaml'):
             return False
 
-        file_from = 'examples' if report.source.type == ValidationItemSourceType.EXAMPLE else 'test resources'
+        if report.source.type == ValidationItemSourceType.EXAMPLE:
+            file_from = 'examples'
+        elif report.source.type == ValidationItemSourceType.TRANSFORM_OUTPUT:
+            file_from = 'transform outputs'
+        else:
+            file_from = 'test resources'
 
         try:
             if contents is not None:
