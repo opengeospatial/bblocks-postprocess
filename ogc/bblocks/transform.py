@@ -240,7 +240,7 @@ def apply_transforms(bblock: BuildingBlock,
             media_types = io.get('mediaTypes')
             if not media_types:
                 if default_media_types:
-                    io['mediaTypes'] = default_media_types[io_type]
+                    io['mediaTypes'] = [_normalize_media_type(mt) for mt in default_media_types[io_type]]
                 else:
                     io['mediaTypes'] = []
             else:
@@ -249,16 +249,21 @@ def apply_transforms(bblock: BuildingBlock,
         if not transformer or not bblock.examples:
             continue
 
-        supported_input_media_types = {(m if isinstance(m, str) else m['mimeType']): m
+        supported_input_media_types = {m['mimeType']: m
                                       for m in transform.get('inputs')['mediaTypes']}
         default_output_media_type: dict | str = next(iter(transform['outputs']['mediaTypes']), None)
         if not default_output_media_type:
             raise BuildingBlockError(f"Transform {transform['id']} for {bblock.identifier}"
                                      f" has no default output formats")
-        default_suffix = ('' if isinstance(default_output_media_type, str)
-                             else '.' + default_output_media_type['defaultExtension'])
-        target_mime_type = (default_output_media_type if isinstance(default_output_media_type, str)
-                            else default_output_media_type['mimeType'])
+        if 'defaultExtension' in default_output_media_type:
+            default_suffix = '.' + default_output_media_type['defaultExtension']
+        else:
+            default_suffix = ''
+            print(f"  WARNING: output media type '{default_output_media_type['mimeType']}' for transform"
+                  f" {transform['id']} in {bblock.identifier} has no known file extension;"
+                  f" output files will have no extension. Declare a 'defaultExtension' to avoid this.",
+                  file=sys.stderr)
+        target_mime_type = default_output_media_type['mimeType']
 
         bblock_prefixes = bblock.example_prefixes or {}
 
