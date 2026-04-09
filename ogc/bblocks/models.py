@@ -324,6 +324,8 @@ class BuildingBlock:
             extra_tests: list[dict] = load_yaml(extra_tests_file)
         except FileNotFoundError:
             return
+        if not extra_tests:
+            return
         try:
             jsonschema.validate(extra_tests, get_schema('tests'))
         except Exception as e:
