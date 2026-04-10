@@ -11,7 +11,7 @@ from base64 import b64decode
 from pathlib import Path
 
 from ogc.bblocks.log import run_logged, log_indent
-from ogc.bblocks.sandbox import ensure_venv, venv_needs_recreate
+from ogc.bblocks.sandbox import ensure_venv
 from ogc.bblocks.models import TransformMetadata, TransformResult
 
 _HARNESS = Path(__file__).parent / '_plugin_harness.py'
@@ -26,12 +26,15 @@ class PluginTransformer:
         self.default_inputs: list = []
         self.default_outputs: list = []
 
-    def ensure_venv(self, sandbox_dir: Path) -> Path:
+    def _venv_dir(self, sandbox_dir: Path) -> Path:
         slug = self.module_path.replace('.', '_')
-        venv_dir = sandbox_dir / 'plugins' / slug / 'venv'
+        return sandbox_dir / 'plugins' / slug / 'venv'
+
+    def ensure_venv(self, sandbox_dir: Path) -> Path:
+        venv_dir = self._venv_dir(sandbox_dir)
         if self.pip_deps:
             logger.info("Installing plugin pip dependencies for '%s': %s", self.module_path, self.pip_deps)
-        elif not venv_dir.exists():
+        else:
             logger.info("Setting up plugin venv for '%s'", self.module_path)
         with log_indent():
             ensure_venv(venv_dir)
@@ -69,7 +72,7 @@ class PluginTransformer:
                 stderr='Plugin transforms require a sandbox directory',
             )
 
-        venv_dir = self.ensure_venv(metadata.sandbox_dir)
+        venv_dir = self._venv_dir(metadata.sandbox_dir)
         python_bin = venv_dir / 'bin' / 'python'
 
         meta_dict = {
