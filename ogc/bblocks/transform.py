@@ -18,7 +18,7 @@ from urllib.parse import urljoin
 import yaml
 
 from ogc.bblocks.log import run_logged, log_indent
-from ogc.bblocks.sandbox import ensure_venv
+from ogc.bblocks.sandbox import ensure_venv, venv_needs_recreate
 
 from ogc.bblocks import mimetypes
 from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister, ImportedBBlockProxy, TransformMetadata, TransformResult, BuildingBlockError
@@ -97,32 +97,54 @@ def _satisfies(current_version: str, constraint: str) -> bool:
         return True  # unparseable constraint: don't block
 
 
-def _ensure_sandbox(sandbox_dir: Path, bblock: BuildingBlock) -> None:
-    """Install any dependencies declared in this bblock's transforms into the sandbox."""
-    pip_deps = []
-    npm_deps = []
+def _ensure_transform_sandboxes(sandbox_dir: Path, bblock: BuildingBlock) -> dict[str, Path]:
+    """Set up isolated per-transform sandboxes for python/node transforms.
+
+    Returns a dict mapping transform id → per-transform sandbox directory.
+    Installs deps on first use; skips if the environment already exists.
+    """
+    sandboxes: dict[str, Path] = {}
 
     for transform in bblock.transforms:
+        t_type = transform.get('type')
+        if t_type not in _SUBPROCESS_TRANSFORM_TYPES:
+            continue
+
+        t_id = transform['id']
+        transform_sandbox = sandbox_dir / 'transforms' / bblock.identifier / t_id
+        sandboxes[t_id] = transform_sandbox
+
         deps = (transform.get('metadata') or {}).get('dependencies', {})
-        if pip := deps.get('pip'):
-            pip_deps.extend(pip if isinstance(pip, list) else [pip])
-        if npm := deps.get('npm'):
-            npm_deps.extend(npm if isinstance(npm, list) else [npm])
 
-    if pip_deps:
-        venv_dir = sandbox_dir / 'venv'
-        logger.info("Installing pip dependencies: %s", pip_deps)
-        with log_indent():
-            ensure_venv(venv_dir)
-            pip_bin = venv_dir / 'bin' / 'pip'
-            run_logged([str(pip_bin), 'install', '--disable-pip-version-check', *pip_deps], label='pip')
+        if t_type == 'python':
+            pip_deps = deps.get('pip', [])
+            if isinstance(pip_deps, str):
+                pip_deps = [pip_deps]
+            if pip_deps:
+                venv_dir = transform_sandbox / 'venv'
+                if venv_needs_recreate(venv_dir):
+                    logger.info("Installing pip dependencies for transform '%s' in '%s': %s",
+                                t_id, bblock.identifier, pip_deps)
+                    with log_indent():
+                        ensure_venv(venv_dir)
+                        pip_bin = venv_dir / 'bin' / 'pip'
+                        run_logged([str(pip_bin), 'install', '--disable-pip-version-check', *pip_deps],
+                                   label='pip')
 
-    if npm_deps:
-        node_dir = sandbox_dir / 'node'
-        node_dir.mkdir(exist_ok=True)
-        logger.info("Installing npm dependencies: %s", npm_deps)
-        with log_indent():
-            run_logged(['npm', 'install', '--prefix', str(node_dir), *npm_deps], label='npm')
+        elif t_type == 'node':
+            npm_deps = deps.get('npm', [])
+            if isinstance(npm_deps, str):
+                npm_deps = [npm_deps]
+            if npm_deps:
+                node_dir = transform_sandbox / 'node'
+                if not (node_dir / 'node_modules').exists():
+                    node_dir.mkdir(parents=True, exist_ok=True)
+                    logger.info("Installing npm dependencies for transform '%s' in '%s': %s",
+                                t_id, bblock.identifier, npm_deps)
+                    with log_indent():
+                        run_logged(['npm', 'install', '--prefix', str(node_dir), *npm_deps], label='npm')
+
+    return sandboxes
 
 
 def load_transform_plugins(sandbox_dir: Path) -> list[dict]:
@@ -223,9 +245,10 @@ def apply_transforms(bblock: BuildingBlock,
     # format: profile_id -> (profile_bblock, profile_subdir, [ValidationReportItem])
     profile_validation: dict[str, tuple] = {}
 
-    # Install dependencies for subprocess transforms before processing any snippets
-    if sandbox_dir and any(t.get('type') in _SUBPROCESS_TRANSFORM_TYPES for t in bblock.transforms):
-        _ensure_sandbox(sandbox_dir, bblock)
+    # Set up isolated per-transform sandboxes before processing any snippets
+    transform_sandboxes: dict[str, Path] = {}
+    if sandbox_dir:
+        transform_sandboxes = _ensure_transform_sandboxes(sandbox_dir, bblock)
 
     for transform in bblock.transforms:
 
@@ -313,7 +336,8 @@ def apply_transforms(bblock: BuildingBlock,
                                                        transform_content=transform['code'],
                                                        metadata=metadata,
                                                        input_data=snippet['code'],
-                                                       sandbox_dir=sandbox_dir)
+                                                       sandbox_dir=transform_sandboxes.get(
+                                                           transform['id'], sandbox_dir))
 
                 try:
                     result = transformer.transform(transform_metadata)
