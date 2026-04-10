@@ -135,7 +135,6 @@ $defs:
       - type: object
         required:
           - mimeType
-          - defaultExtension
         properties:
           mimeType:
             description: A concrete media type (e.g. application/xml)
