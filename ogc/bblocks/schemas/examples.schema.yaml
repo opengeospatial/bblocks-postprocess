@@ -64,6 +64,12 @@ $defs:
           this snippet, as an alternative to inlining them in the 'code' property.
         type: string
         format: uri-reference
+      json-path:
+        description: |
+          A JSONPath expression to extract a value from the file referenced by 'ref'. The file
+          will be parsed as JSON and the first match of the expression will be used as the snippet
+          code. If parsing fails or no match is found, the snippet will be skipped. Requires 'ref'.
+        type: string
       base-uri:
         description: |
           Base URI that will be used when semantically uplifting this snippet. Overrides

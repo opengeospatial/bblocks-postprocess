@@ -17,7 +17,9 @@ from typing import Any, Generator, cast, AnyStr
 from urllib.parse import urlparse, urljoin
 
 import jsonschema
+import jsonpath_ng.ext
 import networkx as nx
+import yaml
 import requests
 from ogc.bblocks.util import is_url, load_yaml
 from rdflib import Graph
@@ -195,11 +197,35 @@ class BuildingBlock:
             examples = examples['examples']
 
         for example in examples:
+            filtered_snippets = []
             for snippet in example.get('snippets', ()):
                 if 'ref' in snippet:
                     # Load snippet code from "ref"
                     ref = snippet['ref'] if is_url(snippet['ref']) else self.files_path / snippet['ref']
                     snippet['code'] = load_file(ref)
+                    if 'json-path' in snippet:
+                        code = snippet['code']
+                        try:
+                            parsed = json.loads(code)
+                            dumper = lambda v: json.dumps(v, indent=2)
+                        except json.JSONDecodeError:
+                            try:
+                                parsed = yaml.safe_load(code)
+                                dumper = lambda v: yaml.safe_dump(v, allow_unicode=True)
+                            except yaml.YAMLError:
+                                logger.warning('Could not parse snippet ref %s as JSON or YAML'
+                                               ' for json-path extraction - skipping snippet', ref)
+                                continue
+                        expr = jsonpath_ng.ext.parse(snippet['json-path'])
+                        matches = expr.find(parsed)
+                        if not matches:
+                            logger.warning('json-path %s found no matches in ref %s - skipping snippet',
+                                           snippet['json-path'], ref)
+                            continue
+                        snippet['code'] = dumper(matches[0].value)
+                filtered_snippets.append(snippet)
+            if 'snippets' in example:
+                example['snippets'] = filtered_snippets
             if prefixes:
                 example['prefixes'] = {**prefixes, **example.get('prefixes', {})}
 
