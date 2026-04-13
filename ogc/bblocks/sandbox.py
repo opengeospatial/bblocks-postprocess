@@ -29,4 +29,4 @@ def ensure_venv(venv_dir: Path) -> None:
     """Create or recreate the venv at venv_dir if needed."""
     if venv_needs_recreate(venv_dir):
         shutil.rmtree(venv_dir, ignore_errors=True)
-        run_logged([sys.executable, '-m', 'venv', '--system-site-packages', str(venv_dir)], label='venv')
+        run_logged([sys.executable, '-m', 'venv', str(venv_dir)], label='venv')
