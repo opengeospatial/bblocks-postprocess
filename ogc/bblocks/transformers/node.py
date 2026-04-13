@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -9,6 +10,8 @@ import tempfile
 from pathlib import Path
 
 from ogc.bblocks.models import TransformMetadata, TransformResult, Transformer
+
+logger = logging.getLogger(__name__)
 
 transform_type = 'node'
 
@@ -51,8 +54,12 @@ const transformMetadata = {json.dumps(transform_metadata_dict)};
 const inputData = fs.readFileSync(0, 'utf8');
 let outputData = null;
 
+const _origStdoutWrite = process.stdout.write.bind(process.stdout);
+process.stdout.write = process.stderr.write.bind(process.stderr);
+
 {metadata.transform_content}
 
+process.stdout.write = _origStdoutWrite;
 if (outputData !== null) {{
     process.stdout.write(typeof outputData === 'string' ? outputData : Buffer.from(outputData));
 }}
@@ -78,6 +85,10 @@ if (outputData !== null) {{
             Path(harness_path).unlink(missing_ok=True)
 
         stderr = result.stderr.decode('utf-8', errors='replace').replace(harness_path, '<transform>') or None
+        if stderr:
+            for line in stderr.splitlines():
+                if line.strip():
+                    logger.info("[node] %s", line)
         if result.returncode != 0:
             return TransformResult(output=None, success=False, stderr=stderr)
 
