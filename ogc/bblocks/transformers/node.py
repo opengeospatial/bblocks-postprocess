@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from ogc.bblocks.log import log_indent
 from ogc.bblocks.models import TransformMetadata, TransformResult, Transformer
 
 logger = logging.getLogger(__name__)
@@ -87,9 +88,10 @@ if (outputData !== null) {{
         stderr = result.stderr.decode('utf-8', errors='replace').replace(harness_path, '<transform>') or None
         if stderr:
             label = metadata.id or 'node'
-            for line in stderr.splitlines():
-                if line.strip():
-                    logger.info("[%s] %s", label, line)
+            with log_indent():
+                for line in stderr.splitlines():
+                    if line.strip():
+                        logger.info("[%s] %s", label, line)
         if result.returncode != 0:
             return TransformResult(output=None, success=False, stderr=stderr)
 
