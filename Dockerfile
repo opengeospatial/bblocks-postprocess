@@ -1,14 +1,15 @@
-FROM python:3.10-alpine3.15
+FROM python:3.10-slim
 
 ARG BBP_GIT_INFO=""
 
 WORKDIR /src
 COPY requirements.txt /
 
-RUN apk update && \
-    apk upgrade && \
-    apk add git rsync nodejs npm gdal gdal-dev py3-gdal && \
-    python -m venv --system-site-packages /venv && \
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        git rsync nodejs npm && \
+    rm -rf /var/lib/apt/lists/* && \
+    python -m venv /venv && \
     /venv/bin/python -m pip install --upgrade pip && \
     git config --global --add safe.directory '*' && \
     npm install jsonld && \
