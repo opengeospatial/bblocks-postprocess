@@ -209,8 +209,11 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             for example in bblock.examples:
                 for snippet in example.get('snippets', ()):
                     path = snippet.pop('path', None)
-                    if base_url and path:
-                        snippet['url'] = f"{base_url}{path}"
+                    if base_url:
+                        if path:
+                            snippet['url'] = PathOrUrl(bblock.files_path).resolve_ref(path).with_base_url(base_url, cwd)
+                        if ref := snippet.get('ref'):
+                            snippet['ref'] = PathOrUrl(bblock.files_path).resolve_ref(ref).with_base_url(base_url, cwd)
 
         if base_url:
             if bblock.shaclShapes:
