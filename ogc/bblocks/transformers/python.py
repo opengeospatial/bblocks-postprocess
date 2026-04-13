@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 from ogc.bblocks.models import TransformMetadata, TransformResult, Transformer
+
+logger = logging.getLogger(__name__)
 
 transform_type = 'python'
 
@@ -65,7 +68,10 @@ import sys as _sys
 transform_metadata = {json.dumps(transform_metadata_dict)}
 input_data = _sys.stdin.read()
 output_data = None
+_real_stdout = _sys.stdout
+_sys.stdout = _sys.stderr
 exec(compile({repr(metadata.transform_content)}, '<transform>', 'exec'), globals())
+_sys.stdout = _real_stdout
 if output_data is not None:
     _sys.stdout.buffer.write(output_data if isinstance(output_data, bytes) else output_data.encode('utf-8'))
 """
@@ -84,6 +90,10 @@ if output_data is not None:
             Path(harness_path).unlink(missing_ok=True)
 
         stderr = _strip_harness_frames(result.stderr.decode('utf-8', errors='replace'), harness_path) or None
+        if stderr:
+            for line in stderr.splitlines():
+                if line.strip():
+                    logger.info("[python] %s", line)
         if result.returncode != 0:
             return TransformResult(output=None, success=False, stderr=stderr)
 
