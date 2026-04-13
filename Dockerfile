@@ -7,8 +7,8 @@ COPY requirements.txt /
 
 RUN apk update && \
     apk upgrade && \
-    apk add git rsync nodejs npm && \
-    python -m venv /venv && \
+    apk add git rsync nodejs npm gdal gdal-dev py3-gdal && \
+    python -m venv --system-site-packages /venv && \
     /venv/bin/python -m pip install --upgrade pip && \
     git config --global --add safe.directory '*' && \
     npm install jsonld && \
