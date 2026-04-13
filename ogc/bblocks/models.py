@@ -801,6 +801,7 @@ class TransformMetadata:
     input_data: AnyStr
     metadata: dict | None = None
     sandbox_dir: Path | None = None
+    id: str | None = None
 
 
 @dataclasses.dataclass
