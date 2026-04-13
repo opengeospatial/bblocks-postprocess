@@ -86,9 +86,10 @@ if (outputData !== null) {{
 
         stderr = result.stderr.decode('utf-8', errors='replace').replace(harness_path, '<transform>') or None
         if stderr:
+            label = metadata.id or 'node'
             for line in stderr.splitlines():
                 if line.strip():
-                    logger.info("[node] %s", line)
+                    logger.info("[%s] %s", label, line)
         if result.returncode != 0:
             return TransformResult(output=None, success=False, stderr=stderr)
 

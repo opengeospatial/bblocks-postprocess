@@ -331,6 +331,7 @@ def apply_transforms(bblock: BuildingBlock,
                     metadata['_prefixes'] = example_prefixes
 
                 transform_metadata = TransformMetadata(type=transform['type'],
+                                                       id=transform['id'],
                                                        source_mime_type=snippet_mime_type,
                                                        target_mime_type=target_mime_type,
                                                        transform_content=transform['code'],
