@@ -129,10 +129,13 @@ class RdfValidator(Validator):
             inherited_shacl_shapes[shacl_bblock] = bblock_shacl_files
 
         self.added_shacl_closures = []
+        self.closure_graph_sources: set = set()
         for shacl_closure in bblock.shaclClosures or ():
             try:
-                self.closure_graph.parse(bblock.resolve_file(shacl_closure), format='turtle')
+                resolved = bblock.resolve_file(shacl_closure)
+                self.closure_graph.parse(resolved, format='turtle')
                 self.added_shacl_closures.append(shacl_closure)
+                self.closure_graph_sources.add(resolved)
             except HTTPError as e:
                 self.shacl_errors.append(f"Error retrieving {e.url}: {e}")
             except Exception as e:
@@ -412,7 +415,8 @@ class RdfValidator(Validator):
                     ont_graph = Graph()
                     if additional_shacl_closures:
                         for additional_shacl_closure in additional_shacl_closures:
-                            ont_graph.parse(additional_shacl_closure)
+                            if additional_shacl_closure not in self.closure_graph_sources:
+                                ont_graph.parse(additional_shacl_closure)
                     if self.closure_graph:
                         copy_triples(self.closure_graph, ont_graph)
 
