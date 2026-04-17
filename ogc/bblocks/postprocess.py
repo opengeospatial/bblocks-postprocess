@@ -124,6 +124,14 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             except ValueError:
                 last_update = last_git_modified
 
+        if not last_update:
+            date_time_addition = bblock.metadata.get('dateTimeAddition')
+            if date_time_addition:
+                try:
+                    last_update = datetime.date.fromisoformat(date_time_addition[:10])
+                except ValueError:
+                    pass
+
         if last_update:
             bblock.metadata['dateOfLastChange'] = last_update.isoformat()
         else:
