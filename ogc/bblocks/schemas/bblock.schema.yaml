@@ -7,7 +7,6 @@ required:
   - dateTimeAddition
   - itemClass
   - version
-  - dateOfLastChange
 properties:
   itemIdentifier:
     description: Unique identifier for this Building Block.
