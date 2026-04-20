@@ -219,7 +219,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                     path = snippet.pop('path', None)
                     if base_url:
                         if path:
-                            snippet['url'] = PathOrUrl(bblock.files_path).resolve_ref(path).with_base_url(base_url, cwd)
+                            snippet['url'] = PathOrUrl(path).with_base_url(base_url, cwd)
                         if ref := snippet.get('ref'):
                             snippet['ref'] = PathOrUrl(bblock.files_path).resolve_ref(ref).with_base_url(base_url, cwd)
 
