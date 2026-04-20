@@ -62,11 +62,15 @@ class PythonTransformer(Transformer):
             'target_mime_type': metadata.target_mime_type,
             'metadata': {k: v for k, v in (metadata.metadata or {}).items()
                          if not k.startswith('_')},
+            'context': metadata.ctx.to_dict() if metadata.ctx else None,
         }
 
         harness = f"""\
-import sys as _sys
-transform_metadata = {json.dumps(transform_metadata_dict)}
+import sys as _sys, json as _json, types as _types
+_d = _json.loads(_sys.argv[1])
+if isinstance(_d.get('context'), dict):
+    _d['context'] = _types.SimpleNamespace(**_d['context'])
+transform_metadata = _types.SimpleNamespace(**_d)
 input_data = _sys.stdin.read()
 output_data = None
 _real_stdout = _sys.stdout
@@ -83,7 +87,7 @@ if output_data is not None:
 
         try:
             result = subprocess.run(
-                [str(python_bin), harness_path],
+                [str(python_bin), harness_path, json.dumps(transform_metadata_dict)],
                 input=metadata.input_data.encode('utf-8') if isinstance(metadata.input_data, str) else metadata.input_data,
                 capture_output=True,
             )

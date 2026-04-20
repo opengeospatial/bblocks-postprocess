@@ -83,6 +83,7 @@ class PluginTransformer:
             'target_mime_type': metadata.target_mime_type,
             'metadata': {k: v for k, v in (metadata.metadata or {}).items()
                          if not k.startswith('_')},
+            'context': metadata.ctx.to_dict() if metadata.ctx else None,
         }
 
         result = subprocess.run(

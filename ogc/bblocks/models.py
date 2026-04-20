@@ -793,6 +793,37 @@ class BuildingBlockRegister:
 
 
 @dataclasses.dataclass
+class TransformContext:
+    bblock_id: str
+    bblock_name: str | None
+    bblock_version: str | None
+    bblock_tags: list
+    bblock_files_path: str | None
+    bblock_annotated_path: str | None
+    bblock_metadata: dict
+    example_index: int
+    example: dict
+    snippet_index: int
+    snippet: dict
+    output_file: str | None
+    output_dir: str | None
+    working_dir: str
+    source_schema_path: str | None = None
+    annotated_schema_path: str | None = None
+    jsonld_context_path: str | None = None
+    shacl_shapes_paths: list = dataclasses.field(default_factory=list)
+    base_url: str | None = None
+    github_base_url: str | None = None
+    git_repository: str | None = None
+    id_prefix: str = ''
+    imported_register_urls: list = dataclasses.field(default_factory=list)
+    transform_plugins: list = dataclasses.field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return json.loads(json.dumps(dataclasses.asdict(self), default=str))
+
+
+@dataclasses.dataclass
 class TransformMetadata:
     type: str
     source_mime_type: str
@@ -802,6 +833,7 @@ class TransformMetadata:
     metadata: dict | None = None
     sandbox_dir: Path | None = None
     id: str | None = None
+    ctx: TransformContext | None = None
 
 
 @dataclasses.dataclass

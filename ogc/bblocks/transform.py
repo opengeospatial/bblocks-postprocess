@@ -21,12 +21,22 @@ from ogc.bblocks.log import run_logged, log_indent
 from ogc.bblocks.sandbox import ensure_venv, venv_needs_recreate
 
 from ogc.bblocks import mimetypes
-from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister, ImportedBBlockProxy, TransformMetadata, TransformResult, BuildingBlockError
+from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister, ImportedBBlockProxy, TransformContext, TransformMetadata, TransformResult, BuildingBlockError
 from ogc.bblocks.transformers import transformers
 from ogc.bblocks.util import sanitize_filename
 from ogc.bblocks.validate import validate_transform_output, report_to_dict
 
 _SUBPROCESS_TRANSFORM_TYPES = ('python', 'node')
+
+
+def _rel(path: Path | str | None, cwd: Path) -> str | None:
+    if path is None:
+        return None
+    p = Path(path)
+    try:
+        return str(p.relative_to(cwd))
+    except ValueError:
+        return str(p)
 
 
 def _pip_to_url(pip_spec: str) -> str | None:
@@ -230,7 +240,12 @@ def apply_transforms(bblock: BuildingBlock,
                      output_subpath='transforms',
                      base_url: str | None = None,
                      sandbox_dir: Path | None = None,
-                     bblocks_register: BuildingBlockRegister | None = None):
+                     bblocks_register: BuildingBlockRegister | None = None,
+                     github_base_url: str | None = None,
+                     git_repository: str | None = None,
+                     id_prefix: str = '',
+                     imported_register_urls: list[str] | None = None,
+                     transform_plugins: list[dict] | None = None):
 
     if not bblock.transforms:
         return
@@ -330,6 +345,38 @@ def apply_transforms(bblock: BuildingBlock,
                 if example_prefixes:
                     metadata['_prefixes'] = example_prefixes
 
+                ctx = TransformContext(
+                    bblock_id=bblock.identifier,
+                    bblock_name=bblock.name,
+                    bblock_version=bblock.version,
+                    bblock_tags=list(bblock.metadata.get('tags') or []),
+                    bblock_files_path=_rel(bblock.files_path, cwd),
+                    bblock_annotated_path=_rel(bblock.annotated_path, cwd),
+                    bblock_metadata=bblock.metadata,
+                    example_index=example_id,
+                    example={k: v for k, v in example.items() if k != 'snippets'},
+                    snippet_index=snippet_id,
+                    snippet={k: v for k, v in snippet.items() if k != 'code'},
+                    output_file=_rel(output_fn, cwd),
+                    output_dir=_rel(output_dir, cwd),
+                    working_dir=str(cwd),
+                    source_schema_path=(
+                        _rel(bblock.schema.path, cwd) if bblock.schema.is_path else bblock.schema.url
+                    ) if bblock.schema else None,
+                    annotated_schema_path=_rel(bblock.annotated_schema, cwd) if bblock.annotated_schema.is_file() else None,
+                    jsonld_context_path=_rel(bblock.jsonld_context, cwd) if bblock.jsonld_context.is_file() else None,
+                    shacl_shapes_paths=[
+                        s if isinstance(s, str) else _rel(s, cwd)
+                        for s in (bblock.shacl_shapes or [])
+                    ],
+                    base_url=base_url,
+                    github_base_url=github_base_url,
+                    git_repository=git_repository,
+                    id_prefix=id_prefix,
+                    imported_register_urls=list(imported_register_urls or []),
+                    transform_plugins=list(transform_plugins or []),
+                )
+
                 transform_metadata = TransformMetadata(type=transform['type'],
                                                        id=transform['id'],
                                                        source_mime_type=snippet_mime_type,
@@ -338,7 +385,8 @@ def apply_transforms(bblock: BuildingBlock,
                                                        metadata=metadata,
                                                        input_data=snippet['code'],
                                                        sandbox_dir=transform_sandboxes.get(
-                                                           transform['id'], sandbox_dir))
+                                                           transform['id'], sandbox_dir),
+                                                       ctx=ctx)
 
                 try:
                     result = transformer.transform(transform_metadata)
