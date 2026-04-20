@@ -18,18 +18,20 @@ Harness for plugin transform types. Two modes:
       {"success": false, "output": null,        "binary": false, "stderr": "<str>"}
 
     The metadata object passed to transform() has these attributes:
-      type             (str)   transform type identifier
-      transform_content (str)  code/script declared in transforms.yaml
-      input_data       (str)   example snippet text
+      type             (str)       transform type identifier
+      transform_content (str)      code/script declared in transforms.yaml
+      input_data       (str)       example snippet text
       source_mime_type (str)
       target_mime_type (str)
-      metadata         (dict)  extra metadata (keys starting with _ excluded)
-      sandbox_dir      None    always None in subprocess context
+      metadata         (dict)      extra metadata (keys starting with _ excluded)
+      sandbox_dir      None        always None in subprocess context
+      ctx              SimpleNamespace | None  transform context (bblock, example, register info)
 """
 import importlib
 import inspect
 import json
 import sys
+import types
 from base64 import b64encode
 
 
@@ -51,7 +53,7 @@ def _transformer_classes(module):
 class _Meta:
     """Minimal TransformMetadata-compatible namespace passed to plugin transform()."""
     __slots__ = ('type', 'transform_content', 'input_data',
-                 'source_mime_type', 'target_mime_type', 'metadata', 'sandbox_dir')
+                 'source_mime_type', 'target_mime_type', 'metadata', 'sandbox_dir', 'ctx')
 
 
 # ---------------------------------------------------------------------------
@@ -87,6 +89,8 @@ def _transform(meta_json: str) -> None:
     m.metadata = meta_dict.get('metadata', {})
     m.input_data = sys.stdin.buffer.read().decode('utf-8')
     m.sandbox_dir = None
+    ctx_dict = meta_dict.get('context') or {}
+    m.ctx = types.SimpleNamespace(**ctx_dict) if ctx_dict else None
 
     module_path = meta_dict['module']
     transform_type = meta_dict['type']

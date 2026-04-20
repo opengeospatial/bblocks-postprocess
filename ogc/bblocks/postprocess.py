@@ -211,7 +211,12 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         if not light and (not steps or 'transforms' in steps) and bblock.transforms:
             logger.info("Running transforms")
             apply_transforms(bblock, outputs_path=test_outputs_path, base_url=base_url,
-                             sandbox_dir=sandbox_dir, bblocks_register=bbr)
+                             sandbox_dir=sandbox_dir, bblocks_register=bbr,
+                             github_base_url=github_base_url,
+                             git_repository=additional_metadata.get('gitRepository'),
+                             id_prefix=id_prefix,
+                             imported_register_urls=imported_registers,
+                             transform_plugins=transform_plugins)
 
         if bblock.examples:
             for example in bblock.examples:
