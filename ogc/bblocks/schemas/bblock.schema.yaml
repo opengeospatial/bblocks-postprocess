@@ -235,11 +235,42 @@ properties:
   semanticUplift:
     description: Deprecated - configuration should go in semantic-uplift.yaml
     not: true
+  resources:
+    description: |
+      List of external resources associated with this Building Block
+      that don't fit in other dedicated properties (e.g. schema, ontology, ldContext).
+    type: array
+    items:
+      type: object
+      required: [role, ref, format]
+      properties:
+        title:
+          description: Human-readable title for the resource.
+          type: string
+        role:
+          description: Role or relationship of this resource to the Building Block. Can be a well-known role name or a URI.
+          oneOf:
+            - enum: [constraints, example, guidance, mapping, schema, specification, validation, vocabulary, data]
+            - type: string
+              format: uri
+              pattern: ^https?://.*
+        ref:
+          description: |
+            File name (relative to the Building Block directory) or URL for the resource.
+          type: string
+        format:
+          description: MIME type for the resource (e.g. application/json, text/turtle).
+          type: string
+          pattern: '^\w+/[\w.+\-]+$'
+        conformsTo:
+          description: URI of a profile or specification that the resource conforms to.
+          type: string
+          pattern: '^[a-zA-Z][a-zA-Z0-9+\-.]*:.+'
   rdfData:
     description: |
-      Array of file names (relative to the Building Block directory) or URLs with RDF content for this Building Block,
-      such as ontology sources, profile descriptions, etc.
-      If the data file is named `data.ttl`, this property can be omitted.
+      Deprecated. Use 'resources' with role 'data' instead.
+      Array of file names (relative to the Building Block directory) or URLs with RDF content for this Building Block.
+    deprecated: true
     type: array
     items:
       type: string
