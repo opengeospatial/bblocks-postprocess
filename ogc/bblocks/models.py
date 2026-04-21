@@ -124,9 +124,26 @@ class BuildingBlock:
         if not self.transforms_path.is_file() and (alt_tp := fp / 'transforms.yml').is_file():
             self.transforms_path = alt_tp
 
-        self.rdf_data_paths: list[PathOrUrl] | PathOrUrl = self._find_path_or_url('rdfData', ('data.ttl',))
-        if not isinstance(self.rdf_data_paths, list):
-            self.rdf_data_paths = [self.rdf_data_paths]
+        if 'rdfData' in self.metadata:
+            logger.warning("Building block %s: 'rdfData' is deprecated; use 'resources' with role 'data' instead",
+                           identifier)
+            rdf_data_values = self.metadata.pop('rdfData')
+            if isinstance(rdf_data_values, str):
+                rdf_data_values = [rdf_data_values]
+            resources = self.metadata.setdefault('resources', [])
+            for ref in rdf_data_values:
+                resources.append({'role': 'data', 'ref': ref, 'format': 'text/turtle'})
+
+        data_ttl = fp / 'data.ttl'
+        if data_ttl.is_file():
+            resources = self.metadata.setdefault('resources', [])
+            existing_data_refs = {
+                (fp / r['ref']).resolve() if not is_url(r.get('ref', '')) else None
+                for r in resources
+                if r.get('role') == 'data' and r.get('ref')
+            }
+            if data_ttl.resolve() not in existing_data_refs:
+                resources.append({'role': 'data', 'ref': 'data.ttl', 'format': 'text/turtle'})
 
         self.remote_cache_dir = self.annotated_path / 'remote_cache'
 
@@ -332,17 +349,6 @@ class BuildingBlock:
                     raise BuildingBlockError(f'Error validating transforms metadata for {self.identifier}') from e
             self._lazy_properties['transforms'] = transforms
         return self._lazy_properties['transforms']
-
-    @property
-    def rdf_data(self) -> Graph | None:
-        if 'rdf_data' not in self._lazy_properties:
-            rdf_data = None
-            if self.rdf_data_paths:
-                rdf_data = Graph()
-                for rdf_data_path in self.rdf_data_paths:
-                    rdf_data.parse(rdf_data_path.value)
-            self._lazy_properties['rdf_data'] = rdf_data
-        return self._lazy_properties['rdf_data']
 
     def get_extra_test_resources(self) -> Generator[dict, None, None]:
         extra_tests_file = self.files_path / 'tests.yaml'

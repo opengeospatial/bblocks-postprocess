@@ -186,11 +186,12 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             base_url, cwd if base_url else output_file_root
         ) + '/'
 
-        if bblock.rdf_data_paths:
-            bblock.metadata['rdfData'] = [
-                p.with_base_url(base_url, cwd if base_url else output_file_root)
-                for p in bblock.rdf_data_paths if p.is_file()
-            ]
+        for resource in bblock.metadata.get('resources', []):
+            ref = resource.get('ref')
+            if ref and not is_url(ref):
+                resource['ref'] = PathOrUrl(bblock.files_path / ref).with_base_url(
+                    base_url, cwd if base_url else output_file_root
+                )
 
         if not light:
             if not steps or 'tests' in steps:

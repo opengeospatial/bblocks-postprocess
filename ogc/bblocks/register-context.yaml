@@ -162,3 +162,25 @@ context:
     rdfType:
       '@id': rdfs:subClassOf
       '@type': '@id'
+    resources:
+      '@id': prof:hasResource
+      '@context':
+        role:
+          '@id': prof:hasRole
+          '@type': '@id'
+        constraints: role:constraints
+        example: role:example
+        guidance: role:guidance
+        mapping: role:mapping
+        schema: role:schema
+        specification: role:specification
+        validation: role:validation
+        vocabulary: role:vocabulary
+        data: role:data
+        ref:
+          '@id': 'prof:hasArtifact'
+          '@type': '@id'
+        format: dct:format
+        conformsTo:
+          '@id': dct:conformsTo
+          '@type': '@id'
