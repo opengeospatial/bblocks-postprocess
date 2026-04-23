@@ -201,6 +201,13 @@ jobs:
           
           echo "Repositories cloned and mapped in $RANDOM_DIR — output saved to $MAPPINGS_YML"
 
+      - name: Restore transforms sandbox cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .transforms-sandbox
+          key: transforms-sandbox-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            transforms-sandbox-${{ runner.os }}-
       - name: Before postprocess
         if: ${{inputs.before_postprocess}}
         run: ${{inputs.before_postprocess}}
@@ -233,6 +240,12 @@ jobs:
         uses: EndBug/add-and-commit@v9
         with:
           message: Building blocks postprocessing
+      - name: Save transforms sandbox cache
+        if: ${{ !inputs.skip-build }}
+        uses: actions/cache/save@v4
+        with:
+          path: .transforms-sandbox
+          key: transforms-sandbox-${{ runner.os }}-${{ github.run_id }}
       - name: Remove build artifacts from pages
         run: |
           sudo find "${{ inputs.annotated_path }}" -name _visited_properties.tsv -delete || true
