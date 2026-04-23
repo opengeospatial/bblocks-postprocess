@@ -111,7 +111,8 @@ def _ensure_transform_sandboxes(sandbox_dir: Path, bblock: BuildingBlock) -> dic
     """Set up isolated per-transform sandboxes for python/node transforms.
 
     Returns a dict mapping transform id → per-transform sandbox directory.
-    Installs deps on first use; skips if the environment already exists.
+    Always runs pip/npm install (idempotent); only recreates the venv when the
+    Python version changes.
     """
     sandboxes: dict[str, Path] = {}
 
@@ -132,14 +133,13 @@ def _ensure_transform_sandboxes(sandbox_dir: Path, bblock: BuildingBlock) -> dic
                 pip_deps = [pip_deps]
             if pip_deps:
                 venv_dir = transform_sandbox / 'venv'
-                if venv_needs_recreate(venv_dir):
-                    logger.info("Installing pip dependencies for transform '%s' in '%s': %s",
+                with log_indent():
+                    ensure_venv(venv_dir)
+                    pip_bin = venv_dir / 'bin' / 'pip'
+                    logger.info("Ensuring pip dependencies for transform '%s' in '%s': %s",
                                 t_id, bblock.identifier, pip_deps)
-                    with log_indent():
-                        ensure_venv(venv_dir)
-                        pip_bin = venv_dir / 'bin' / 'pip'
-                        run_logged([str(pip_bin), 'install', '--disable-pip-version-check', *pip_deps],
-                                   label='pip')
+                    run_logged([str(pip_bin), 'install', '--disable-pip-version-check', *pip_deps],
+                               label='pip')
 
         elif t_type == 'node':
             npm_deps = deps.get('npm', [])
@@ -147,12 +147,11 @@ def _ensure_transform_sandboxes(sandbox_dir: Path, bblock: BuildingBlock) -> dic
                 npm_deps = [npm_deps]
             if npm_deps:
                 node_dir = transform_sandbox / 'node'
-                if not (node_dir / 'node_modules').exists():
-                    node_dir.mkdir(parents=True, exist_ok=True)
-                    logger.info("Installing npm dependencies for transform '%s' in '%s': %s",
-                                t_id, bblock.identifier, npm_deps)
-                    with log_indent():
-                        run_logged(['npm', 'install', '--prefix', str(node_dir), *npm_deps], label='npm')
+                node_dir.mkdir(parents=True, exist_ok=True)
+                logger.info("Ensuring npm dependencies for transform '%s' in '%s': %s",
+                            t_id, bblock.identifier, npm_deps)
+                with log_indent():
+                    run_logged(['npm', 'install', '--prefix', str(node_dir), *npm_deps], label='npm')
 
     return sandboxes
 
