@@ -29,7 +29,7 @@ from ogc.bblocks.util import write_jsonld_context, CustomJSONEncoder, \
 from ogc.bblocks.schema import annotate_schema, resolve_all_schema_references, write_annotated_schema
 from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister, ImportedBuildingBlocks, BuildingBlockError
 from ogc.bblocks.validate import validate_test_resources, write_report
-from ogc.bblocks.transform import apply_transforms, load_transform_plugins, transformers
+from ogc.bblocks.transform import apply_transforms, load_transform_plugins, transformers, cleanup_sandbox
 
 
 def postprocess(registered_items_path: str | Path = 'registereditems',
@@ -450,6 +450,9 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 output_bblocks.append(building_block.metadata)
             else:
                 logger.error("%s failed postprocessing, skipping...", building_block.identifier)
+
+    if filter_id is None:
+        cleanup_sandbox(sandbox_dir, child_bblocks)
 
     full_validation_report_url = None
     full_validation_report_url_json = None

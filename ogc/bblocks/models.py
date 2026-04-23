@@ -403,7 +403,7 @@ class ImportedBBlockProxy:
         self.identifier: str = data['itemIdentifier']
         self.name: str = data.get('name', self.identifier)
         self.metadata: dict = dict(data)  # mutable copy so validators can write back (e.g. shaclShapes)
-        self.remote_cache_dir: Path = remote_cache_dir or Path('.transforms-sandbox/remote_cache')
+        self.remote_cache_dir: Path | None = remote_cache_dir
         self.shaclClosures = []
         self.files_path: Path = Path('.')  # no local files; only needed for non-URL SHACL (never the case here)
 

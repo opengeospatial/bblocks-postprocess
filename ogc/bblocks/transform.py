@@ -235,6 +235,63 @@ def load_transform_plugins(sandbox_dir: Path) -> list[dict]:
     return output_plugins
 
 
+def cleanup_sandbox(sandbox_dir: Path, bblocks: list[BuildingBlock]) -> None:
+    """Remove stale plugin venvs and per-transform sandboxes.
+
+    Should only be called after a full (unfiltered) postprocessing run so that
+    the complete set of live bblocks and transforms is known.
+    """
+    if not sandbox_dir or not sandbox_dir.exists():
+        return
+
+    # Plugin cleanup: remove venvs for modules no longer in transform-plugins.yml
+    plugins_dir = sandbox_dir / 'plugins'
+    if plugins_dir.exists():
+        expected_slugs: set[str] = set()
+        plugins_path = Path(_PLUGINS_FILE)
+        if plugins_path.exists():
+            with open(plugins_path) as f:
+                config = yaml.safe_load(f) or {}
+            for plugin in config.get('plugins', []):
+                modules = plugin.get('modules', [])
+                if isinstance(modules, str):
+                    modules = [modules]
+                for module_path in modules:
+                    expected_slugs.add(module_path.replace('.', '_'))
+        for child in plugins_dir.iterdir():
+            if child.is_dir() and child.name not in expected_slugs:
+                logger.info("Removing stale plugin sandbox: %s", child.name)
+                shutil.rmtree(child)
+
+    # Transform cleanup: remove sandboxes for deleted/changed bblocks or transforms
+    transforms_dir = sandbox_dir / 'transforms'
+    if transforms_dir.exists():
+        expected: dict[str, set[str]] = {}
+        for bblock in bblocks:
+            for transform in (bblock.transforms or []):
+                if transform.get('type') not in _SUBPROCESS_TRANSFORM_TYPES:
+                    continue
+                deps = (transform.get('metadata') or {}).get('dependencies', {})
+                if deps.get('pip') or deps.get('npm'):
+                    expected.setdefault(bblock.identifier, set()).add(transform['id'])
+
+        for bblock_dir in transforms_dir.iterdir():
+            if not bblock_dir.is_dir():
+                continue
+            if bblock_dir.name not in expected:
+                logger.info("Removing stale transform sandbox for bblock '%s'", bblock_dir.name)
+                shutil.rmtree(bblock_dir)
+            else:
+                expected_transforms = expected[bblock_dir.name]
+                for transform_dir in bblock_dir.iterdir():
+                    if transform_dir.is_dir() and transform_dir.name not in expected_transforms:
+                        logger.info("Removing stale transform sandbox '%s' for '%s'",
+                                    transform_dir.name, bblock_dir.name)
+                        shutil.rmtree(transform_dir)
+                if not any(bblock_dir.iterdir()):
+                    bblock_dir.rmdir()
+
+
 def apply_transforms(bblock: BuildingBlock,
                      outputs_path: str | Path,
                      output_subpath='transforms',
@@ -420,9 +477,7 @@ def apply_transforms(bblock: BuildingBlock,
                                                "building block not found", profile_id)
                                 continue
                             if not isinstance(profile_bblock, BuildingBlock):
-                                remote_cache_dir = (sandbox_dir / 'remote_cache') if sandbox_dir else None
-                                profile_bblock = ImportedBBlockProxy(profile_bblock,
-                                                                      remote_cache_dir=remote_cache_dir)
+                                profile_bblock = ImportedBBlockProxy(profile_bblock)
 
                             profile_subdir = output_fn.parent / profile_id
                             profile_subdir.mkdir(exist_ok=True)
