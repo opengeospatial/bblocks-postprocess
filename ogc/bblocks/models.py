@@ -433,6 +433,8 @@ class ImportedBBlockProxy:
 
     @property
     def semantic_uplift(self) -> dict:
+        # Imported bblocks have no local semantic-uplift.yaml; return empty so
+        # Uplifter skips additionalSteps without needing a None check.
         return {}
 
     def resolve_file(self, fn_or_url):
