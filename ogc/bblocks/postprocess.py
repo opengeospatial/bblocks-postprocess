@@ -209,16 +209,6 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 if test_count and test_outputs_base_url:
                     bblock.metadata['testOutputs'] = f"{test_outputs_base_url}{bblock.subdirs}/"
 
-        if not light and (not steps or 'transforms' in steps) and bblock.transforms:
-            logger.info("Running transforms")
-            apply_transforms(bblock, outputs_path=test_outputs_path, base_url=base_url,
-                             sandbox_dir=sandbox_dir, bblocks_register=bbr,
-                             github_base_url=github_base_url,
-                             git_repository=additional_metadata.get('gitRepository'),
-                             id_prefix=id_prefix,
-                             imported_register_urls=imported_registers,
-                             transform_plugins=transform_plugins)
-
         if bblock.examples:
             for example in bblock.examples:
                 for snippet in example.get('snippets', ()):
@@ -247,17 +237,6 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                     step['ref'] = PathOrUrl(bblock.files_path).resolve_ref(step['ref']).with_base_url(
                         base_url, cwd if base_url else output_file_root
                     )
-
-        if not light and (not steps or 'doc' in steps):
-            logger.info("Generating documentation")
-            doc_generator.generate_doc(bblock)
-
-        if base_url:
-            if viewer_path:
-                bblock.metadata.setdefault('documentation', {})['bblocks-viewer'] = {
-                    'mediatype': 'text/html',
-                    'url': urljoin(base_url, f"{viewer_path}/bblock/{bblock.identifier}"),
-                }
 
         return True
 
@@ -451,8 +430,46 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             else:
                 logger.error("%s failed postprocessing, skipping...", building_block.identifier)
 
+    if not steps or 'transforms' in steps:
+        logger.info("Running transforms")
+        with log_indent():
+            for building_block in child_bblocks:
+                light = filter_id is not None and building_block.identifier != filter_id
+                if light or not building_block.transforms:
+                    continue
+                logger.info("%s", building_block.identifier)
+                with log_indent():
+                    apply_transforms(building_block, outputs_path=test_outputs_path, base_url=base_url,
+                                     sandbox_dir=sandbox_dir, bblocks_register=bbr,
+                                     github_base_url=github_base_url,
+                                     git_repository=additional_metadata.get('gitRepository'),
+                                     id_prefix=id_prefix,
+                                     imported_register_urls=imported_registers,
+                                     transform_plugins=transform_plugins)
+
     if filter_id is None:
         cleanup_sandbox(sandbox_dir, child_bblocks)
+
+    if not steps or 'doc' in steps:
+        logger.info("Generating documentation")
+        with log_indent():
+            for building_block in child_bblocks:
+                light = filter_id is not None and building_block.identifier != filter_id
+                if not light:
+                    logger.info("%s", building_block.identifier)
+                    with log_indent():
+                        doc_generator.generate_doc(building_block)
+                if base_url and viewer_path:
+                    building_block.metadata.setdefault('documentation', {})['bblocks-viewer'] = {
+                        'mediatype': 'text/html',
+                        'url': urljoin(base_url, f"{viewer_path}/bblock/{building_block.identifier}"),
+                    }
+    elif base_url and viewer_path:
+        for building_block in child_bblocks:
+            building_block.metadata.setdefault('documentation', {})['bblocks-viewer'] = {
+                'mediatype': 'text/html',
+                'url': urljoin(base_url, f"{viewer_path}/bblock/{building_block.identifier}"),
+            }
 
     full_validation_report_url = None
     full_validation_report_url_json = None
