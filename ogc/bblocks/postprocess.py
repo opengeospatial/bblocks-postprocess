@@ -51,7 +51,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 additional_metadata: dict | None = None,
                 schemas_oas30_downcompile=False,
                 local_url_mappings: dict | None = None,
-                links: list[dict] = None) -> list[dict]:
+                links: list[dict] = None,
+                viewer_config: dict | None = None) -> list[dict]:
 
     cwd = Path().resolve()
 
@@ -512,6 +513,9 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         if imported_bblocks.real_metadata_urls:
             output_register_json['imports'] = list(imported_bblocks.real_metadata_urls.values())
         output_register_json['bblocks'] = output_bblocks
+
+        if viewer_config:
+            output_register_json['viewer'] = viewer_config
 
         if transform_plugins:
             output_register_json['transformPlugins'] = transform_plugins
