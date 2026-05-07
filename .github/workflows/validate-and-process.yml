@@ -64,9 +64,11 @@ on:
       viewer_show_imported:
         type: number
         description: |
-          Level up to which the deployed building blocks viewer will show imported building 
+          Level up to which the deployed building blocks viewer will show imported building
           blocks as well as local ones. 0 means "only local", and a negative number means
           "all imports".
+          Deprecated: set viewer.show-imported-depth in bblocks-config.yaml instead.
+          If that key is present, it takes precedence over this input.
         default: 0
       fallback_rainbow_instances:
         type: string
@@ -298,11 +300,17 @@ jobs:
           BBLOCKS_SPARQL='${{ inputs.fallback_sparql_endpoints }}'
           BBLOCKS_SPARQL="${BBLOCKS_SPARQL:-[]}"
 
+          # Prefer viewer.show-imported-depth from bblocks-config.yaml if present
+          SHOW_IMPORTED=$(yq '.viewer."show-imported-depth" // null' '${{ inputs.config_file }}' 2>/dev/null)
+          if [ "$SHOW_IMPORTED" = "null" ] || [ -z "$SHOW_IMPORTED" ]; then
+            SHOW_IMPORTED='${{ inputs.viewer_show_imported }}'
+          fi
+
           cat << EOF > config.js
           window.bblocksRegister = '${{ steps.get-pages-url.outputs.result }}/${{ inputs.register_file }}';
           window.bblocksViewer = {
             title: $(jq '.name // "${{ github.event.repository.name }}"' < "$REGISTER_FILE"),
-            showImported: ${{ inputs.viewer_show_imported }},
+            showImported: ${SHOW_IMPORTED},
             baseUrl: '${PAGES_PATH}${BASE_URL}',
             bblocksFallbackRainbowInstances: ${BBLOCKS_RAINBOW},
             bblocksFallbackSparqlEndpoints: ${BBLOCKS_SPARQL},

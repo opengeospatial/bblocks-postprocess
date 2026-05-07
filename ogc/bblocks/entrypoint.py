@@ -231,6 +231,12 @@ if __name__ == '__main__':
             register_additional_metadata['sparqlEndpoint'] = sparql_conf['query']
         schema_oas30_downcompile = bb_config.get('schema-oas30-downcompile', False)
 
+    viewer_config = {}
+    if bb_config:
+        raw_viewer = bb_config.get('viewer', {}) or {}
+        if 'show-imported-depth' in raw_viewer:
+            viewer_config['showImported'] = raw_viewer['show-imported-depth']
+
     bb_local_config_file = Path('bblocks-config-local.yml')
     local_url_mappings = None
     if bb_local_config_file.is_file():
@@ -307,6 +313,7 @@ if __name__ == '__main__':
                     git_repo_path=git_repo_path,
                     viewer_path=(args.viewer_path or '.') if deploy_viewer else None,
                     additional_metadata=register_additional_metadata,
+                    viewer_config=viewer_config,
                     schemas_oas30_downcompile=schema_oas30_downcompile,
                     local_url_mappings=local_url_mappings,
                     links=[
