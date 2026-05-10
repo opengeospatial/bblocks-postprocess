@@ -301,7 +301,7 @@ jobs:
           BBLOCKS_SPARQL="${BBLOCKS_SPARQL:-[]}"
 
           # Prefer viewer.show-imported-depth from bblocks-config.yaml if present
-          SHOW_IMPORTED=$(yq '.viewer."show-imported-depth" // null' '${{ inputs.config_file }}' 2>/dev/null)
+          SHOW_IMPORTED=$(yq '.viewer."show-imported-depth" // null' "${OLD_WD}/${{ inputs.config_file }}" 2>/dev/null)
           if [ "$SHOW_IMPORTED" = "null" ] || [ -z "$SHOW_IMPORTED" ]; then
             SHOW_IMPORTED='${{ inputs.viewer_show_imported }}'
           fi
