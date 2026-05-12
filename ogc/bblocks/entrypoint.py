@@ -135,7 +135,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     setup_logging(args.log_level, args.log_file)
-    logger = logging.getLogger(__name__)
+    logger = logging.getLogger('ogc.bblocks.entrypoint')
 
     fail_on_error = args.fail_on_error in ('true', 'on', 'yes', '1')
     clean = args.clean in ('true', 'on', 'yes', '1')
