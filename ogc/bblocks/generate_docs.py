@@ -6,7 +6,7 @@ import os.path
 import sys
 from os.path import relpath
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('ogc.bblocks.generate_docs')
 from pathlib import Path
 from argparse import ArgumentParser
 from typing import Sequence

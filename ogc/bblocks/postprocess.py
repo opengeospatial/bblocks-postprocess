@@ -16,7 +16,7 @@ from urllib.parse import urljoin
 
 from ogc.bblocks.log import log_indent
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('ogc.bblocks.postprocess')
 
 from ogc.na.exceptions import ContextLoadError
 from ogc.na.util import is_url, dump_yaml
