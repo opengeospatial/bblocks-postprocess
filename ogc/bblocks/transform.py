@@ -265,6 +265,7 @@ def cleanup_sandbox(sandbox_dir: Path, bblocks: list[BuildingBlock]) -> None:
     # Transform cleanup: remove sandboxes for deleted/changed bblocks or transforms
     transforms_dir = sandbox_dir / 'transforms'
     if transforms_dir.exists():
+        known_ids: set[str] = {b.identifier for b in bblocks}
         expected: dict[str, set[str]] = {}
         for bblock in bblocks:
             for transform in (bblock.transforms or []):
@@ -277,10 +278,12 @@ def cleanup_sandbox(sandbox_dir: Path, bblocks: list[BuildingBlock]) -> None:
         for bblock_dir in transforms_dir.iterdir():
             if not bblock_dir.is_dir():
                 continue
-            if bblock_dir.name not in expected:
+            if bblock_dir.name not in known_ids:
+                # Bblock no longer exists — remove the whole sandbox
                 logger.info("Removing stale transform sandbox for bblock '%s'", bblock_dir.name)
                 shutil.rmtree(bblock_dir)
-            else:
+            elif bblock_dir.name in expected:
+                # Bblock exists with transforms — remove only sandboxes for dropped transforms
                 expected_transforms = expected[bblock_dir.name]
                 for transform_dir in bblock_dir.iterdir():
                     if transform_dir.is_dir() and transform_dir.name not in expected_transforms:
@@ -289,6 +292,8 @@ def cleanup_sandbox(sandbox_dir: Path, bblocks: list[BuildingBlock]) -> None:
                         shutil.rmtree(transform_dir)
                 if not any(bblock_dir.iterdir()):
                     bblock_dir.rmdir()
+            # else: bblock exists but currently has no subprocess transforms (e.g. transforms.yaml
+            # temporarily renamed) — leave sandboxes intact to avoid a full rebuild on rename-back
 
 
 def apply_transforms(bblock: BuildingBlock,
