@@ -299,7 +299,63 @@ def cleanup_sandbox(sandbox_dir: Path, bblocks: list[BuildingBlock]) -> None:
 _GET_TRANSFORMER_TYPES = frozenset({'python', 'node', 'jq', 'xslt', 'jsonld-frame'})
 
 
-def _build_transforms_registry(bblocks_register: BuildingBlockRegister) -> dict:
+def _bblock_context_dict(bblock_id: str, bblock, cwd: Path) -> dict:
+    """Return a JSON-serializable dict of the bblock-level TransformContext fields.
+
+    Accepts either a local BuildingBlock or an imported bblock raw dict. The returned
+    dict can be spread into TransformContext(...) alongside the run-specific fields
+    (example_index, example, snippet_index, snippet, output_file, output_dir, working_dir,
+    base_url, github_base_url, git_repository, id_prefix, imported_register_urls,
+    transform_plugins).
+    """
+    if isinstance(bblock, BuildingBlock):
+        bblock_metadata = json.loads(json.dumps(bblock.metadata, default=str))
+        source_schema_path = None
+        if bblock.schema:
+            source_schema_path = _rel(bblock.schema.path, cwd) if bblock.schema.is_path else bblock.schema.url
+        return {
+            'bblock_id': bblock_id,
+            'bblock_name': bblock.name,
+            'bblock_version': bblock.version,
+            'bblock_tags': list(bblock.metadata.get('tags') or []),
+            'bblock_files_path': _rel(bblock.files_path, cwd),
+            'bblock_annotated_path': _rel(bblock.annotated_path, cwd),
+            'bblock_metadata': bblock_metadata,
+            'source_schema_path': source_schema_path,
+            'annotated_schema_path': _rel(bblock.annotated_schema, cwd) if bblock.annotated_schema.is_file() else None,
+            'jsonld_context_path': _rel(bblock.jsonld_context, cwd) if bblock.jsonld_context and bblock.jsonld_context.is_file() else None,
+            'shacl_shapes_paths': [s if isinstance(s, str) else _rel(s, cwd) for s in (bblock.shacl_shapes or [])],
+        }
+    else:
+        # Imported bblock raw dict
+        raw_copy = {k: v for k, v in bblock.items() if k != 'register'}
+        bblock_metadata = json.loads(json.dumps(raw_copy, default=str))
+        schema = bblock.get('schema')
+        schema_url = None
+        if isinstance(schema, dict):
+            schema_url = schema.get('application/json') or schema.get('application/yaml') or next(iter(schema.values()), None)
+        elif isinstance(schema, str):
+            schema_url = schema
+        shacl_shapes = bblock.get('shaclShapes') or bblock.get('shaclRules') or []
+        if isinstance(shacl_shapes, dict):
+            shacl_shapes = [s for shapes in shacl_shapes.values()
+                            for s in (shapes if isinstance(shapes, list) else [shapes])]
+        return {
+            'bblock_id': bblock_id,
+            'bblock_name': bblock.get('name', bblock_id),
+            'bblock_version': bblock.get('version'),
+            'bblock_tags': list(bblock.get('tags') or []),
+            'bblock_files_path': None,
+            'bblock_annotated_path': None,
+            'bblock_metadata': bblock_metadata,
+            'source_schema_path': schema_url,
+            'annotated_schema_path': schema_url,
+            'jsonld_context_path': bblock.get('ldContext'),
+            'shacl_shapes_paths': [s for s in shacl_shapes if isinstance(s, str)],
+        }
+
+
+def _build_transforms_registry(bblocks_register: BuildingBlockRegister, cwd: Path) -> dict:
     registry = {}
 
     for bblock_id, bblock in bblocks_register.bblocks.items():
@@ -312,11 +368,8 @@ def _build_transforms_registry(bblocks_register: BuildingBlockRegister) -> dict:
         }
         if not supported_transforms:
             continue
-        bblock_metadata = json.loads(json.dumps(bblock.metadata, default=str))
         registry[bblock_id] = {
-            'name': bblock.metadata.get('name', bblock_id),
-            'version': bblock.metadata.get('version'),
-            'bblock_metadata': bblock_metadata,
+            'context': _bblock_context_dict(bblock_id, bblock, cwd),
             'transforms': supported_transforms,
         }
 
@@ -328,12 +381,8 @@ def _build_transforms_registry(bblocks_register: BuildingBlockRegister) -> dict:
         }
         if not supported_transforms:
             continue
-        raw_copy = {k: v for k, v in raw.items() if k != 'register'}
-        bblock_metadata = json.loads(json.dumps(raw_copy, default=str))
         registry[bblock_id] = {
-            'name': raw.get('name', bblock_id),
-            'version': raw.get('version'),
-            'bblock_metadata': bblock_metadata,
+            'context': _bblock_context_dict(bblock_id, raw, cwd),
             'transforms': supported_transforms,
         }
 
@@ -360,7 +409,12 @@ def apply_transforms(bblock: BuildingBlock,
     shutil.rmtree(output_dir, ignore_errors=True)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    transforms_registry = _build_transforms_registry(bblocks_register) if bblocks_register else {}
+    transforms_registry = _build_transforms_registry(bblocks_register, cwd) if bblocks_register else {}
+
+    # Bblock-level context fields — constant for all examples/snippets of this bblock.
+    # Prefer the registry entry (already computed) to avoid redundant Path → str conversions.
+    bblock_ctx = (transforms_registry.get(bblock.identifier) or {}).get('context') \
+        or _bblock_context_dict(bblock.identifier, bblock, cwd)
 
     # Collects ValidationReportItems per profile across all snippets/transforms,
     # so we can write one consolidated _report.json per profile at the end.
@@ -453,13 +507,7 @@ def apply_transforms(bblock: BuildingBlock,
                     metadata['_prefixes'] = example_prefixes
 
                 ctx = TransformContext(
-                    bblock_id=bblock.identifier,
-                    bblock_name=bblock.name,
-                    bblock_version=bblock.version,
-                    bblock_tags=list(bblock.metadata.get('tags') or []),
-                    bblock_files_path=_rel(bblock.files_path, cwd),
-                    bblock_annotated_path=_rel(bblock.annotated_path, cwd),
-                    bblock_metadata=bblock.metadata,
+                    **bblock_ctx,
                     example_index=example_id,
                     example={k: v for k, v in example.items() if k != 'snippets'},
                     snippet_index=snippet_id,
@@ -467,15 +515,6 @@ def apply_transforms(bblock: BuildingBlock,
                     output_file=_rel(output_fn, cwd),
                     output_dir=_rel(output_dir, cwd),
                     working_dir=str(cwd),
-                    source_schema_path=(
-                        _rel(bblock.schema.path, cwd) if bblock.schema.is_path else bblock.schema.url
-                    ) if bblock.schema else None,
-                    annotated_schema_path=_rel(bblock.annotated_schema, cwd) if bblock.annotated_schema.is_file() else None,
-                    jsonld_context_path=_rel(bblock.jsonld_context, cwd) if bblock.jsonld_context.is_file() else None,
-                    shacl_shapes_paths=[
-                        s if isinstance(s, str) else _rel(s, cwd)
-                        for s in (bblock.shacl_shapes or [])
-                    ],
                     base_url=base_url,
                     github_base_url=github_base_url,
                     git_repository=git_repository,
