@@ -296,6 +296,47 @@ def cleanup_sandbox(sandbox_dir: Path, bblocks: list[BuildingBlock]) -> None:
             # temporarily renamed) — leave sandboxes intact to avoid a full rebuild on rename-back
 
 
+def _build_transforms_registry(bblocks_register: BuildingBlockRegister) -> dict:
+    registry = {}
+
+    for bblock_id, bblock in bblocks_register.bblocks.items():
+        transforms = bblock.transforms
+        if not transforms:
+            continue
+        python_transforms = {
+            t['id']: {'code': t['code'], 'metadata': t.get('metadata') or {}}
+            for t in transforms if t.get('type') == 'python' and t.get('code')
+        }
+        if not python_transforms:
+            continue
+        bblock_metadata = json.loads(json.dumps(bblock.metadata, default=str))
+        registry[bblock_id] = {
+            'name': bblock.metadata.get('name', bblock_id),
+            'version': bblock.metadata.get('version'),
+            'bblock_metadata': bblock_metadata,
+            'transforms': python_transforms,
+        }
+
+    for bblock_id, raw in bblocks_register.imported_bblocks.items():
+        transforms = raw.get('transforms') or []
+        python_transforms = {
+            t['id']: {'code': t['code'], 'metadata': t.get('metadata') or {}}
+            for t in transforms if t.get('type') == 'python' and t.get('code')
+        }
+        if not python_transforms:
+            continue
+        raw_copy = {k: v for k, v in raw.items() if k != 'register'}
+        bblock_metadata = json.loads(json.dumps(raw_copy, default=str))
+        registry[bblock_id] = {
+            'name': raw.get('name', bblock_id),
+            'version': raw.get('version'),
+            'bblock_metadata': bblock_metadata,
+            'transforms': python_transforms,
+        }
+
+    return registry
+
+
 def apply_transforms(bblock: BuildingBlock,
                      outputs_path: str | Path,
                      output_subpath='transforms',
@@ -315,6 +356,8 @@ def apply_transforms(bblock: BuildingBlock,
     output_dir = Path(outputs_path) / bblock.subdirs / output_subpath
     shutil.rmtree(output_dir, ignore_errors=True)
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    transforms_registry = _build_transforms_registry(bblocks_register) if bblocks_register else {}
 
     # Collects ValidationReportItems per profile across all snippets/transforms,
     # so we can write one consolidated _report.json per profile at the end.
@@ -447,7 +490,8 @@ def apply_transforms(bblock: BuildingBlock,
                                                        input_data=snippet['code'],
                                                        sandbox_dir=transform_sandboxes.get(
                                                            transform['id'], sandbox_dir),
-                                                       ctx=ctx)
+                                                       ctx=ctx,
+                                                       transforms_registry=transforms_registry)
 
                 try:
                     result = transformer.transform(transform_metadata)

@@ -22,13 +22,105 @@ _process_cache: dict[tuple, _PersistentProcess] = {}
 _cache_lock = Lock()
 
 
-def _build_persistent_harness(transform_content: str) -> str:
+def _build_persistent_harness(transform_content: str, transforms_registry: dict) -> str:
+    registry_json = json.dumps(transforms_registry)
     return f"""\
 import sys as _sys, json as _json, types as _types, base64 as _b64, io as _io, traceback as _tb
 
 _TRANSFORM_CODE = compile({repr(transform_content)}, '<transform>', 'exec')
+_TRANSFORMS_REGISTRY = _json.loads({repr(registry_json)})
 
 _real_stdout = _sys.stdout.buffer
+
+# Module-level state for get_transformer
+_cycle_set = set()
+_callable_cache = {{}}
+_compiled_code_cache = {{}}
+
+
+def get_transformer(bblock_id, transform_id):
+    key = (bblock_id, transform_id)
+    if key in _cycle_set:
+        raise RuntimeError(
+            f"Cycle detected: transform {{transform_id!r}} of {{bblock_id!r}} is already executing"
+        )
+
+    if key not in _callable_cache:
+        bblock_entry = _TRANSFORMS_REGISTRY.get(bblock_id)
+        if bblock_entry is None:
+            raise KeyError(f"Building block {{bblock_id!r}} not found in transforms registry")
+        transform_entry = bblock_entry['transforms'].get(transform_id)
+        if transform_entry is None:
+            raise KeyError(
+                f"Transform {{transform_id!r}} not found for building block {{bblock_id!r}}"
+            )
+
+        code_str = transform_entry['code']
+        if code_str not in _compiled_code_cache:
+            _compiled_code_cache[code_str] = compile(
+                code_str, f'<transform:{{bblock_id}}/{{transform_id}}>', 'exec'
+            )
+        compiled = _compiled_code_cache[code_str]
+
+        deps = (transform_entry.get('metadata') or {{}}).get('dependencies', {{}})
+        pip_deps = deps.get('pip', [])
+        if isinstance(pip_deps, str):
+            pip_deps = [pip_deps]
+        if pip_deps:
+            import subprocess as _subproc
+            _subproc.run(
+                [_sys.executable, '-m', 'pip', 'install', '--disable-pip-version-check', *pip_deps],
+                check=True,
+            )
+
+        def _make_callable(_key=key, _bblock_id=bblock_id, _transform_id=transform_id,
+                           _compiled=compiled, _entry=transform_entry, _bb=bblock_entry):
+            def _callable(content, extra_metadata=None):
+                _cycle_set.add(_key)
+                try:
+                    _base_meta = dict(_entry.get('metadata') or {{}})
+                    if extra_metadata:
+                        _base_meta.update(extra_metadata)
+                    _base_meta['_nested_transform'] = True
+
+                    _ctx = _types.SimpleNamespace(
+                        bblock_id=_bblock_id,
+                        bblock_name=_bb.get('name'),
+                        bblock_version=_bb.get('bblock_metadata', {{}}).get('version'),
+                        bblock_tags=_bb.get('bblock_metadata', {{}}).get('tags', []),
+                        bblock_metadata=_bb.get('bblock_metadata', {{}}),
+                    )
+                    _tm = _types.SimpleNamespace(
+                        source_mime_type=None,
+                        target_mime_type=None,
+                        metadata=_types.SimpleNamespace(**_base_meta),
+                        context=_ctx,
+                    )
+
+                    if isinstance(content, bytes):
+                        try:
+                            _input = content.decode('utf-8')
+                        except UnicodeDecodeError:
+                            _input = content
+                    else:
+                        _input = content
+
+                    _ns = {{
+                        'transform_metadata': _tm,
+                        'input_data': _input,
+                        'output_data': None,
+                        'get_transformer': get_transformer,
+                    }}
+                    exec(_compiled, _ns)
+                    return _ns.get('output_data')
+                finally:
+                    _cycle_set.discard(_key)
+            return _callable
+
+        _callable_cache[key] = _make_callable()
+
+    return _callable_cache[key]
+
 
 for _line in _sys.stdin:
     _line = _line.strip()
@@ -50,7 +142,8 @@ for _line in _sys.stdin:
     _sys.stdout = _capture
     _sys.stderr = _capture
 
-    _ns = {{'transform_metadata': transform_metadata, 'input_data': input_data, 'output_data': None}}
+    _ns = {{'transform_metadata': transform_metadata, 'input_data': input_data, 'output_data': None,
+            'get_transformer': get_transformer}}
     try:
         exec(_TRANSFORM_CODE, _ns)
         output_data = _ns.get('output_data')
@@ -78,9 +171,10 @@ for _line in _sys.stdin:
 
 class _PersistentProcess:
 
-    def __init__(self, python_bin: Path, transform_content: str):
+    def __init__(self, python_bin: Path, transform_content: str, transforms_registry: dict):
         self._python_bin = python_bin
         self._transform_content = transform_content
+        self._transforms_registry = transforms_registry
         self._proc: subprocess.Popen | None = None
         self._harness_path: Path | None = None
         self._lock = Lock()
@@ -88,7 +182,7 @@ class _PersistentProcess:
 
     def _start(self):
         if self._harness_path is None:
-            harness = _build_persistent_harness(self._transform_content)
+            harness = _build_persistent_harness(self._transform_content, self._transforms_registry)
             with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
                 f.write(harness)
                 self._harness_path = Path(f.name)
@@ -166,11 +260,12 @@ class PythonTransformer(Transformer):
         if isinstance(transform_content, bytes):
             transform_content = transform_content.decode('utf-8')
 
+        transforms_registry = metadata.transforms_registry or {}
         cache_key = (str(python_bin), transform_content)
         with _cache_lock:
             proc = _process_cache.get(cache_key)
             if proc is None:
-                proc = _PersistentProcess(python_bin, transform_content)
+                proc = _PersistentProcess(python_bin, transform_content, transforms_registry)
                 _process_cache[cache_key] = proc
 
         transform_metadata_dict = {
