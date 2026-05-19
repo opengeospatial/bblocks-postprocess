@@ -22,102 +22,232 @@ _process_cache: dict[tuple, _PersistentProcess] = {}
 _cache_lock = Lock()
 
 
-def _build_persistent_harness(transform_content: str, transforms_registry: dict) -> str:
-    registry_json = json.dumps(transforms_registry)
-    return f"""\
-import sys as _sys, json as _json, types as _types, base64 as _b64, io as _io, traceback as _tb
+# One-shot harness run under the main venv interpreter for non-Python built-in transform types.
+# Receives a JSON request on stdin, runs the transform, writes a JSON response to stdout.
+_NON_PYTHON_HARNESS_CODE = """\
+import sys as _sys, json as _json, base64 as _b64, traceback as _tb
+from pathlib import Path as _Path
+from ogc.bblocks.models import TransformMetadata as _TM
+from ogc.bblocks.transformers import transformers as _transformers
 
-_TRANSFORM_CODE = compile({repr(transform_content)}, '<transform>', 'exec')
-_TRANSFORMS_REGISTRY = _json.loads({repr(registry_json)})
+_req = _json.loads(_sys.stdin.buffer.read())
+_t_type = _req['type']
+_input_bytes = _b64.b64decode(_req['input'])
+try:
+    _input = _input_bytes.decode('utf-8')
+except UnicodeDecodeError:
+    _input = _input_bytes
 
+_transformer = _transformers.get(_t_type)
+if _transformer is None:
+    _sys.stdout.buffer.write((_json.dumps({
+        'output': None, 'success': False,
+        'stderr': f'Unknown transform type: {_t_type!r}', 'binary': False,
+    }) + '\\n').encode())
+    _sys.exit(0)
+
+_sandbox_dir_str = _req.get('sandbox_dir')
+_meta = _TM(
+    type=_t_type,
+    source_mime_type=_req.get('source_mime_type'),
+    target_mime_type=_req.get('target_mime_type'),
+    transform_content=_req['transform_content'],
+    input_data=_input,
+    metadata=_req.get('metadata') or {},
+    sandbox_dir=_Path(_sandbox_dir_str) if _sandbox_dir_str else None,
+    id=_req.get('transform_id'),
+)
+try:
+    _result = _transformer.transform(_meta)
+    _out_b64 = None
+    _binary = False
+    if _result.output is not None:
+        if isinstance(_result.output, bytes):
+            _out_b64 = _b64.b64encode(_result.output).decode()
+            _binary = True
+        else:
+            _out_b64 = _b64.b64encode(_result.output.encode('utf-8')).decode()
+    _resp = {'output': _out_b64, 'success': _result.success, 'stderr': _result.stderr, 'binary': _binary}
+except Exception:
+    _resp = {'output': None, 'success': False, 'stderr': _tb.format_exc(), 'binary': False}
+
+_sys.stdout.buffer.write((_json.dumps(_resp) + '\\n').encode())
+"""
+
+# Static imports line for the persistent harness — avoids brace-escaping inside f-strings.
+_HARNESS_IMPORTS = (
+    "import sys as _sys, json as _json, types as _types, base64 as _b64,"
+    " io as _io, traceback as _tb, os as _os, subprocess as _subprocess\n"
+)
+
+# Static body of the persistent harness: get_transformer + the stdin request loop.
+# Written as a plain string so braces don't need escaping; dynamic values (_TRANSFORM_CODE,
+# _TRANSFORMS_REGISTRY, _MAIN_PYTHON, _SANDBOX_BASE, _NON_PYTHON_HARNESS) are injected by
+# _build_persistent_harness via repr() into a header that precedes this block.
+_HARNESS_BODY = """
 _real_stdout = _sys.stdout.buffer
 
 # Module-level state for get_transformer
 _cycle_set = set()
-_callable_cache = {{}}
-_compiled_code_cache = {{}}
+_callable_cache = {}
+_compiled_code_cache = {}
 
 
 def get_transformer(bblock_id, transform_id):
     key = (bblock_id, transform_id)
     if key in _cycle_set:
         raise RuntimeError(
-            f"Cycle detected: transform {{transform_id!r}} of {{bblock_id!r}} is already executing"
+            f"Cycle detected: transform {transform_id!r} of {bblock_id!r} is already executing"
         )
 
     if key not in _callable_cache:
         bblock_entry = _TRANSFORMS_REGISTRY.get(bblock_id)
         if bblock_entry is None:
-            raise KeyError(f"Building block {{bblock_id!r}} not found in transforms registry")
+            raise KeyError(f"Building block {bblock_id!r} not found in transforms registry")
         transform_entry = bblock_entry['transforms'].get(transform_id)
         if transform_entry is None:
             raise KeyError(
-                f"Transform {{transform_id!r}} not found for building block {{bblock_id!r}}"
+                f"Transform {transform_id!r} not found for building block {bblock_id!r}"
             )
 
-        code_str = transform_entry['code']
-        if code_str not in _compiled_code_cache:
-            _compiled_code_cache[code_str] = compile(
-                code_str, f'<transform:{{bblock_id}}/{{transform_id}}>', 'exec'
-            )
-        compiled = _compiled_code_cache[code_str]
+        t_type = transform_entry.get('type', 'python')
 
-        deps = (transform_entry.get('metadata') or {{}}).get('dependencies', {{}})
-        pip_deps = deps.get('pip', [])
-        if isinstance(pip_deps, str):
-            pip_deps = [pip_deps]
-        if pip_deps:
-            import subprocess as _subproc
-            _subproc.run(
-                [_sys.executable, '-m', 'pip', 'install', '--disable-pip-version-check', *pip_deps],
-                check=True,
-            )
+        if t_type == 'python':
+            code_str = transform_entry['code']
+            if code_str not in _compiled_code_cache:
+                _compiled_code_cache[code_str] = compile(
+                    code_str, f'<transform:{bblock_id}/{transform_id}>', 'exec'
+                )
+            compiled = _compiled_code_cache[code_str]
 
-        def _make_callable(_key=key, _bblock_id=bblock_id, _transform_id=transform_id,
-                           _compiled=compiled, _entry=transform_entry, _bb=bblock_entry):
-            def _callable(content, extra_metadata=None):
-                _cycle_set.add(_key)
-                try:
-                    _base_meta = dict(_entry.get('metadata') or {{}})
-                    if extra_metadata:
-                        _base_meta.update(extra_metadata)
-                    _base_meta['_nested_transform'] = True
+            deps = (transform_entry.get('metadata') or {}).get('dependencies', {})
+            pip_deps = deps.get('pip', [])
+            if isinstance(pip_deps, str):
+                pip_deps = [pip_deps]
+            if pip_deps:
+                _subprocess.run(
+                    [_sys.executable, '-m', 'pip', 'install', '--disable-pip-version-check', *pip_deps],
+                    check=True,
+                )
 
-                    _ctx = _types.SimpleNamespace(
-                        bblock_id=_bblock_id,
-                        bblock_name=_bb.get('name'),
-                        bblock_version=_bb.get('bblock_metadata', {{}}).get('version'),
-                        bblock_tags=_bb.get('bblock_metadata', {{}}).get('tags', []),
-                        bblock_metadata=_bb.get('bblock_metadata', {{}}),
-                    )
-                    _tm = _types.SimpleNamespace(
-                        source_mime_type=None,
-                        target_mime_type=None,
-                        metadata=_types.SimpleNamespace(**_base_meta),
-                        context=_ctx,
-                    )
+            def _make_python_callable(_key=key, _bblock_id=bblock_id, _transform_id=transform_id,
+                                      _compiled=compiled, _entry=transform_entry, _bb=bblock_entry):
+                def _callable(content, source_mime_type=None, extra_metadata=None):
+                    _cycle_set.add(_key)
+                    try:
+                        _base_meta = dict(_entry.get('metadata') or {})
+                        if extra_metadata:
+                            _base_meta.update(extra_metadata)
+                        _base_meta['_nested_transform'] = True
 
-                    if isinstance(content, bytes):
-                        try:
-                            _input = content.decode('utf-8')
-                        except UnicodeDecodeError:
+                        _ctx = _types.SimpleNamespace(
+                            bblock_id=_bblock_id,
+                            bblock_name=_bb.get('name'),
+                            bblock_version=_bb.get('bblock_metadata', {}).get('version'),
+                            bblock_tags=_bb.get('bblock_metadata', {}).get('tags', []),
+                            bblock_metadata=_bb.get('bblock_metadata', {}),
+                        )
+                        _tm = _types.SimpleNamespace(
+                            source_mime_type=None,
+                            target_mime_type=None,
+                            metadata=_types.SimpleNamespace(**_base_meta),
+                            context=_ctx,
+                        )
+
+                        if isinstance(content, bytes):
+                            try:
+                                _input = content.decode('utf-8')
+                            except UnicodeDecodeError:
+                                _input = content
+                        else:
                             _input = content
-                    else:
-                        _input = content
 
-                    _ns = {{
-                        'transform_metadata': _tm,
-                        'input_data': _input,
-                        'output_data': None,
-                        'get_transformer': get_transformer,
-                    }}
-                    exec(_compiled, _ns)
-                    return _ns.get('output_data')
-                finally:
-                    _cycle_set.discard(_key)
-            return _callable
+                        _ns = {
+                            'transform_metadata': _tm,
+                            'input_data': _input,
+                            'output_data': None,
+                            'get_transformer': get_transformer,
+                        }
+                        exec(_compiled, _ns)
+                        return _ns.get('output_data')
+                    finally:
+                        _cycle_set.discard(_key)
+                return _callable
 
-        _callable_cache[key] = _make_callable()
+            _callable_cache[key] = _make_python_callable()
+
+        else:
+            # Non-Python built-in: spawn a one-shot sub-subprocess using the main venv interpreter,
+            # which has all ogc.bblocks dependencies available regardless of any sandbox the outer
+            # transform may be running in.
+            sandbox_dir_str = None
+            if t_type == 'node' and _SANDBOX_BASE is not None:
+                deps = (transform_entry.get('metadata') or {}).get('dependencies', {})
+                npm_deps = deps.get('npm', [])
+                if isinstance(npm_deps, str):
+                    npm_deps = [npm_deps]
+                if npm_deps:
+                    node_dir = _os.path.join(
+                        _SANDBOX_BASE, 'get_transformer',
+                        bblock_id.replace('.', '_'), transform_id, 'node',
+                    )
+                    _os.makedirs(node_dir, exist_ok=True)
+                    _subprocess.run(
+                        ['npm', 'install', '--prefix', node_dir, *npm_deps],
+                        check=True,
+                    )
+                    # sandbox_dir is the parent of 'node/', matching NodeTransformer's expectation
+                    sandbox_dir_str = _os.path.dirname(node_dir)
+
+            def _make_builtin_callable(_key=key, _bblock_id=bblock_id, _transform_id=transform_id,
+                                       _entry=transform_entry, _type=t_type,
+                                       _sandbox_dir_str=sandbox_dir_str):
+                def _callable(content, source_mime_type=None, extra_metadata=None):
+                    _cycle_set.add(_key)
+                    try:
+                        _base_meta = dict(_entry.get('metadata') or {})
+                        if extra_metadata:
+                            _base_meta.update(extra_metadata)
+                        _base_meta['_nested_transform'] = True
+
+                        if isinstance(content, bytes):
+                            _input_bytes = content
+                        else:
+                            _input_bytes = (content or '').encode('utf-8')
+
+                        _req = {
+                            'type': _type,
+                            'transform_content': _entry['code'],
+                            'input': _b64.b64encode(_input_bytes).decode(),
+                            'source_mime_type': source_mime_type,
+                            'target_mime_type': None,
+                            'metadata': _base_meta,
+                            'transform_id': _transform_id,
+                            'sandbox_dir': _sandbox_dir_str,
+                        }
+                        _proc = _subprocess.run(
+                            [_MAIN_PYTHON, '-c', _NON_PYTHON_HARNESS],
+                            input=_json.dumps(_req).encode('utf-8'),
+                            capture_output=True,
+                        )
+                        if not _proc.stdout.strip():
+                            _stderr = _proc.stderr.decode('utf-8', errors='replace')
+                            raise RuntimeError(
+                                f"get_transformer sub-process for {_type!r} produced no output:\\n{_stderr}"
+                            )
+                        _resp = _json.loads(_proc.stdout)
+                        if not _resp.get('success'):
+                            raise RuntimeError(_resp.get('stderr') or f'{_type!r} sub-transform failed')
+                        _out_b64 = _resp.get('output')
+                        if _out_b64 is not None:
+                            _out_bytes = _b64.b64decode(_out_b64)
+                            return _out_bytes if _resp.get('binary') else _out_bytes.decode('utf-8')
+                        return None
+                    finally:
+                        _cycle_set.discard(_key)
+                return _callable
+
+            _callable_cache[key] = _make_builtin_callable()
 
     return _callable_cache[key]
 
@@ -142,8 +272,8 @@ for _line in _sys.stdin:
     _sys.stdout = _capture
     _sys.stderr = _capture
 
-    _ns = {{'transform_metadata': transform_metadata, 'input_data': input_data, 'output_data': None,
-            'get_transformer': get_transformer}}
+    _ns = {'transform_metadata': transform_metadata, 'input_data': input_data, 'output_data': None,
+           'get_transformer': get_transformer}
     try:
         exec(_TRANSFORM_CODE, _ns)
         output_data = _ns.get('output_data')
@@ -157,10 +287,10 @@ for _line in _sys.stdin:
         else:
             _out_b64 = None
             _binary = False
-        _resp = {{'output': _out_b64, 'success': True, 'stderr': _capture.getvalue() or None, 'binary': _binary}}
+        _resp = {'output': _out_b64, 'success': True, 'stderr': _capture.getvalue() or None, 'binary': _binary}
     except Exception:
         _stderr_text = _capture.getvalue() + _tb.format_exc()
-        _resp = {{'output': None, 'success': False, 'stderr': _stderr_text, 'binary': False}}
+        _resp = {'output': None, 'success': False, 'stderr': _stderr_text, 'binary': False}
     finally:
         _sys.stdout, _sys.stderr = _prev_stdout, _prev_stderr
 
@@ -169,12 +299,27 @@ for _line in _sys.stdin:
 """
 
 
+def _build_persistent_harness(transform_content: str, transforms_registry: dict,
+                               main_python: str, sandbox_base: str | None) -> str:
+    header = (
+        f"_TRANSFORM_CODE = compile({repr(transform_content)}, '<transform>', 'exec')\n"
+        f"_TRANSFORMS_REGISTRY = _json.loads({repr(json.dumps(transforms_registry))})\n"
+        f"_MAIN_PYTHON = {repr(main_python)}\n"
+        f"_SANDBOX_BASE = {repr(sandbox_base)}\n"
+        f"_NON_PYTHON_HARNESS = {repr(_NON_PYTHON_HARNESS_CODE)}\n"
+    )
+    return _HARNESS_IMPORTS + header + _HARNESS_BODY
+
+
 class _PersistentProcess:
 
-    def __init__(self, python_bin: Path, transform_content: str, transforms_registry: dict):
+    def __init__(self, python_bin: Path, transform_content: str, transforms_registry: dict,
+                 main_python: str, sandbox_base: str | None):
         self._python_bin = python_bin
         self._transform_content = transform_content
         self._transforms_registry = transforms_registry
+        self._main_python = main_python
+        self._sandbox_base = sandbox_base
         self._proc: subprocess.Popen | None = None
         self._harness_path: Path | None = None
         self._lock = Lock()
@@ -182,7 +327,10 @@ class _PersistentProcess:
 
     def _start(self):
         if self._harness_path is None:
-            harness = _build_persistent_harness(self._transform_content, self._transforms_registry)
+            harness = _build_persistent_harness(
+                self._transform_content, self._transforms_registry,
+                self._main_python, self._sandbox_base,
+            )
             with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
                 f.write(harness)
                 self._harness_path = Path(f.name)
@@ -260,12 +408,16 @@ class PythonTransformer(Transformer):
         if isinstance(transform_content, bytes):
             transform_content = transform_content.decode('utf-8')
 
-        transforms_registry = metadata.transforms_registry or {}
-        cache_key = (str(python_bin), transform_content)
+        main_python = str(Path(sys.executable))
+        sandbox_base = str(metadata._sandbox_base_dir) if metadata._sandbox_base_dir else None
+
+        transforms_registry = metadata._transforms_registry or {}
+        cache_key = (str(python_bin), transform_content, main_python, sandbox_base or '')
         with _cache_lock:
             proc = _process_cache.get(cache_key)
             if proc is None:
-                proc = _PersistentProcess(python_bin, transform_content, transforms_registry)
+                proc = _PersistentProcess(python_bin, transform_content, transforms_registry,
+                                          main_python, sandbox_base)
                 _process_cache[cache_key] = proc
 
         transform_metadata_dict = {

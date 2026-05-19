@@ -846,7 +846,8 @@ class TransformMetadata:
     sandbox_dir: Path | None = None
     id: str | None = None
     ctx: TransformContext | None = None
-    transforms_registry: dict | None = None
+    _transforms_registry: dict | None = None
+    _sandbox_base_dir: Path | None = None
 
 
 @dataclasses.dataclass
