@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import atexit
+import base64
 import json
 import logging
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from threading import Lock
 
 from ogc.bblocks.log import log_indent
 from ogc.bblocks.models import TransformMetadata, TransformResult, Transformer
@@ -15,32 +18,134 @@ logger = logging.getLogger(__name__)
 
 transform_type = 'python'
 
-
-def _strip_harness_frames(stderr: str, harness_path: str) -> str:
-    lines = stderr.splitlines(keepends=True)
-    result = []
-    skip_next = False
-    for line in lines:
-        if skip_next:
-            skip_next = False
-            continue
-        if f'File "{harness_path}"' in line:
-            skip_next = True
-            continue
-        result.append(line)
-    return ''.join(result)
+_process_cache: dict[tuple, _PersistentProcess] = {}
+_cache_lock = Lock()
 
 
-def _decode_output(raw: bytes) -> tuple[str | bytes | None, bool]:
-    if not raw:
-        return None, False
+def _build_persistent_harness(transform_content: str) -> str:
+    return f"""\
+import sys as _sys, json as _json, types as _types, base64 as _b64, io as _io, traceback as _tb
+
+_TRANSFORM_CODE = compile({repr(transform_content)}, '<transform>', 'exec')
+
+_real_stdout = _sys.stdout.buffer
+
+for _line in _sys.stdin:
+    _line = _line.strip()
+    if not _line:
+        continue
+    _req = _json.loads(_line)
+    _d = _req['metadata']
+    if isinstance(_d.get('context'), dict):
+        _d['context'] = _types.SimpleNamespace(**_d['context'])
+    transform_metadata = _types.SimpleNamespace(**_d)
+    _raw = _b64.b64decode(_req['input'])
     try:
-        text = raw.decode('utf-8')
-        if '\x00' in text:
-            return raw, True
-        return text, False
+        input_data = _raw.decode('utf-8')
     except UnicodeDecodeError:
-        return raw, True
+        input_data = _raw
+
+    _capture = _io.StringIO()
+    _prev_stdout, _prev_stderr = _sys.stdout, _sys.stderr
+    _sys.stdout = _capture
+    _sys.stderr = _capture
+
+    _ns = {{'transform_metadata': transform_metadata, 'input_data': input_data, 'output_data': None}}
+    try:
+        exec(_TRANSFORM_CODE, _ns)
+        output_data = _ns.get('output_data')
+        if output_data is not None:
+            if isinstance(output_data, bytes):
+                _out_b64 = _b64.b64encode(output_data).decode()
+                _binary = True
+            else:
+                _out_b64 = _b64.b64encode(output_data.encode('utf-8')).decode()
+                _binary = False
+        else:
+            _out_b64 = None
+            _binary = False
+        _resp = {{'output': _out_b64, 'success': True, 'stderr': _capture.getvalue() or None, 'binary': _binary}}
+    except Exception:
+        _stderr_text = _capture.getvalue() + _tb.format_exc()
+        _resp = {{'output': None, 'success': False, 'stderr': _stderr_text, 'binary': False}}
+    finally:
+        _sys.stdout, _sys.stderr = _prev_stdout, _prev_stderr
+
+    _real_stdout.write((_json.dumps(_resp) + '\\n').encode('utf-8'))
+    _real_stdout.flush()
+"""
+
+
+class _PersistentProcess:
+
+    def __init__(self, python_bin: Path, transform_content: str):
+        self._python_bin = python_bin
+        self._transform_content = transform_content
+        self._proc: subprocess.Popen | None = None
+        self._harness_path: Path | None = None
+        self._lock = Lock()
+        self._start()
+
+    def _start(self):
+        if self._harness_path is None:
+            harness = _build_persistent_harness(self._transform_content)
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+                f.write(harness)
+                self._harness_path = Path(f.name)
+        self._proc = subprocess.Popen(
+            [str(self._python_bin), str(self._harness_path)],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+        )
+
+    def _send_raw(self, req_line: bytes) -> dict | None:
+        try:
+            self._proc.stdin.write(req_line)
+            self._proc.stdin.flush()
+            resp_line = self._proc.stdout.readline()
+            if resp_line:
+                return json.loads(resp_line)
+        except (BrokenPipeError, OSError):
+            pass
+        return None
+
+    def send(self, metadata_dict: dict, input_data: bytes | str) -> dict:
+        if isinstance(input_data, str):
+            input_data = input_data.encode('utf-8')
+        req_line = (json.dumps({
+            'metadata': metadata_dict,
+            'input': base64.b64encode(input_data).decode(),
+        }) + '\n').encode('utf-8')
+
+        with self._lock:
+            resp = self._send_raw(req_line)
+            if resp is None:
+                logger.warning("Transform process died, respawning")
+                self._start()
+                resp = self._send_raw(req_line)
+            return resp or {'output': None, 'success': False, 'stderr': 'Transform process died', 'binary': False}
+
+    def close(self):
+        with self._lock:
+            if self._proc and self._proc.poll() is None:
+                try:
+                    self._proc.stdin.close()
+                    self._proc.wait(timeout=5)
+                except Exception:
+                    self._proc.kill()
+            if self._harness_path:
+                self._harness_path.unlink(missing_ok=True)
+                self._harness_path = None
+
+
+def _close_all_processes():
+    with _cache_lock:
+        for proc in _process_cache.values():
+            proc.close()
+        _process_cache.clear()
+
+
+atexit.register(_close_all_processes)
 
 
 class PythonTransformer(Transformer):
@@ -57,6 +162,17 @@ class PythonTransformer(Transformer):
         else:
             python_bin = Path(sys.executable)
 
+        transform_content = metadata.transform_content
+        if isinstance(transform_content, bytes):
+            transform_content = transform_content.decode('utf-8')
+
+        cache_key = (str(python_bin), transform_content)
+        with _cache_lock:
+            proc = _process_cache.get(cache_key)
+            if proc is None:
+                proc = _PersistentProcess(python_bin, transform_content)
+                _process_cache[cache_key] = proc
+
         transform_metadata_dict = {
             'source_mime_type': metadata.source_mime_type,
             'target_mime_type': metadata.target_mime_type,
@@ -65,44 +181,26 @@ class PythonTransformer(Transformer):
             'context': metadata.ctx.to_dict() if metadata.ctx else None,
         }
 
-        harness = f"""\
-import sys as _sys, json as _json, types as _types
-_d = _json.loads(_sys.argv[1])
-if isinstance(_d.get('context'), dict):
-    _d['context'] = _types.SimpleNamespace(**_d['context'])
-transform_metadata = _types.SimpleNamespace(**_d)
-input_data = _sys.stdin.read()
-output_data = None
-_real_stdout = _sys.stdout
-_sys.stdout = _sys.stderr
-exec(compile({repr(metadata.transform_content)}, '<transform>', 'exec'), globals())
-_sys.stdout = _real_stdout
-if output_data is not None:
-    _sys.stdout.buffer.write(output_data if isinstance(output_data, bytes) else output_data.encode('utf-8'))
-"""
+        resp = proc.send(transform_metadata_dict, metadata.input_data)
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
-            f.write(harness)
-            harness_path = f.name
-
-        try:
-            result = subprocess.run(
-                [str(python_bin), harness_path, json.dumps(transform_metadata_dict)],
-                input=metadata.input_data.encode('utf-8') if isinstance(metadata.input_data, str) else metadata.input_data,
-                capture_output=True,
-            )
-        finally:
-            Path(harness_path).unlink(missing_ok=True)
-
-        stderr = _strip_harness_frames(result.stderr.decode('utf-8', errors='replace'), harness_path) or None
+        stderr = resp.get('stderr') or None
         if stderr:
             label = metadata.id or 'python'
             with log_indent():
                 for line in stderr.splitlines():
                     if line.strip():
                         logger.info("[%s] %s", label, line)
-        if result.returncode != 0:
-            return TransformResult(output=None, success=False, stderr=stderr)
 
-        output, binary = _decode_output(result.stdout)
-        return TransformResult(output=output, success=True, stderr=stderr, binary=binary)
+        output_b64 = resp.get('output')
+        if output_b64 is not None:
+            output_bytes = base64.b64decode(output_b64)
+            output: str | bytes | None = output_bytes if resp.get('binary') else output_bytes.decode('utf-8')
+        else:
+            output = None
+
+        return TransformResult(
+            output=output,
+            success=resp.get('success', False),
+            stderr=stderr,
+            binary=resp.get('binary', False),
+        )
