@@ -8,7 +8,12 @@ output = {**bblock.metadata}
 if bblock.description:
     output['description'] = bblock.description
 if bblock.examples:
-    output['examples'] = bblock.examples
+    output['examples'] = [
+        {**example, 'snippets': [{k: v for k, v in s.items() if k != 'full-code'}
+                                  for s in example.get('snippets', [])]}
+        if 'snippets' in example else example
+        for example in bblock.examples
+    ]
 if bblock.example_prefixes:
     output['examplePrefixes'] = bblock.example_prefixes
 if bblock.annotated_schema:

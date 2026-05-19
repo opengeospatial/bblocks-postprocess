@@ -239,6 +239,10 @@ class BuildingBlock:
                             logger.warning('json-path %s found no matches in ref %s - skipping snippet',
                                            snippet['json-path'], ref)
                             continue
+                        if len(matches) > 1:
+                            logger.warning('json-path %s found %d matches in ref %s - using first match only',
+                                           snippet['json-path'], len(matches), ref)
+                        snippet['full-code'] = code
                         snippet['code'] = dumper(matches[0].value)
                 filtered_snippets.append(snippet)
             if 'snippets' in example:
