@@ -296,6 +296,9 @@ def cleanup_sandbox(sandbox_dir: Path, bblocks: list[BuildingBlock]) -> None:
             # temporarily renamed) — leave sandboxes intact to avoid a full rebuild on rename-back
 
 
+_GET_TRANSFORMER_TYPES = frozenset({'python', 'node', 'jq', 'xslt', 'jsonld-frame'})
+
+
 def _build_transforms_registry(bblocks_register: BuildingBlockRegister) -> dict:
     registry = {}
 
@@ -303,27 +306,27 @@ def _build_transforms_registry(bblocks_register: BuildingBlockRegister) -> dict:
         transforms = bblock.transforms
         if not transforms:
             continue
-        python_transforms = {
-            t['id']: {'code': t['code'], 'metadata': t.get('metadata') or {}}
-            for t in transforms if t.get('type') == 'python' and t.get('code')
+        supported_transforms = {
+            t['id']: {'type': t['type'], 'code': t['code'], 'metadata': t.get('metadata') or {}}
+            for t in transforms if t.get('type') in _GET_TRANSFORMER_TYPES and t.get('code')
         }
-        if not python_transforms:
+        if not supported_transforms:
             continue
         bblock_metadata = json.loads(json.dumps(bblock.metadata, default=str))
         registry[bblock_id] = {
             'name': bblock.metadata.get('name', bblock_id),
             'version': bblock.metadata.get('version'),
             'bblock_metadata': bblock_metadata,
-            'transforms': python_transforms,
+            'transforms': supported_transforms,
         }
 
     for bblock_id, raw in bblocks_register.imported_bblocks.items():
         transforms = raw.get('transforms') or []
-        python_transforms = {
-            t['id']: {'code': t['code'], 'metadata': t.get('metadata') or {}}
-            for t in transforms if t.get('type') == 'python' and t.get('code')
+        supported_transforms = {
+            t['id']: {'type': t['type'], 'code': t['code'], 'metadata': t.get('metadata') or {}}
+            for t in transforms if t.get('type') in _GET_TRANSFORMER_TYPES and t.get('code')
         }
-        if not python_transforms:
+        if not supported_transforms:
             continue
         raw_copy = {k: v for k, v in raw.items() if k != 'register'}
         bblock_metadata = json.loads(json.dumps(raw_copy, default=str))
@@ -331,7 +334,7 @@ def _build_transforms_registry(bblocks_register: BuildingBlockRegister) -> dict:
             'name': raw.get('name', bblock_id),
             'version': raw.get('version'),
             'bblock_metadata': bblock_metadata,
-            'transforms': python_transforms,
+            'transforms': supported_transforms,
         }
 
     return registry
@@ -490,8 +493,9 @@ def apply_transforms(bblock: BuildingBlock,
                                                        input_data=snippet['code'],
                                                        sandbox_dir=transform_sandboxes.get(
                                                            transform['id'], sandbox_dir),
+                                                       _sandbox_base_dir=sandbox_dir,
                                                        ctx=ctx,
-                                                       transforms_registry=transforms_registry)
+                                                       _transforms_registry=transforms_registry)
 
                 try:
                     result = transformer.transform(transform_metadata)
