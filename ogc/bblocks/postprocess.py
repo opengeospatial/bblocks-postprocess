@@ -546,6 +546,34 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             with open(output_file, 'w') as f:
                 json.dump(output_register_json, f, indent=2, cls=CustomJSONEncoder)
 
+            summary_file = Path(output_file).with_name('register-summary.md')
+            with open(summary_file, 'w') as f:
+                reg_name = output_register_json.get('name', '')
+                reg_abstract = output_register_json.get('abstract', '')
+                reg_description = output_register_json.get('description', '')
+
+                if reg_name:
+                    f.write(f"# {reg_name}\n\n")
+                if reg_abstract:
+                    f.write(f"{reg_abstract}\n\n")
+                if reg_description:
+                    f.write(f"{reg_description}\n\n")
+
+                f.write("## Building Blocks\n\n")
+                for bb in output_register_json.get('bblocks', []):
+                    bb_id = bb.get('itemIdentifier', '')
+                    bb_type = bb.get('itemClass', '')
+                    bb_name = bb.get('name', '')
+                    bb_abstract = bb.get('abstract', '')
+                    title = f"`{bb_id}`"
+                    if bb_name:
+                        title += f" — {bb_name}"
+                    f.write(f"### {title}\n\n")
+                    if bb_type:
+                        f.write(f"**Type:** {bb_type}\n\n")
+                    if bb_abstract:
+                        f.write(f"{bb_abstract}\n\n")
+
     logger.info("Finished processing %d building blocks", len(output_bblocks))
     return output_bblocks
 
