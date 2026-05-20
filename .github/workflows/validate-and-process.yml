@@ -253,6 +253,9 @@ jobs:
           sudo find "${{ inputs.annotated_path }}" -name _visited_properties.tsv -delete || true
           sudo find "${{ inputs.annotated_path }}" -name _visited_properties.tsv.gz -delete || true
           rm -rf .transforms-sandbox
+          # Remove LLM tool configuration files
+          rm -rf .claude CLAUDE.md AGENTS.md GEMINI.md .cursor .cursorrules .windsurfrules .ruler .continue
+          find . -maxdepth 1 -name '.aider*' -exec rm -rf {} + || true
       - name: Deploy Building Blocks viewer
         id: deploy-viewer
         if: ${{ inputs.deploy_viewer }}
