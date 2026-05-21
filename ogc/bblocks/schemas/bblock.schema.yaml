@@ -61,6 +61,10 @@ properties:
       - response # OpenAPI response object
       - api # Partial or full OpenAPI document
       - model # Ontology or data model
+      - requirements-class # ModSpec requirements class (standard authoring)
+      - clause # Prose-only clause (scope, conventions, informative annex)
+      - terms # Terms and definitions clause
+      - references # Normative/informative references clause
   register:
     description: Register to which this Building Block belongs.
     type: string
@@ -250,7 +254,7 @@ properties:
         role:
           description: Role or relationship of this resource to the Building Block. Can be a well-known role name or a URI.
           oneOf:
-            - enum: [constraints, example, guidance, mapping, schema, specification, validation, vocabulary, data]
+            - enum: [constraints, example, guidance, mapping, schema, specification, validation, vocabulary, data, requirements, terms, references]
             - type: string
               format: uri
               pattern: ^https?://.*

@@ -21,3 +21,13 @@ items:
         Name for the output file name that will be used when generating uplifted versions of the test resource.
         If not provided, the file name from "ref" will be used.
       type: string
+    id:
+      description: |
+        A logical identifier for this test entry. Used by requirements.yaml 'tested-by' fields to
+        reference tests by id rather than by filename.
+      type: string
+    method:
+      description: |
+        Explicit ATS test method description. When absent, the standard generator infers the method
+        from the file extension. When present, this text is used verbatim in the generated ATS entry.
+      type: string
