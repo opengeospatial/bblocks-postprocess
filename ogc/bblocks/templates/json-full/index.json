@@ -7,10 +7,17 @@ from ogc.bblocks.util import CustomJSONEncoder
 output = {**bblock.metadata}
 if bblock.description:
     output['description'] = bblock.description
+def _serialize_snippet(s):
+    result = {k: v for k, v in s.items() if k not in ('full-code', 'code')}
+    if isinstance(s.get('code'), bytes):
+        result['binary'] = True
+    else:
+        result['code'] = s['code']
+    return result
+
 if bblock.examples:
     output['examples'] = [
-        {**example, 'snippets': [{k: v for k, v in s.items() if k != 'full-code'}
-                                  for s in example.get('snippets', [])]}
+        {**example, 'snippets': [_serialize_snippet(s) for s in example.get('snippets', [])]}
         if 'snippets' in example else example
         for example in bblock.examples
     ]

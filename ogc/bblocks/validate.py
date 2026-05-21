@@ -384,7 +384,7 @@ def validate_test_resources(bblock: BuildingBlock,
                     i += 1
                     output_fn = output_fn.with_stem(f"{output_fn.stem}-{i}")
 
-                with open(output_fn, 'w') as f:
+                with open(output_fn, 'wb' if isinstance(code, bytes) else 'w') as f:
                     f.write(code)
 
                 snippet['path'] = output_fn

@@ -48,7 +48,7 @@ def load_file_cached(fn):
     return load_file(fn)
 
 
-def load_file(fn, remote_cache_dir: Path | None = None):
+def load_file(fn, remote_cache_dir: Path | None = None, binary: bool = False):
     if isinstance(fn, PathOrUrl):
         fn = fn.value
     if isinstance(fn, str) and is_url(fn):
@@ -65,9 +65,20 @@ def load_file(fn, remote_cache_dir: Path | None = None):
                 logger.warning("Could not store cached version of remote file in %s: %s",
                                remote_cache_dir / url_hash, e)
 
+        if binary:
+            try:
+                return r.content.decode('utf-8')
+            except UnicodeDecodeError:
+                return r.content
         return r.text
-    with open(fn) as f:
-        return f.read()
+    with open(fn, 'rb') as f:
+        data = f.read()
+    if not binary:
+        return data.decode('utf-8')
+    try:
+        return data.decode('utf-8')
+    except UnicodeDecodeError:
+        return data
 
 
 def get_schema(t: str) -> dict:

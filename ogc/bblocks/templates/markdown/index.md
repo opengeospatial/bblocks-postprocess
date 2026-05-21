@@ -22,9 +22,13 @@ ${example['content'].replace('@@assets@@', assets_rel or '')}
     %endif
     % for snippet in example.get('snippets', []):
 ${'####'} ${snippet['language']}
+      % if not isinstance(snippet.get('code'), bytes):
 ```${snippet['language']}
 ${snippet['code']}
 ```
+      % elif snippet.get('url'):
+[Download binary content](${snippet['url']})
+      % endif
 
     % endfor
   % endfor
