@@ -219,8 +219,8 @@ class BuildingBlock:
                 if 'ref' in snippet:
                     # Load snippet code from "ref"
                     ref = snippet['ref'] if is_url(snippet['ref']) else self.files_path / snippet['ref']
-                    snippet['code'] = load_file(ref)
-                    if 'json-path' in snippet:
+                    snippet['code'] = load_file(ref, binary=True)
+                    if 'json-path' in snippet and not isinstance(snippet['code'], bytes):
                         code = snippet['code']
                         try:
                             parsed = json.loads(code)

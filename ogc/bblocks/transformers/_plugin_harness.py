@@ -29,6 +29,7 @@ Harness for plugin transform types. Two modes:
 """
 import importlib
 import inspect
+import io
 import json
 import sys
 import types
@@ -87,7 +88,8 @@ def _transform(meta_json: str) -> None:
     m.source_mime_type = meta_dict['source_mime_type']
     m.target_mime_type = meta_dict['target_mime_type']
     m.metadata = meta_dict.get('metadata', {})
-    m.input_data = sys.stdin.buffer.read().decode('utf-8')
+    raw = sys.stdin.buffer.read()
+    m.input_data = raw if meta_dict.get('input_binary') else raw.decode('utf-8')
     m.sandbox_dir = None
     ctx_dict = meta_dict.get('context') or {}
     m.ctx = types.SimpleNamespace(**ctx_dict) if ctx_dict else None
@@ -104,21 +106,33 @@ def _transform(meta_json: str) -> None:
 
     if transformer is None:
         print(json.dumps({
-            'success': False, 'output': None, 'binary': False,
+            'success': False, 'output': None, 'binary': False, 'log': None,
             'stderr': f"No transformer found for type '{transform_type}' in '{module_path}'",
         }))
         return
 
+    log_buf = io.StringIO()
+    old_stdout, old_stderr = sys.stdout, sys.stderr
+    sys.stdout = sys.stderr = log_buf
     try:
         result = transformer.transform(m)
+        error = None
     except Exception as e:
+        result = None
+        error = str(e)
+    finally:
+        sys.stdout, sys.stderr = old_stdout, old_stderr
+
+    log = log_buf.getvalue() or None
+
+    if error is not None:
         print(json.dumps({
-            'success': False, 'output': None, 'binary': False, 'stderr': str(e),
+            'success': False, 'output': None, 'binary': False, 'log': log, 'stderr': error,
         }))
         return
 
     if result is None:
-        print(json.dumps({'success': True, 'output': None, 'binary': False, 'stderr': None}))
+        print(json.dumps({'success': True, 'output': None, 'binary': False, 'log': log, 'stderr': None}))
         return
 
     if isinstance(result, bytes):
@@ -126,10 +140,11 @@ def _transform(meta_json: str) -> None:
             'success': True,
             'output': b64encode(result).decode('ascii'),
             'binary': True,
+            'log': log,
             'stderr': None,
         }))
     else:
-        print(json.dumps({'success': True, 'output': result, 'binary': False, 'stderr': None}))
+        print(json.dumps({'success': True, 'output': result, 'binary': False, 'log': log, 'stderr': None}))
 
 
 # ---------------------------------------------------------------------------

@@ -442,6 +442,9 @@ def apply_transforms(bblock: BuildingBlock,
                 continue
 
         transformer = transformers.get(transform['type'])
+        if not transformer:
+            logger.debug("No transformer registered for type '%s' (transform '%s')",
+                         transform['type'], transform['id'])
         default_media_types = {
             'inputs': getattr(transformer, 'default_inputs', []),
             'outputs': getattr(transformer, 'default_outputs', []),
@@ -493,6 +496,9 @@ def apply_transforms(bblock: BuildingBlock,
                 snippet_mime_type = mimetypes.normalize(snippet_lang)
 
                 if snippet_mime_type not in supported_input_media_types:
+                    logger.debug("Transform '%s': skipping snippet %d/%d (lang '%s' not in %s)",
+                                 transform['id'], example_id, snippet_id,
+                                 snippet_mime_type, list(supported_input_media_types))
                     continue
 
                 if base_output_filename := example.get('base-output-filename'):
@@ -538,11 +544,16 @@ def apply_transforms(bblock: BuildingBlock,
 
                 try:
                     result = transformer.transform(transform_metadata)
+                    logger.debug("Transform %s result: %s", transform['id'], result)
                 except Exception as e:
                     result = TransformResult(output=None, success=False,
                                              stderr=f"{type(e).__name__}: {e}")
 
                 entry = {'success': result.success}
+                if not result.success:
+                    logger.warning("Transform '%s' failed for %s example %d snippet %d: %s",
+                                   transform['id'], bblock.identifier, example_id, snippet_id,
+                                   result.stderr or '(no details)')
                 if result.stderr:
                     entry['stderr'] = result.stderr
                 if result.binary:

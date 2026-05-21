@@ -75,12 +75,14 @@ class PluginTransformer:
         venv_dir = self._venv_dir(metadata.sandbox_dir)
         python_bin = venv_dir / 'bin' / 'python'
 
+        input_binary = isinstance(metadata.input_data, bytes)
         meta_dict = {
             'type': metadata.type,
             'module': self.module_path,
             'transform_content': metadata.transform_content,
             'source_mime_type': metadata.source_mime_type,
             'target_mime_type': metadata.target_mime_type,
+            'input_binary': input_binary,
             'metadata': {k: v for k, v in (metadata.metadata or {}).items()
                          if not k.startswith('_')},
             'context': metadata.ctx.to_dict() if metadata.ctx else None,
@@ -99,6 +101,10 @@ class PluginTransformer:
         except Exception:
             stderr = result.stderr.decode('utf-8', errors='replace') or 'Unexpected harness error'
             return TransformResult(output=None, success=False, stderr=stderr)
+
+        if data.get('log'):
+            for line in data['log'].splitlines():
+                logger.debug('[plugin] %s', line)
 
         output = data.get('output')
         if output is not None and data.get('binary'):
