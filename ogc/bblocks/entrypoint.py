@@ -248,6 +248,12 @@ if __name__ == '__main__':
             )
         local_url_mappings = bb_local_config.get('url-mappings')
 
+    standards_file = Path('standards.yaml')
+    if standards_file.is_file():
+        standards_config = load_yaml(filename=standards_file) or {}
+        if standards := standards_config.get('standards'):
+            register_additional_metadata['standards'] = standards
+
     register_additional_metadata['modified'] = datetime.datetime.now().isoformat()
 
     if os.environ.get('BBP_GIT_INFO_FILE'):

@@ -25,7 +25,7 @@ from ogc.bblocks.extension import Extender
 from ogc.bblocks.generate_docs import DocGenerator
 from ogc.bblocks.oas30 import oas31_to_oas30
 from ogc.bblocks.util import write_jsonld_context, CustomJSONEncoder, \
-    PathOrUrl, get_git_repo_url
+    PathOrUrl, get_git_repo_url, load_yaml
 from ogc.bblocks.schema import annotate_schema, resolve_all_schema_references, write_annotated_schema
 from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister, ImportedBuildingBlocks, BuildingBlockError
 from ogc.bblocks.validate import validate_test_resources, write_report
@@ -193,6 +193,27 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 resource['ref'] = PathOrUrl(bblock.files_path / ref).with_base_url(
                     base_url, cwd if base_url else output_file_root
                 )
+
+        tests_yaml_path = bblock.files_path / 'tests.yaml'
+        if tests_yaml_path.exists():
+            tests_entries = load_yaml(tests_yaml_path) or []
+            compiled_tests = []
+            for test in tests_entries:
+                ref = test.get('ref')
+                entry = {}
+                if test_id := test.get('id'):
+                    entry['id'] = test_id
+                if method := test.get('method'):
+                    entry['method'] = method
+                if test.get('require-fail'):
+                    entry['require-fail'] = True
+                if ref:
+                    entry['url'] = PathOrUrl(bblock.files_path / ref).with_base_url(
+                        base_url, cwd if base_url else output_file_root
+                    ) if not is_url(ref) else ref
+                compiled_tests.append(entry)
+            if compiled_tests:
+                bblock.metadata['testResources'] = compiled_tests
 
         if not light:
             if not steps or 'tests' in steps:
