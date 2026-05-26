@@ -8,6 +8,7 @@ import shutil
 import os.path
 import subprocess
 import sys
+import traceback
 
 logger = logging.getLogger(__name__)
 from packaging.version import Version
@@ -547,7 +548,7 @@ def apply_transforms(bblock: BuildingBlock,
                     logger.debug("Transform %s result: %s", transform['id'], result)
                 except Exception as e:
                     result = TransformResult(output=None, success=False,
-                                             stderr=f"{type(e).__name__}: {e}")
+                                             stderr=f"{type(e).__name__}: {e}\n{traceback.format_exc()}")
 
                 entry = {'success': result.success}
                 if not result.success:

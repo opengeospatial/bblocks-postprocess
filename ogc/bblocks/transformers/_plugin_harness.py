@@ -32,8 +32,24 @@ import inspect
 import io
 import json
 import sys
+import traceback
 import types
 from base64 import b64encode
+
+
+class _MNS:
+    def __init__(self, **kw): self.__dict__.update(kw)
+    def __getitem__(self, k): return self.__dict__[k]
+    def __setitem__(self, k, v): self.__dict__[k] = v
+    def __delitem__(self, k): del self.__dict__[k]
+    def __contains__(self, k): return k in self.__dict__
+    def __iter__(self): return iter(self.__dict__)
+    def __len__(self): return len(self.__dict__)
+    def keys(self): return self.__dict__.keys()
+    def values(self): return self.__dict__.values()
+    def items(self): return self.__dict__.items()
+    def get(self, k, d=None): return self.__dict__.get(k, d)
+    def __repr__(self): return 'namespace(' + ', '.join(f'{k}={v!r}' for k, v in self.__dict__.items()) + ')'
 
 
 # ---------------------------------------------------------------------------
@@ -87,7 +103,7 @@ def _transform(meta_json: str) -> None:
     m.transform_content = meta_dict['transform_content']
     m.source_mime_type = meta_dict['source_mime_type']
     m.target_mime_type = meta_dict['target_mime_type']
-    m.metadata = meta_dict.get('metadata', {})
+    m.metadata = _MNS(**meta_dict.get('metadata', {}))
     raw = sys.stdin.buffer.read()
     m.input_data = raw if meta_dict.get('input_binary') else raw.decode('utf-8')
     m.sandbox_dir = None
@@ -117,9 +133,9 @@ def _transform(meta_json: str) -> None:
     try:
         result = transformer.transform(m)
         error = None
-    except Exception as e:
+    except Exception:
         result = None
-        error = str(e)
+        error = traceback.format_exc()
     finally:
         sys.stdout, sys.stderr = old_stdout, old_stderr
 
