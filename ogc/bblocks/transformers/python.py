@@ -37,6 +37,25 @@ _cache_lock = Lock()
 # When dispatching non-Python transforms, the child call stack is propagated both via
 # the _BBLOCKS_CALL_STACK env var (read by Node's getTransformer) and via the request's
 # 'call_stack' field (read by the one-shot Python dispatch harness).
+# Class injected into every harness context.
+# Behaves like SimpleNamespace (attribute access) and like a dict (item access, keys/values/items,
+# 'in', iteration) so transform code can use either style interchangeably.
+_MNS_CLASS_DEF = """\
+class _MNS:
+    def __init__(self, **kw): self.__dict__.update(kw)
+    def __getitem__(self, k): return self.__dict__[k]
+    def __setitem__(self, k, v): self.__dict__[k] = v
+    def __delitem__(self, k): del self.__dict__[k]
+    def __contains__(self, k): return k in self.__dict__
+    def __iter__(self): return iter(self.__dict__)
+    def __len__(self): return len(self.__dict__)
+    def keys(self): return self.__dict__.keys()
+    def values(self): return self.__dict__.values()
+    def items(self): return self.__dict__.items()
+    def get(self, k, d=None): return self.__dict__.get(k, d)
+    def __repr__(self): return 'namespace(' + ', '.join(f'{k}={v!r}' for k, v in self.__dict__.items()) + ')'
+"""
+
 _GET_TRANSFORMER_IMPL = """\
 def _make_get_transformer(transforms_registry, main_python, sandbox_base,
                            non_python_harness, parent_call_stack, self_key=None):
@@ -86,6 +105,7 @@ def _make_get_transformer(transforms_registry, main_python, sandbox_base,
                         [_sys.executable, '-m', 'pip', 'install', '--disable-pip-version-check',
                          *pip_deps],
                         check=True,
+                        capture_output=True,
                     )
 
                 def _make_python_callable(
@@ -113,7 +133,7 @@ def _make_get_transformer(transforms_registry, main_python, sandbox_base,
                             _tm = _types.SimpleNamespace(
                                 source_mime_type=None,
                                 target_mime_type=None,
-                                metadata=_types.SimpleNamespace(**_base_meta),
+                                metadata=_MNS(**_base_meta),
                                 context=_ctx,
                             )
                             if isinstance(content, bytes):
@@ -153,6 +173,7 @@ def _make_get_transformer(transforms_registry, main_python, sandbox_base,
                         _subprocess.run(
                             ['npm', 'install', '--prefix', node_dir, *npm_deps],
                             check=True,
+                            capture_output=True,
                         )
                         _sandbox_dir_str = _os.path.dirname(node_dir)
 
@@ -245,7 +266,7 @@ _NON_PYTHON_HARNESS_CODE = (
     "import sys as _sys, json as _json, base64 as _b64, traceback as _tb,"
     " types as _types, os as _os, subprocess as _subprocess, io as _io\n"
     "from pathlib import Path as _Path\n\n"
-) + _GET_TRANSFORMER_IMPL + """
+) + _MNS_CLASS_DEF + _GET_TRANSFORMER_IMPL + """
 
 _req = _json.loads(_sys.stdin.buffer.read())
 _t_type = _req['type']
@@ -276,7 +297,7 @@ if _t_type == 'python':
     _tm = _types.SimpleNamespace(
         source_mime_type=_req.get('source_mime_type'),
         target_mime_type=_req.get('target_mime_type'),
-        metadata=_types.SimpleNamespace(**_meta_dict),
+        metadata=_MNS(**_meta_dict),
         context=_ctx_ns,
     )
     _ns = {'transform_metadata': _tm, 'input_data': _input, 'output_data': None,
@@ -352,7 +373,7 @@ _sys.stdout.buffer.write((_json.dumps(_resp) + '\\n').encode())
 _HARNESS_IMPORTS = (
     "import sys as _sys, json as _json, types as _types, base64 as _b64,"
     " io as _io, traceback as _tb, os as _os, subprocess as _subprocess\n"
-)
+) + _MNS_CLASS_DEF
 
 # Static body of the persistent harness: get_transformer factory call + the stdin request loop.
 # Written as a plain string so braces don't need escaping; dynamic values (_TRANSFORM_CODE,
@@ -377,6 +398,8 @@ for _line in _sys.stdin:
     _d = _req['metadata']
     if isinstance(_d.get('context'), dict):
         _d['context'] = _types.SimpleNamespace(**_d['context'])
+    if isinstance(_d.get('metadata'), dict):
+        _d['metadata'] = _MNS(**_d['metadata'])
     transform_metadata = _types.SimpleNamespace(**_d)
     _raw = _b64.b64decode(_req['input'])
     try:
@@ -466,7 +489,15 @@ class _PersistentProcess:
             self._proc.stdin.flush()
             resp_line = self._proc.stdout.readline()
             if resp_line:
-                return json.loads(resp_line)
+                try:
+                    return json.loads(resp_line)
+                except json.JSONDecodeError as e:
+                    return {
+                        'output': None,
+                        'success': False,
+                        'stderr': f'Subprocess wrote invalid JSON ({e}): {resp_line!r}',
+                        'binary': False,
+                    }
         except (BrokenPipeError, OSError):
             pass
         return None

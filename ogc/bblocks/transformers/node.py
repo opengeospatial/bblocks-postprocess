@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import os
@@ -18,17 +19,6 @@ logger = logging.getLogger(__name__)
 
 transform_type = 'node'
 
-
-def _decode_output(raw: bytes) -> tuple[str | bytes | None, bool]:
-    if not raw:
-        return None, False
-    try:
-        text = raw.decode('utf-8')
-        if '\x00' in text:
-            return raw, True
-        return text, False
-    except UnicodeDecodeError:
-        return raw, True
 
 
 class NodeTransformer(Transformer):
@@ -63,7 +53,8 @@ const fs = require('fs');
 const path = require('path');
 const {{spawnSync}} = require('child_process');
 const transformMetadata = {json.dumps(transform_metadata_dict)};
-const inputData = fs.readFileSync(0, 'utf8');
+const _inputBuf = fs.readFileSync(0);
+const inputData = {json.dumps(isinstance(metadata.input_data, bytes))} ? _inputBuf : _inputBuf.toString('utf8');
 let outputData = null;
 
 const _TRANSFORMS_REGISTRY = {json.dumps(transforms_registry)};
@@ -179,14 +170,38 @@ function getTransformer(bblockId, transformId) {{
 }}
 
 const _origStdoutWrite = process.stdout.write.bind(process.stdout);
-process.stdout.write = process.stderr.write.bind(process.stderr);
+const _origStderrWrite = process.stderr.write.bind(process.stderr);
+const _captured = [];
+const _captureWrite = (chunk) => {{ _captured.push(Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk)); return true; }};
+process.stdout.write = _captureWrite;
+process.stderr.write = _captureWrite;
 
-{metadata.transform_content}
+let _success = true, _errMsg = null;
+try {{
+    {metadata.transform_content}
+}} catch (_e) {{
+    _success = false;
+    _errMsg = (_e && _e.stack) ? _e.stack : String(_e);
+}}
 
 process.stdout.write = _origStdoutWrite;
-if (outputData !== null) {{
-    process.stdout.write(typeof outputData === 'string' ? outputData : Buffer.from(outputData));
+process.stderr.write = _origStderrWrite;
+
+const _capturedStr = _captured.join('') || null;
+const _stderrStr = (_capturedStr !== null || _errMsg !== null)
+    ? (_capturedStr || '') + (_errMsg ? (_capturedStr ? '\\n' : '') + _errMsg : '')
+    : null;
+
+let _outB64 = null, _binary = false;
+if (_success && outputData !== null) {{
+    const _outBuf = Buffer.isBuffer(outputData)
+        ? outputData
+        : Buffer.from(typeof outputData === 'string' ? outputData : String(outputData), 'utf8');
+    _outB64 = _outBuf.toString('base64');
+    _binary = Buffer.isBuffer(outputData);
 }}
+
+_origStdoutWrite(JSON.stringify({{output: _outB64, binary: _binary, success: _success, stderr: _stderrStr}}) + '\\n');
 """
 
         with tempfile.NamedTemporaryFile(mode='w', suffix='.js', delete=False) as f:
@@ -208,15 +223,40 @@ if (outputData !== null) {{
         finally:
             Path(harness_path).unlink(missing_ok=True)
 
-        stderr = result.stderr.decode('utf-8', errors='replace').replace(harness_path, '<transform>') or None
-        if stderr:
-            label = metadata.id or 'node'
+        label = metadata.id or 'node'
+
+        if not result.stdout.strip():
+            stderr = result.stderr.decode('utf-8', errors='replace').replace(harness_path, '<transform>') or 'Node transform produced no output'
             with log_indent():
                 for line in stderr.splitlines():
                     if line.strip():
                         logger.info("[%s] %s", label, line)
-        if result.returncode != 0:
             return TransformResult(output=None, success=False, stderr=stderr)
 
-        output, binary = _decode_output(result.stdout)
-        return TransformResult(output=output, success=True, stderr=stderr, binary=binary)
+        try:
+            data = json.loads(result.stdout)
+        except json.JSONDecodeError as e:
+            stderr = result.stderr.decode('utf-8', errors='replace').replace(harness_path, '<transform>') or f'Invalid JSON from Node harness: {e}'
+            return TransformResult(output=None, success=False, stderr=stderr)
+
+        stderr = data.get('stderr') or None
+        if stderr:
+            stderr = stderr.replace(harness_path, '<transform>')
+            with log_indent():
+                for line in stderr.splitlines():
+                    if line.strip():
+                        logger.info("[%s] %s", label, line)
+
+        output_b64 = data.get('output')
+        if output_b64 is not None:
+            output_bytes = base64.b64decode(output_b64)
+            output: str | bytes | None = output_bytes if data.get('binary') else output_bytes.decode('utf-8')
+        else:
+            output = None
+
+        return TransformResult(
+            output=output,
+            success=data.get('success', False),
+            stderr=stderr,
+            binary=bool(data.get('binary')),
+        )
