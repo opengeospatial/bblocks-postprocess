@@ -518,7 +518,12 @@ def apply_transforms(bblock: BuildingBlock,
                     example_index=example_id,
                     example={k: v for k, v in example.items() if k != 'snippets'},
                     snippet_index=snippet_id,
-                    snippet={k: v for k, v in snippet.items() if k != 'code'},
+                    snippet={
+                        **{k: v for k, v in snippet.items() if k != 'code'},
+                        **({'shacl-closure': list(dict.fromkeys(
+                            (snippet.get('shacl-closure') or []) + (bblock.shaclClosures or [])
+                        ))} if (bblock.shaclClosures or snippet.get('shacl-closure')) else {}),
+                    },
                     output_file=_rel(output_fn, cwd),
                     output_dir=_rel(output_dir, cwd),
                     working_dir=str(cwd),
