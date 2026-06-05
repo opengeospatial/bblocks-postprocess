@@ -28,6 +28,7 @@ from ogc.bblocks.util import sanitize_filename
 from ogc.bblocks.validate import validate_transform_output, report_to_dict
 
 _SUBPROCESS_TRANSFORM_TYPES = ('python', 'node')
+_PERMISSION_CHECKED_TYPES = frozenset({'python', 'node', 'xslt'})
 
 
 def _rel(path: Path | str | None, cwd: Path) -> str | None:
@@ -108,7 +109,8 @@ def _satisfies(current_version: str, constraint: str) -> bool:
         return True  # unparseable constraint: don't block
 
 
-def _ensure_transform_sandboxes(sandbox_dir: Path, bblock: BuildingBlock) -> dict[str, Path]:
+def _ensure_transform_sandboxes(sandbox_dir: Path, bblock: BuildingBlock,
+                                allowed_transform_types: set[str] | None = None) -> dict[str, Path]:
     """Set up isolated per-transform sandboxes for python/node transforms.
 
     Returns a dict mapping transform id → per-transform sandbox directory.
@@ -120,6 +122,8 @@ def _ensure_transform_sandboxes(sandbox_dir: Path, bblock: BuildingBlock) -> dic
     for transform in bblock.transforms:
         t_type = transform.get('type')
         if t_type not in _SUBPROCESS_TRANSFORM_TYPES:
+            continue
+        if allowed_transform_types is not None and t_type not in allowed_transform_types:
             continue
 
         t_id = transform['id']
@@ -157,8 +161,11 @@ def _ensure_transform_sandboxes(sandbox_dir: Path, bblock: BuildingBlock) -> dic
     return sandboxes
 
 
-def load_transform_plugins(sandbox_dir: Path) -> list[dict]:
+def load_transform_plugins(sandbox_dir: Path,
+                           allowed_modules: set[str] | None = None) -> list[dict]:
     """Read transform-plugins.yml, create per-plugin venvs, and register PluginTransformers.
+
+    allowed_modules: if provided, only install/register modules in this set. Pass None to allow all.
 
     Returns the raw plugin list from transform-plugins.yml (for inclusion in register.json),
     or an empty list if the file does not exist or declares no plugins.
@@ -189,6 +196,9 @@ def load_transform_plugins(sandbox_dir: Path) -> list[dict]:
         output_modules = []
 
         for module_path in modules:
+            if allowed_modules is not None and module_path not in allowed_modules:
+                logger.info("Skipping plugin '%s': not permitted by user", module_path)
+                continue
             # Create venv and run discovery via the harness
             venv_dir = PluginTransformer(module_path, pip_deps, []).ensure_venv(sandbox_dir)
             discovered = PluginTransformer.discover(venv_dir, module_path)
@@ -400,7 +410,8 @@ def apply_transforms(bblock: BuildingBlock,
                      git_repository: str | None = None,
                      id_prefix: str = '',
                      imported_register_urls: list[str] | None = None,
-                     transform_plugins: list[dict] | None = None):
+                     transform_plugins: list[dict] | None = None,
+                     allowed_transform_types: set[str] | None = None):
 
     if not bblock.transforms:
         return
@@ -425,9 +436,17 @@ def apply_transforms(bblock: BuildingBlock,
     # Set up isolated per-transform sandboxes before processing any snippets
     transform_sandboxes: dict[str, Path] = {}
     if sandbox_dir:
-        transform_sandboxes = _ensure_transform_sandboxes(sandbox_dir, bblock)
+        transform_sandboxes = _ensure_transform_sandboxes(sandbox_dir, bblock, allowed_transform_types)
 
     for transform in bblock.transforms:
+
+        t_type = transform.get('type')
+        if (allowed_transform_types is not None
+                and t_type in _PERMISSION_CHECKED_TYPES
+                and t_type not in allowed_transform_types):
+            logger.info("Skipping transform '%s' (type '%s'): not permitted by user",
+                        transform['id'], t_type)
+            continue
 
         deps = (transform.get('metadata') or {}).get('dependencies', {})
         if transform.get('type') == 'python':
@@ -444,8 +463,9 @@ def apply_transforms(bblock: BuildingBlock,
 
         transformer = transformers.get(transform['type'])
         if not transformer:
-            logger.debug("No transformer registered for type '%s' (transform '%s')",
-                         transform['type'], transform['id'])
+            logger.info("Skipping transform '%s': no transformer registered for type '%s'"
+                        " (plugin for this type may have been denied)",
+                        transform['id'], transform['type'])
         default_media_types = {
             'inputs': getattr(transformer, 'default_inputs', []),
             'outputs': getattr(transformer, 'default_outputs', []),

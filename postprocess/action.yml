@@ -41,6 +41,9 @@ inputs:
   viewer_path:
     description: Path where to deploy the viewer
     default: '.'
+  skip_permissions:
+    description: Skip interactive permission prompts for transforms and plugins (set to true in CI)
+    default: 'true'
   sparql_username:
     description: SPARQL GSP push user name
     default: ''
@@ -79,4 +82,6 @@ runs:
     - ${{ inputs.deploy_viewer }}
     - '--viewer-path'
     - ${{ inputs.viewer_path }}
+    - '--skip-permissions'
+    - ${{ inputs.skip_permissions }}
     - '--enable-sparql'

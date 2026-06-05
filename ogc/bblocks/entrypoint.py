@@ -59,6 +59,12 @@ if __name__ == '__main__':
     )
 
     parser.add_argument(
+        '--skip-permissions',
+        default='false',
+        help='Skip interactive permission prompts for transforms and plugins (set to true in CI)',
+    )
+
+    parser.add_argument(
         '--annotated-path',
         default='build-local/annotated',
         help='Fail run if an error is encountered',
@@ -138,6 +144,7 @@ if __name__ == '__main__':
     logger = logging.getLogger('ogc.bblocks.entrypoint')
 
     fail_on_error = args.fail_on_error in ('true', 'on', 'yes', '1')
+    skip_permissions = args.skip_permissions in ('true', 'on', 'yes', '1')
     clean = args.clean in ('true', 'on', 'yes', '1')
     deploy_viewer = args.deploy_viewer in ('true', 'on', 'yes', '1')
     bb_config_file = Path(args.config_file) if args.config_file else None
@@ -156,6 +163,7 @@ if __name__ == '__main__':
                 "- templates_dir: %s\n"
                 "- annotated_path: %s\n"
                 "- fail_on_error: %s\n"
+                "- skip_permissions: %s\n"
                 "- clean: %s\n"
                 "- config_file: %s\n"
                 "- test_outputs_path: %s\n"
@@ -165,7 +173,7 @@ if __name__ == '__main__':
                 "- deploy_viewer: %s\n"
                 "- viewer_path: %s",
                 version, args.register_file, args.items_dir, args.generated_docs_path,
-                args.base_url, templates_dir, args.annotated_path, fail_on_error, clean,
+                args.base_url, templates_dir, args.annotated_path, fail_on_error, skip_permissions, clean,
                 bb_config_file, args.test_outputs_path, args.github_base_url,
                 args.filter, args.steps, deploy_viewer, args.viewer_path)
 
@@ -309,6 +317,7 @@ if __name__ == '__main__':
                     generated_docs_path=args.generated_docs_path,
                     templates_dir=templates_dir,
                     fail_on_error=fail_on_error,
+                    skip_permissions=skip_permissions,
                     id_prefix=id_prefix,
                     annotated_path=annotated_path,
                     test_outputs_path=args.test_outputs_path,
