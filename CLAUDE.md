@@ -109,3 +109,19 @@ plugins:
 - `build-docker.yml` — builds and pushes Docker image to `ghcr.io/opengeospatial/bblocks-postprocess` on push to master
 - `test-postprocess.yml` — regression tests against live bblocks repos (triggered after Docker build)
 - `validate-and-process.yml` — reusable workflow called by downstream repos to postprocess, commit, and deploy their building blocks
+
+### Adding new CLI flags
+
+The postprocessing chain has four layers that all need to be updated:
+
+```
+validate-and-process.yml  (workflow_call input, default = CI-safe value)
+  → full/action.yml        (composite action input, same default)
+    → postprocess/action.yml  (Docker action input + args entry, same default)
+      → entrypoint.py      (argparse argument, local-safe default)
+```
+
+- Always use a string flag that accepts an explicit value — **never `action='store_true'`**. The Docker action passes args as a list of `[--flag, value]` pairs, so store-true flags cannot receive a value from the action layer.
+- Local default (in `entrypoint.py`) should reflect what's safe/appropriate for interactive local runs.
+- CI default (in all three `action.yml` / workflow files) should reflect what's safe for unattended CI runs.
+- If the CI default differs from the local default, all three action/workflow files must declare the input explicitly with the CI default — otherwise the layer silently falls back to the `entrypoint.py` default.
