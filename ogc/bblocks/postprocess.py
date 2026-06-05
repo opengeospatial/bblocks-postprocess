@@ -30,6 +30,7 @@ from ogc.bblocks.schema import annotate_schema, resolve_all_schema_references, w
 from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister, ImportedBuildingBlocks, BuildingBlockError
 from ogc.bblocks.validate import validate_test_resources, write_report
 from ogc.bblocks.transform import apply_transforms, load_transform_plugins, transformers, cleanup_sandbox
+from ogc.bblocks.permissions import check_permissions
 
 
 def postprocess(registered_items_path: str | Path = 'registereditems',
@@ -38,6 +39,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 generated_docs_path: str | Path = 'generateddocs',
                 templates_dir: str | Path = 'templates',
                 fail_on_error: bool = False,
+                skip_permissions: bool = False,
                 id_prefix: str = '',
                 annotated_path: str | Path = 'annotated',
                 test_outputs_path: str | Path = 'build/tests',
@@ -61,7 +63,17 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
     gitignore = sandbox_dir / '.gitignore'
     if not gitignore.exists():
         gitignore.write_text('*\n')
-    transform_plugins = load_transform_plugins(sandbox_dir)
+
+    if skip_permissions:
+        allowed_transform_types = None
+        allowed_plugin_modules = None
+    else:
+        allowed_transform_types, allowed_plugin_modules = check_permissions(
+            sandbox_dir, registered_items_path if isinstance(registered_items_path, Path)
+            else Path(registered_items_path),
+        )
+
+    transform_plugins = load_transform_plugins(sandbox_dir, allowed_modules=allowed_plugin_modules)
 
     if not isinstance(test_outputs_path, Path):
         test_outputs_path = Path(test_outputs_path)
@@ -467,7 +479,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                                      git_repository=additional_metadata.get('gitRepository'),
                                      id_prefix=id_prefix,
                                      imported_register_urls=imported_registers,
-                                     transform_plugins=transform_plugins)
+                                     transform_plugins=transform_plugins,
+                                     allowed_transform_types=allowed_transform_types)
 
     if filter_id is None:
         cleanup_sandbox(sandbox_dir, child_bblocks)
