@@ -81,6 +81,10 @@ on:
         description: |
           JSON array of SPARQL endpoint URLs used as a fallback for linked data lookups.
         default: '[]'
+      skip_permissions:
+        type: string
+        description: Skip interactive permission prompts for transforms and plugins
+        default: 'true'
       before_postprocess:
         type: string
         description: |
@@ -229,6 +233,7 @@ jobs:
           github_base_url: ${{ inputs.github_base_url }}
           deploy_viewer: ${{ inputs.deploy_viewer && 'true' || 'false' }}
           viewer_path: ${{ inputs.viewer_path }}
+          skip_permissions: ${{ inputs.skip_permissions }}
           sparql_username: ${{ secrets.sparql_username }}
           sparql_password: ${{ secrets.sparql_password }}
       - name: Fix permissions, compress large _visited_properties.tsv, git pull
