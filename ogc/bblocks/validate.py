@@ -37,19 +37,24 @@ DEFAULT_UPLIFT_FORMATS = ['jsonld', 'ttl']
 
 
 def load_validation_plugins(sandbox_dir: Path,
-                            allowed_modules: set[str] | None = None) -> list[PluginValidator]:
+                            allowed_modules: set[str] | None = None,
+                            ) -> tuple[list[PluginValidator], list[dict]]:
     """Read validator plugin config, create per-plugin venvs, and return PluginValidator instances.
 
     Reads from ``plugins.validators`` in bblocks-config.yaml.
     allowed_modules: if provided, only install/register modules in this set. Pass None to allow all.
+
+    Returns a tuple of (plugin_validators, register_entries) where register_entries is the enriched
+    plugin list suitable for inclusion in register.json under 'validatorPlugins'.
     """
-    from ogc.bblocks.transform import read_plugin_entries
+    from ogc.bblocks.transform import read_plugin_entries, _pip_to_url
 
     plugin_entries = read_plugin_entries('validators')
     if not plugin_entries:
-        return []
+        return [], []
 
     result: list[PluginValidator] = []
+    output_plugins: list[dict] = []
 
     for plugin in plugin_entries:
         pip_deps = plugin.get('pip', [])
@@ -59,6 +64,8 @@ def load_validation_plugins(sandbox_dir: Path,
         modules = plugin.get('modules', [])
         if isinstance(modules, str):
             modules = [modules]
+
+        output_modules = []
 
         for module_path in modules:
             if allowed_modules is not None and module_path not in allowed_modules:
@@ -82,6 +89,7 @@ def load_validation_plugins(sandbox_dir: Path,
                 logger.warning("No validator classes found in plugin '%s'", module_path)
                 continue
 
+            output_validators = []
             for entry in discovered:
                 mime_types = entry.get('mime_types', [])
                 file_extensions = entry.get('file_extensions', [])
@@ -98,8 +106,29 @@ def load_validation_plugins(sandbox_dir: Path,
                 logger.info("Registered validator plugin '%s' (%s) for mime_types=%s extensions=%s",
                             module_path, entry['class'], mime_types, file_extensions)
                 result.append(pv)
+                output_validators.append({
+                    'class': entry['class'],
+                    'mimeTypes': mime_types,
+                    'fileExtensions': file_extensions,
+                })
 
-    return result
+            if output_validators:
+                output_modules.append({'module': module_path, 'validators': output_validators})
+
+        if output_modules:
+            output_entry: dict = {'modules': output_modules}
+            original_pip = plugin.get('pip')
+            if original_pip:
+                output_entry['pip'] = original_pip
+                if explicit_url := plugin.get('url'):
+                    output_entry['urls'] = [explicit_url]
+                else:
+                    urls = [u for s in pip_deps for u in [_pip_to_url(s)] if u]
+                    if urls:
+                        output_entry['urls'] = urls
+            output_plugins.append(output_entry)
+
+    return result, output_plugins
 
 
 def report_to_dict(bblock: BuildingBlock,

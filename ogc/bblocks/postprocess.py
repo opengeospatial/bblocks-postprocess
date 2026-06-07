@@ -81,7 +81,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         )
 
     transform_plugins = load_transform_plugins(sandbox_dir, allowed_modules=allowed_plugin_modules)
-    plugin_validators = load_validation_plugins(sandbox_dir, allowed_modules=allowed_validator_modules)
+    plugin_validators, validator_plugins = load_validation_plugins(sandbox_dir, allowed_modules=allowed_validator_modules)
 
     if not isinstance(test_outputs_path, Path):
         test_outputs_path = Path(test_outputs_path)
@@ -584,6 +584,9 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
         if transform_plugins:
             output_register_json['transformPlugins'] = transform_plugins
+
+        if validator_plugins:
+            output_register_json['validatorPlugins'] = validator_plugins
 
         remote_cache_dir_url = f"{base_url}{os.path.relpath(Path(remote_cache_dir).resolve(), cwd)}"
         output_register_json['remoteCacheDir'] = remote_cache_dir_url
