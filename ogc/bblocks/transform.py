@@ -19,7 +19,7 @@ from urllib.parse import urljoin
 import yaml
 
 from ogc.bblocks.log import run_logged, log_indent
-from ogc.bblocks.sandbox import ensure_venv, venv_needs_recreate
+from ogc.bblocks.sandbox import ensure_venv, venv_needs_recreate, pip_slug
 
 from ogc.bblocks import mimetypes
 from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister, ImportedBBlockProxy, TransformContext, TransformMetadata, TransformResult, BuildingBlockError
@@ -64,6 +64,42 @@ def _pip_to_url(pip_spec: str) -> str | None:
     return None
 
 _PLUGINS_FILE = 'transform-plugins.yml'
+_BBLOCKS_CONFIG_NAMES = ('bblocks-config.yaml', 'bblocks-config.yml')
+
+
+def read_plugin_entries(section: str) -> list[dict]:
+    """Return plugin config entries for *section* ('transforms' or 'validators').
+
+    Reads from the ``plugins.<section>`` key in bblocks-config.yaml first.
+    For 'transforms', falls back to transform-plugins.yml with a deprecation warning.
+    """
+    for config_name in _BBLOCKS_CONFIG_NAMES:
+        config_path = Path(config_name)
+        if config_path.exists():
+            try:
+                config = yaml.safe_load(config_path.read_text()) or {}
+                plugins = config.get('plugins') or {}
+                if section in plugins:
+                    return plugins[section] or []
+            except Exception:
+                pass
+
+    if section == 'transforms':
+        plugins_path = Path(_PLUGINS_FILE)
+        if plugins_path.exists():
+            logger.warning(
+                "%s is deprecated; move plugin config to the 'plugins.transforms' key "
+                "in bblocks-config.yaml",
+                _PLUGINS_FILE,
+            )
+            try:
+                with open(plugins_path) as f:
+                    config = yaml.safe_load(f) or {}
+                return config.get('plugins', []) or []
+            except Exception:
+                pass
+
+    return []
 
 
 
@@ -163,28 +199,25 @@ def _ensure_transform_sandboxes(sandbox_dir: Path, bblock: BuildingBlock,
 
 def load_transform_plugins(sandbox_dir: Path,
                            allowed_modules: set[str] | None = None) -> list[dict]:
-    """Read transform-plugins.yml, create per-plugin venvs, and register PluginTransformers.
+    """Read transform plugin config, create per-plugin venvs, and register PluginTransformers.
+
+    Reads from ``plugins.transforms`` in bblocks-config.yaml, falling back to
+    transform-plugins.yml (deprecated) when that key is absent.
 
     allowed_modules: if provided, only install/register modules in this set. Pass None to allow all.
 
-    Returns the raw plugin list from transform-plugins.yml (for inclusion in register.json),
-    or an empty list if the file does not exist or declares no plugins.
+    Returns the enriched plugin list for inclusion in register.json, or an empty list if no
+    plugins are configured.
     """
     from ogc.bblocks.transformers.plugin import PluginTransformer
 
-    plugins_path = Path(_PLUGINS_FILE)
-    if not plugins_path.exists():
-        return []
-
-    with open(plugins_path) as f:
-        config = yaml.safe_load(f)
-
-    if not config or 'plugins' not in config:
+    plugin_entries = read_plugin_entries('transforms')
+    if not plugin_entries:
         return []
 
     output_plugins = []
 
-    for plugin in config.get('plugins', []):
+    for plugin in plugin_entries:
         pip_deps = plugin.get('pip', [])
         if isinstance(pip_deps, str):
             pip_deps = [pip_deps]
@@ -254,20 +287,16 @@ def cleanup_sandbox(sandbox_dir: Path, bblocks: list[BuildingBlock]) -> None:
     if not sandbox_dir or not sandbox_dir.exists():
         return
 
-    # Plugin cleanup: remove venvs for modules no longer in transform-plugins.yml
+    # Plugin cleanup: unified plugins/ dir keyed by pip_slug
     plugins_dir = sandbox_dir / 'plugins'
     if plugins_dir.exists():
         expected_slugs: set[str] = set()
-        plugins_path = Path(_PLUGINS_FILE)
-        if plugins_path.exists():
-            with open(plugins_path) as f:
-                config = yaml.safe_load(f) or {}
-            for plugin in config.get('plugins', []):
-                modules = plugin.get('modules', [])
-                if isinstance(modules, str):
-                    modules = [modules]
-                for module_path in modules:
-                    expected_slugs.add(module_path.replace('.', '_'))
+        for section in ('transforms', 'validators'):
+            for plugin in read_plugin_entries(section):
+                pip_deps = plugin.get('pip', [])
+                if isinstance(pip_deps, str):
+                    pip_deps = [pip_deps]
+                expected_slugs.add(pip_slug(pip_deps))
         for child in plugins_dir.iterdir():
             if child.is_dir() and child.name not in expected_slugs:
                 logger.info("Removing stale plugin sandbox: %s", child.name)
@@ -320,7 +349,10 @@ def _bblock_context_dict(bblock_id: str, bblock, cwd: Path) -> dict:
     transform_plugins).
     """
     if isinstance(bblock, BuildingBlock):
-        bblock_metadata = json.loads(json.dumps(bblock.metadata, default=str))
+        bblock_metadata = json.loads(json.dumps(
+            bblock.pre_baseurl_metadata if bblock.pre_baseurl_metadata is not None else bblock.metadata,
+            default=str,
+        ))
         source_schema_path = None
         if bblock.schema:
             source_schema_path = _rel(bblock.schema.path, cwd) if bblock.schema.is_path else bblock.schema.url
@@ -411,7 +443,8 @@ def apply_transforms(bblock: BuildingBlock,
                      id_prefix: str = '',
                      imported_register_urls: list[str] | None = None,
                      transform_plugins: list[dict] | None = None,
-                     allowed_transform_types: set[str] | None = None):
+                     allowed_transform_types: set[str] | None = None,
+                     plugin_validators=()):
 
     if not bblock.transforms:
         return
@@ -624,6 +657,7 @@ def apply_transforms(bblock: BuildingBlock,
                                         transform_id=transform['id'],
                                         output_file=output_fn,
                                         profile_output_base=profile_output_base,
+                                        plugin_validators=plugin_validators,
                                     )
                                 except Exception as e:
                                     logger.error("Error validating transform '%s' output against "

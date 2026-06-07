@@ -16,7 +16,9 @@ from ogc.bblocks.log import setup_logging, log_indent
 from ogc.bblocks.postprocess import postprocess
 from ogc.na import ingest_json, update_vocabs
 
-from ogc.bblocks.util import get_github_repo, load_yaml
+import jsonschema
+
+from ogc.bblocks.util import get_github_repo, load_yaml, get_schema
 
 MAIN_BBR = 'https://opengeospatial.github.io/bblocks/register.json'
 DEFAULT_IMPORT_MARKER = 'default'
@@ -219,6 +221,11 @@ if __name__ == '__main__':
             bb_config.update(load_yaml(filename=bb_override_config_file) or {})
             break
     if bb_config:
+        try:
+            jsonschema.validate(bb_config, get_schema('bblocks-config'))
+        except jsonschema.ValidationError as e:
+            raise ValueError(f"Invalid bblocks-config.yaml: {e.message} (at {' > '.join(str(p) for p in e.absolute_path)})") from e
+
         id_prefix = bb_config.get('identifier-prefix', id_prefix)
         if id_prefix and id_prefix[-1] != '.':
             id_prefix += '.'

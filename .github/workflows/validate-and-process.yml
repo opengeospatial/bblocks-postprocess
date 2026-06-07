@@ -207,13 +207,13 @@ jobs:
           
           echo "Repositories cloned and mapped in $RANDOM_DIR — output saved to $MAPPINGS_YML"
 
-      - name: Restore transforms sandbox cache
+      - name: Restore bblocks sandbox cache
         uses: actions/cache/restore@v4
         with:
-          path: .transforms-sandbox
-          key: transforms-sandbox-${{ runner.os }}-${{ github.run_id }}
+          path: .bblocks-sandbox
+          key: bblocks-sandbox-${{ runner.os }}-${{ github.run_id }}
           restore-keys: |
-            transforms-sandbox-${{ runner.os }}-
+            bblocks-sandbox-${{ runner.os }}-
       - name: Before postprocess
         if: ${{inputs.before_postprocess}}
         run: ${{inputs.before_postprocess}}
@@ -247,17 +247,17 @@ jobs:
         uses: EndBug/add-and-commit@v9
         with:
           message: Building blocks postprocessing
-      - name: Save transforms sandbox cache
+      - name: Save bblocks sandbox cache
         if: ${{ !inputs.skip-build }}
         uses: actions/cache/save@v4
         with:
-          path: .transforms-sandbox
-          key: transforms-sandbox-${{ runner.os }}-${{ github.run_id }}
+          path: .bblocks-sandbox
+          key: bblocks-sandbox-${{ runner.os }}-${{ github.run_id }}
       - name: Remove build artifacts from pages
         run: |
           sudo find "${{ inputs.annotated_path }}" -name _visited_properties.tsv -delete || true
           sudo find "${{ inputs.annotated_path }}" -name _visited_properties.tsv.gz -delete || true
-          rm -rf .transforms-sandbox
+          rm -rf .bblocks-sandbox
           # Remove LLM tool configuration files
           rm -rf .claude CLAUDE.md AGENTS.md GEMINI.md .cursor .cursorrules .windsurfrules .ruler .continue
           find . -maxdepth 1 -name '.aider*' -exec rm -rf {} + || true

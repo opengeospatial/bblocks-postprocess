@@ -1,6 +1,10 @@
+# DEPRECATED: transform-plugins.yml is superseded by the plugins.transforms key in
+# bblocks-config.yaml. This schema is kept as reference documentation only.
 $schema: https://json-schema.org/draft/2020-12/schema
-title: transform-plugins.yml
-description: Declares external transformer plugins to load at postprocessing startup.
+title: transform-plugins.yml (deprecated)
+description: >
+  Deprecated. Use the plugins.transforms key in bblocks-config.yaml instead.
+  Declares external transformer plugins to load at postprocessing startup.
 type: object
 properties:
   plugins:

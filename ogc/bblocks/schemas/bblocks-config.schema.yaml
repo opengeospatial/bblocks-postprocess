@@ -1,0 +1,132 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+title: bblocks-config.yaml
+description: Per-repository configuration for the OGC Building Blocks postprocessor.
+type: object
+properties:
+
+  identifier-prefix:
+    type: string
+    description: >
+      Dot-separated prefix prepended to all building block identifiers in this repository
+      (e.g. "ogc.geo"). A trailing dot is added automatically if omitted.
+
+  imports:
+    description: >
+      List of external building block register URLs to import. Use the special value
+      "default" to include the main OGC Building Blocks register. Omitting this key
+      also defaults to the main register.
+    oneOf:
+      - type: array
+        items:
+          type: string
+      - type: 'null'
+
+  name:
+    type: string
+    description: Human-readable name for this register.
+
+  abstract:
+    type: string
+    description: Short description of this register.
+
+  description:
+    type: string
+    description: Full description of this register.
+
+  schema-oas30-downcompile:
+    type: boolean
+    default: false
+    description: >
+      When true, JSON Schemas are downcompiled to OpenAPI 3.0 format during annotation.
+
+  sparql:
+    type: object
+    description: SPARQL endpoint configuration for semantic publishing.
+    properties:
+      query:
+        type: string
+        description: SPARQL query endpoint URL. Exposed as sparqlEndpoint in register.json.
+      push:
+        type: string
+        description: >
+          SPARQL Graph Store Protocol endpoint URL. When --enable-sparql is set, the
+          register Turtle is pushed here.
+      graph:
+        type: string
+        description: >
+          Named graph URI to use when pushing to the GSP endpoint. Defaults to the
+          register base URL if omitted.
+      resources:
+        type: object
+        description: Additional resources to upload to the triplestore beyond building block metadata.
+        properties:
+          ontologies:
+            type: boolean
+            description: When true, ontology files from building blocks are uploaded to the triplestore.
+
+  viewer:
+    type: object
+    description: Configuration for the Building Blocks viewer.
+    properties:
+      show-imported-depth:
+        description: >
+          Controls which imported building blocks are shown in the viewer.
+          0 (default): only local building blocks.
+          N (positive integer): local + imported up to N levels deep.
+          -1 (any negative integer): show all imported building blocks.
+          null or false: disable.
+        oneOf:
+          - type: integer
+          - type: 'null'
+          - type: boolean
+            enum: [false]
+
+  plugins:
+    type: object
+    description: >
+      External plugin configuration. Replaces the standalone transform-plugins.yml file.
+    properties:
+      transforms:
+        type: array
+        description: External transformer plugins.
+        items:
+          $ref: '#/$defs/plugin-entry'
+      validators:
+        type: array
+        description: External validator plugins.
+        items:
+          $ref: '#/$defs/plugin-entry'
+
+$defs:
+  plugin-entry:
+    type: object
+    required:
+      - modules
+    properties:
+      pip:
+        description: >
+          One or more pip install specifiers for packages that provide the plugin modules.
+          Accepts any specifier that `pip install` understands (package name, version
+          constraint, GitHub URL, etc.).
+        oneOf:
+          - type: string
+          - type: array
+            items:
+              type: string
+            minItems: 1
+      modules:
+        description: >
+          One or more dotted Python module paths to import. Each module is scanned for
+          plugin classes (transformers or validators depending on context).
+        oneOf:
+          - type: string
+          - type: array
+            items:
+              type: string
+            minItems: 1
+      url:
+        type: string
+        format: uri
+        description: >
+          URL for this plugin (e.g. its repository or PyPI page). If omitted, the
+          postprocessor attempts to derive one automatically from the pip specifier.

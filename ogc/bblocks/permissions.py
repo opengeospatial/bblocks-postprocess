@@ -6,7 +6,7 @@ from pathlib import Path
 
 import yaml
 
-from ogc.bblocks.transform import _PERMISSION_CHECKED_TYPES as _RISKY_TRANSFORM_TYPES
+from ogc.bblocks.transform import _PERMISSION_CHECKED_TYPES as _RISKY_TRANSFORM_TYPES, read_plugin_entries
 _PERMISSIONS_FILE = 'permissions.json'
 
 
@@ -47,19 +47,6 @@ def _ask_yes_no(prompt: str) -> bool:
         print("  Please answer y or n.")
 
 
-def _read_plugin_configs() -> list[dict]:
-    """Read transform-plugins.yml without installing anything."""
-    plugins_path = Path('transform-plugins.yml')
-    if not plugins_path.exists():
-        return []
-    try:
-        with open(plugins_path) as f:
-            config = yaml.safe_load(f)
-        if not config or 'plugins' not in config:
-            return []
-        return config.get('plugins', []) or []
-    except Exception:
-        return []
 
 
 def _scan_risky_transforms(items_dir: Path) -> dict[str, list[tuple[str, str]]]:
@@ -98,23 +85,68 @@ def _plugin_version_key(plugin: dict) -> str:
     return ','.join(sorted(pip))
 
 
+def _check_plugin_permissions(
+    plugin_entries: list[dict],
+    cache_key: str,
+    cache: dict,
+    label: str,
+) -> tuple[set[str], bool]:
+    """Prompt for permissions for a list of plugin entries.
+
+    Returns (allowed_modules, cache_was_modified).
+    """
+    cached: dict[str, str] = dict(cache.get(cache_key, {}))
+    allowed: set[str] = set()
+    dirty = False
+
+    for plugin in plugin_entries:
+        modules = plugin.get('modules', [])
+        if isinstance(modules, str):
+            modules = [modules]
+        version_key = _plugin_version_key(plugin)
+        pip_deps = plugin.get('pip', [])
+        if isinstance(pip_deps, str):
+            pip_deps = [pip_deps]
+
+        for module in modules:
+            if cached.get(module) == version_key:
+                allowed.add(module)
+                continue
+
+            _require_tty()
+            print()
+            print(f"╔══ {label} plugin permission required")
+            print(f"║ Plugin: {module}")
+            if pip_deps:
+                print(f"║ Dependencies: {', '.join(pip_deps)}")
+            print()
+            if _ask_yes_no(f"Allow {label.lower()} plugin '{module}' to be installed and run?"):
+                cached[module] = version_key
+                allowed.add(module)
+                cache[cache_key] = cached
+                dirty = True
+
+    return allowed, dirty
+
+
 def check_permissions(
     sandbox_dir: Path,
     items_dir: Path,
-) -> tuple[set[str], set[str]]:
+) -> tuple[set[str], set[str], set[str]]:
     """Check and prompt for permissions for risky transforms and plugins.
 
-    Must be called before load_transform_plugins and before apply_transforms.
+    Must be called before load_transform_plugins, load_validation_plugins,
+    and apply_transforms.
     Returns:
-        allowed_transform_types: set of approved type strings
-        allowed_plugin_modules:  set of approved module paths
+        allowed_transform_types:    set of approved type strings
+        allowed_plugin_modules:     set of approved transform plugin module paths
+        allowed_validator_modules:  set of approved validator plugin module paths
     Raises RuntimeError if stdin is not a TTY and permissions are needed.
     """
     cache = _load_cache(sandbox_dir)
     cache_dirty = False
 
     cached_types: set[str] = set(cache.get('transform-types', []))
-    cached_plugins: dict[str, str] = dict(cache.get('plugins', {}))
 
     # --- Transform types ---
     needed_types = _scan_risky_transforms(items_dir)
@@ -139,38 +171,19 @@ def check_permissions(
 
     allowed_transform_types = cached_types
 
-    # --- Plugins ---
-    plugin_configs = _read_plugin_configs()
-    allowed_plugin_modules: set[str] = set()
+    # --- Transform plugins ---
+    allowed_plugin_modules, dirty = _check_plugin_permissions(
+        read_plugin_entries('transforms'), 'plugins', cache, 'Transform',
+    )
+    cache_dirty = cache_dirty or dirty
 
-    for plugin in plugin_configs:
-        modules = plugin.get('modules', [])
-        if isinstance(modules, str):
-            modules = [modules]
-        version_key = _plugin_version_key(plugin)
-        pip_deps = plugin.get('pip', [])
-        if isinstance(pip_deps, str):
-            pip_deps = [pip_deps]
-
-        for module in modules:
-            if cached_plugins.get(module) == version_key:
-                allowed_plugin_modules.add(module)
-                continue
-
-            _require_tty()
-            print()
-            print(f"╔══ Plugin permission required")
-            print(f"║ Plugin: {module}")
-            if pip_deps:
-                print(f"║ Dependencies: {', '.join(pip_deps)}")
-            print()
-            if _ask_yes_no(f"Allow plugin '{module}' to be installed and run?"):
-                cached_plugins[module] = version_key
-                allowed_plugin_modules.add(module)
-                cache['plugins'] = cached_plugins
-                cache_dirty = True
+    # --- Validator plugins ---
+    allowed_validator_modules, dirty = _check_plugin_permissions(
+        read_plugin_entries('validators'), 'validator-plugins', cache, 'Validator',
+    )
+    cache_dirty = cache_dirty or dirty
 
     if cache_dirty:
         _save_cache(sandbox_dir, cache)
 
-    return allowed_transform_types, allowed_plugin_modules
+    return allowed_transform_types, allowed_plugin_modules, allowed_validator_modules

@@ -75,6 +75,12 @@ class BuildingBlock:
             }
 
         self._lazy_properties = {}
+        # Snapshot resource refs before postprocess.py rewrites them to published URLs.
+        self._raw_resources: list[dict] = [dict(r) for r in self.metadata.get('resources', [])]
+        # Set by postprocess.py just before with_base_url rewrites start.
+        # Standard path fields are translated to cwd-relative; custom fields remain
+        # as declared in bblock.json (bblock-source-relative).
+        self.pre_baseurl_metadata: dict | None = None
 
         self.subdirs = rel_path
         if '.' in self.identifier:
@@ -353,6 +359,32 @@ class BuildingBlock:
                     raise BuildingBlockError(f'Error validating transforms metadata for {self.identifier}') from e
             self._lazy_properties['transforms'] = transforms
         return self._lazy_properties['transforms']
+
+    @property
+    def validation_resources(self) -> list[dict]:
+        """Resources with role 'validation', with refs resolved to local paths or kept as URLs.
+
+        Reads from the snapshot taken at construction time so the result is stable
+        even after postprocess.py rewrites resource refs to published URLs.
+        Local refs are resolved to absolute paths; remote refs are kept as URLs.
+        Callers serializing these into a subprocess wire format should convert to
+        cwd-relative paths (see _to_wire_path in validation/plugin.py).
+        """
+        result = []
+        for r in self._raw_resources:
+            if r.get('role') != 'validation':
+                continue
+            ref = r.get('ref')
+            if not ref:
+                continue
+            entry = {
+                'ref': ref if is_url(ref) else str(self.files_path / ref),
+                'format': r.get('format'),
+            }
+            if r.get('conformsTo'):
+                entry['conformsTo'] = r['conformsTo']
+            result.append(entry)
+        return result
 
     def get_extra_test_resources(self) -> Generator[dict, None, None]:
         extra_tests_file = self.files_path / 'tests.yaml'
