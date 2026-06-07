@@ -19,7 +19,12 @@ from ogc.bblocks.util import sanitize_filename
 from ogc.bblocks.validation import Validator, ValidationItemSourceType, ValidationReportSection, ValidationItemSource, \
     ValidationReportEntry, ValidationReportItem
 from ogc.bblocks.validation.json_ import JsonValidator
+from ogc.bblocks.validation.plugin import PluginValidator
 from ogc.bblocks.validation.rdf import RdfValidator
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 OUTPUT_SUBDIR = 'output'
 FORMAT_ALIASES = {
@@ -29,6 +34,72 @@ FORMAT_ALIASES = {
     'text/turtle': 'ttl',
 }
 DEFAULT_UPLIFT_FORMATS = ['jsonld', 'ttl']
+
+
+def load_validation_plugins(sandbox_dir: Path,
+                            allowed_modules: set[str] | None = None) -> list[PluginValidator]:
+    """Read validator plugin config, create per-plugin venvs, and return PluginValidator instances.
+
+    Reads from ``plugins.validators`` in bblocks-config.yaml.
+    allowed_modules: if provided, only install/register modules in this set. Pass None to allow all.
+    """
+    from ogc.bblocks.transform import read_plugin_entries
+
+    plugin_entries = read_plugin_entries('validators')
+    if not plugin_entries:
+        return []
+
+    result: list[PluginValidator] = []
+
+    for plugin in plugin_entries:
+        pip_deps = plugin.get('pip', [])
+        if isinstance(pip_deps, str):
+            pip_deps = [pip_deps]
+
+        modules = plugin.get('modules', [])
+        if isinstance(modules, str):
+            modules = [modules]
+
+        for module_path in modules:
+            if allowed_modules is not None and module_path not in allowed_modules:
+                logger.info("Skipping validator plugin '%s': not permitted by user", module_path)
+                continue
+
+            if pip_deps:
+                logger.info("Installing validator plugin pip dependencies for '%s': %s",
+                            module_path, pip_deps)
+            else:
+                logger.info("Setting up validator plugin venv for '%s'", module_path)
+            venv_dir = PluginValidator.ensure_venv_for(pip_deps, sandbox_dir)
+
+            discovered = PluginValidator.discover(venv_dir, module_path)
+            if discovered is None:
+                raise RuntimeError(
+                    f"Validator plugin '{module_path}' could not be loaded — "
+                    "check that the module path is correct and all pip dependencies are declared"
+                )
+            if not discovered:
+                logger.warning("No validator classes found in plugin '%s'", module_path)
+                continue
+
+            for entry in discovered:
+                mime_types = entry.get('mime_types', [])
+                file_extensions = entry.get('file_extensions', [])
+                if not mime_types and not file_extensions:
+                    continue
+                pv = PluginValidator(
+                    module_path=module_path,
+                    class_name=entry['class'],
+                    pip_deps=pip_deps,
+                    sandbox_dir=sandbox_dir,
+                    mime_types=mime_types,
+                    file_extensions=file_extensions,
+                )
+                logger.info("Registered validator plugin '%s' (%s) for mime_types=%s extensions=%s",
+                            module_path, entry['class'], mime_types, file_extensions)
+                result.append(pv)
+
+    return result
 
 
 def report_to_dict(bblock: BuildingBlock,
@@ -158,7 +229,7 @@ def write_report(json_reports: list[dict],
 def _validate_resource(bblock: BuildingBlock,
                        filename: Path,
                        output_filename: Path,
-                       validators: list[Validator],
+                       validators: list,
                        resource_contents: str | None = None,
                        additional_shacl_closures: list[str | Path] | None = None,
                        base_uri: str | None = None,
@@ -167,7 +238,9 @@ def _validate_resource(bblock: BuildingBlock,
                        resource_url: str | None = None,
                        example_index: tuple[int, int] | None = None,
                        prefixes: dict[str, str] | None = None,
-                       file_format: str | None = None) -> ValidationReportItem | None:
+                       file_format: str | None = None,
+                       bblocks_register: BuildingBlockRegister | None = None,
+                       validation_resources: list[dict] | None = None) -> ValidationReportItem | None:
     if require_fail is None:
         require_fail = filename.stem.endswith('-fail') and not example_index
 
@@ -203,7 +276,10 @@ def _validate_resource(bblock: BuildingBlock,
                                         schema_ref=schema_ref,
                                         prefixes=prefixes,
                                         file_format=file_format,
-                                        resource_url=resource_url)
+                                        resource_url=resource_url,
+                                        bblock=bblock,
+                                        bblocks_register=bblocks_register,
+                                        validation_resources=validation_resources)
             any_validator_run = any_validator_run or (result is not False)
 
     except Exception as unknown_exc:
@@ -245,6 +321,7 @@ def validate_transform_output(
         transform_id: str,
         output_file: Path,
         profile_output_base: Path,
+        plugin_validators: list[PluginValidator] = (),
 ) -> ValidationReportItem:
     """Validate a transform output file against a profile building block.
 
@@ -259,6 +336,7 @@ def validate_transform_output(
     validators = [
         JsonValidator(profile_bblock, bblocks_register),
         RdfValidator(profile_bblock, bblocks_register),
+        *plugin_validators,
     ]
 
     mime_type = mimetypes.from_extension(output_file.suffix[1:]) if output_file.suffix else None
@@ -276,6 +354,9 @@ def validate_transform_output(
             validator.validate(
                 output_file, profile_output_base, report,
                 file_format=mime_type,
+                bblock=profile_bblock,
+                bblocks_register=bblocks_register,
+                validation_resources=profile_bblock.validation_resources,
             )
     except Exception as unknown_exc:
         report.add_entry(ValidationReportEntry(
@@ -295,7 +376,8 @@ def validate_transform_output(
 def validate_test_resources(bblock: BuildingBlock,
                             bblocks_register: BuildingBlockRegister,
                             outputs_path: Path | None = None,
-                            base_url: str | None = None) -> tuple[bool, int, dict]:
+                            base_url: str | None = None,
+                            plugin_validators: list[PluginValidator] = ()) -> tuple[bool, int, dict]:
     final_result = True
     test_count = 0
 
@@ -313,12 +395,13 @@ def validate_test_resources(bblock: BuildingBlock,
     validators = [
         JsonValidator(bblock, bblocks_register),
         RdfValidator(bblock, bblocks_register),
+        *plugin_validators,
     ]
 
     # Test resources
     if bblock.tests_dir.is_dir():
         for fn in sorted(bblock.tests_dir.resolve().iterdir()):
-            if fn.suffix not in ('.json', '.jsonld', '.ttl'):
+            if not fn.is_file():
                 continue
             output_fn = output_dir / fn.name
             output_base_filenames.add(fn.stem)
@@ -328,6 +411,8 @@ def validate_test_resources(bblock: BuildingBlock,
                 filename=fn,
                 output_filename=output_fn,
                 validators=validators,
+                bblocks_register=bblocks_register,
+                validation_resources=bblock.validation_resources,
             )
             if test_result:
                 all_results.append(test_result)
@@ -335,11 +420,12 @@ def validate_test_resources(bblock: BuildingBlock,
                 test_count += 1
 
     for extra_test_resource in bblock.get_extra_test_resources():
-        if not re.search(r'\.(json(ld)?|ttl)$', extra_test_resource['output-filename']):
-            continue
         fn = bblock.files_path / 'tests' / extra_test_resource['output-filename']
         output_fn = output_dir / fn.name
         output_base_filenames.add(fn.stem)
+
+        declared_media_type = extra_test_resource.get('media-type')
+        file_format = declared_media_type or (mimetypes.from_extension(fn.suffix[1:]) if fn.suffix else None)
 
         test_result = _validate_resource(
             bblock=bblock,
@@ -349,7 +435,9 @@ def validate_test_resources(bblock: BuildingBlock,
             resource_contents=extra_test_resource['contents'],
             require_fail=extra_test_resource.get('require-fail', False),
             resource_url=extra_test_resource['ref'] if isinstance(extra_test_resource['ref'], str) else None,
-            file_format=mimetypes.from_extension(fn.suffix[1:]),
+            file_format=file_format,
+            bblocks_register=bblocks_register,
+            validation_resources=bblock.validation_resources,
         )
         if test_result:
             all_results.append(test_result)
@@ -406,6 +494,8 @@ def validate_test_resources(bblock: BuildingBlock,
                     prefixes=example.get('prefixes'),
                     file_format=snippet_language,
                     additional_shacl_closures=snippet.get('shacl-closure'),
+                    bblocks_register=bblocks_register,
+                    validation_resources=bblock.validation_resources,
                 )
                 if example_result:
                     all_results.append(example_result)

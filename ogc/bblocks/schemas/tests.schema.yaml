@@ -31,3 +31,9 @@ items:
         Explicit ATS test method description. When absent, the standard generator infers the method
         from the file extension. When present, this text is used verbatim in the generated ATS entry.
       type: string
+    media-type:
+      description: |
+        Explicit MIME type for this test resource. When absent, the media type is inferred from the
+        file extension. Useful for files whose extension does not map to a standard MIME type, or
+        when a validator plugin requires a specific type that differs from the default mapping.
+      type: string

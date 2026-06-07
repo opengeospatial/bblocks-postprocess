@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import copy
 import itertools
 import json
 import logging
 import os.path
 import re
+import shutil
 import subprocess
 import sys
-from ogc.bblocks.sandbox import SANDBOX_DIR_NAME
+from ogc.bblocks.sandbox import SANDBOX_DIR_NAME, _OLD_SANDBOX_DIR_NAME
 from argparse import ArgumentParser
 import datetime
 from pathlib import Path
@@ -28,8 +30,8 @@ from ogc.bblocks.util import write_jsonld_context, CustomJSONEncoder, \
     PathOrUrl, get_git_repo_url, load_yaml
 from ogc.bblocks.schema import annotate_schema, resolve_all_schema_references, write_annotated_schema
 from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister, ImportedBuildingBlocks, BuildingBlockError
-from ogc.bblocks.validate import validate_test_resources, write_report
-from ogc.bblocks.transform import apply_transforms, load_transform_plugins, transformers, cleanup_sandbox
+from ogc.bblocks.validate import validate_test_resources, write_report, load_validation_plugins
+from ogc.bblocks.transform import _rel, apply_transforms, load_transform_plugins, transformers, cleanup_sandbox
 from ogc.bblocks.permissions import check_permissions
 
 
@@ -58,7 +60,11 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
     cwd = Path().resolve()
 
+    old_sandbox = Path(_OLD_SANDBOX_DIR_NAME)
     sandbox_dir = Path(SANDBOX_DIR_NAME)
+    if old_sandbox.is_dir():
+        logger.info("Removing legacy sandbox %s", _OLD_SANDBOX_DIR_NAME)
+        shutil.rmtree(old_sandbox, ignore_errors=True)
     sandbox_dir.mkdir(exist_ok=True)
     gitignore = sandbox_dir / '.gitignore'
     if not gitignore.exists():
@@ -67,13 +73,15 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
     if skip_permissions:
         allowed_transform_types = None
         allowed_plugin_modules = None
+        allowed_validator_modules = None
     else:
-        allowed_transform_types, allowed_plugin_modules = check_permissions(
+        allowed_transform_types, allowed_plugin_modules, allowed_validator_modules = check_permissions(
             sandbox_dir, registered_items_path if isinstance(registered_items_path, Path)
             else Path(registered_items_path),
         )
 
     transform_plugins = load_transform_plugins(sandbox_dir, allowed_modules=allowed_plugin_modules)
+    plugin_validators = load_validation_plugins(sandbox_dir, allowed_modules=allowed_validator_modules)
 
     if not isinstance(test_outputs_path, Path):
         test_outputs_path = Path(test_outputs_path)
@@ -151,6 +159,27 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             bblock.metadata.pop('dateOfLastChange', None)
 
         output_file_root = Path(output_file).resolve().parent
+
+        # Snapshot metadata with local paths re-anchored to cwd before the
+        # with_base_url block rewrites everything to published URLs.
+        _snap = copy.deepcopy(bblock.metadata)
+        for _field in ('ldContext', 'schema', 'openAPIDocument'):
+            _v = _snap.get(_field)
+            if _v and isinstance(_v, str) and not is_url(_v):
+                _snap[_field] = _rel(bblock.files_path / _v, cwd)
+        _shapes = _snap.get('shaclRules') or _snap.get('shaclShapes')
+        if isinstance(_shapes, list):
+            _key = 'shaclRules' if 'shaclRules' in _snap else 'shaclShapes'
+            _snap[_key] = [
+                _rel(bblock.files_path / s, cwd) if isinstance(s, str) and not is_url(s) else s
+                for s in _shapes
+            ]
+        for _r in _snap.get('resources', []):
+            _ref = _r.get('ref')
+            if _ref and not is_url(_ref):
+                _r['ref'] = _rel(bblock.files_path / _ref, cwd)
+        bblock.pre_baseurl_metadata = _snap
+
         if bblock.annotated_schema.is_file():
             schema_url_yaml = PathOrUrl(bblock.annotated_schema).with_base_url(
                 base_url, cwd if base_url else output_file_root
@@ -234,7 +263,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                     bblock,
                     bblocks_register=bbr,
                     outputs_path=test_outputs_path,
-                    base_url=base_url)
+                    base_url=base_url,
+                    plugin_validators=plugin_validators)
                 validation_reports.append(json_report)
 
                 bblock.metadata['validationPassed'] = validation_passed
@@ -480,7 +510,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                                      id_prefix=id_prefix,
                                      imported_register_urls=imported_registers,
                                      transform_plugins=transform_plugins,
-                                     allowed_transform_types=allowed_transform_types)
+                                     allowed_transform_types=allowed_transform_types,
+                                     plugin_validators=plugin_validators)
 
     if filter_id is None:
         cleanup_sandbox(sandbox_dir, child_bblocks)
