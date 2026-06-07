@@ -45,6 +45,7 @@ class ValidationReportSection(Enum):
     TURTLE = 'Turtle'
     SHACL = 'SHACL'
     SEMANTIC_UPLIFT = 'Semantic Uplift'
+    PLUGIN = 'Plugin'
     UNKNOWN = 'Unknown errors'
 
 
@@ -99,7 +100,13 @@ class ValidationReportItem:
                 if not entries:
                     continue
                 f.write(f"=== {section.value} ===\n")
+                current_plugin = None
                 for entry in entries:
+                    if section == ValidationReportSection.PLUGIN:
+                        plugin = (entry.payload or {}).get('plugin')
+                        if plugin != current_plugin:
+                            current_plugin = plugin
+                            f.write(f"\n--- Plugin: {plugin or '(unknown)'} ---\n")
                     if entry.is_error:
                         f.write("\n** Validation error **\n")
                     f.write(f"{entry.message}\n")

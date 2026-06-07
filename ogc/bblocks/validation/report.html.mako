@@ -188,7 +188,24 @@ def get_source_url(source):
                                                         % for section in item['sections']:
                                                             % if section.get('entries'):
                                                                     <div class="font-monospace subsection-title mt-2">${e(section['title'])}</div>
+                                                                <%
+                                                                is_plugin_section = section['name'] == 'PLUGIN'
+                                                                current_plugin = [None]
+                                                                %>
                                                                 % for entry in section.get('entries'):
+                                                                    <%
+                                                                    plugin = entry.get('plugin') if is_plugin_section else None
+                                                                    show_plugin_header = plugin and plugin != current_plugin[0]
+                                                                    if show_plugin_header:
+                                                                        current_plugin[0] = plugin
+                                                                    subsection = entry.get('subsection')
+                                                                    %>
+                                                                    % if show_plugin_header:
+                                                                        <div class="font-monospace subsection-title mt-2 text-secondary">${e(plugin)}</div>
+                                                                    % endif
+                                                                    % if subsection:
+                                                                        <div class="font-monospace subsection-title mt-1 text-muted small">${e(subsection)}</div>
+                                                                    % endif
                                                                     <div class="font-monospace entry-message section-${e(section['name'].lower())} ${'text-danger' if entry['isError'] else ''}">${e(entry['message'])}</div>
                                                                 % endfor
                                                             % endif
