@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -8,12 +9,35 @@ from ogc.bblocks.log import run_logged, log_indent
 
 _PYTHON_VERSION = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
 
-SANDBOX_DIR_NAME = '.transforms-sandbox'
+SANDBOX_DIR_NAME = '.bblocks-sandbox'
+_OLD_SANDBOX_DIR_NAME = '.transforms-sandbox'
+
+
+def pip_slug(pip_deps: list[str]) -> str:
+    """Return a stable, human-readable directory name for a set of pip specifiers.
+
+    The slug identifies the venv that would result from installing exactly these
+    deps. Same deps → same slug → shared venv. Different version → different slug.
+    """
+    key = ','.join(sorted(pip_deps))
+    slug = re.sub(r'[^a-zA-Z0-9_-]+', '_', key)
+    slug = re.sub(r'_+', '_', slug).strip('_')
+    return slug or 'default'
 
 
 def venv_needs_recreate(venv_dir: Path) -> bool:
-    """Return True if the venv is absent or was built with a different Python version."""
-    if not (venv_dir / 'bin' / 'pip').exists():
+    """Return True if the venv is absent, broken, or was built with a different Python version."""
+    pip_bin = venv_dir / 'bin' / 'pip'
+    if not pip_bin.exists():
+        return True
+    # Verify pip's shebang target still exists (catches renamed sandbox dirs and removed interpreters).
+    try:
+        first_line = pip_bin.read_text(errors='replace').split('\n', 1)[0]
+        if first_line.startswith('#!'):
+            shebang_target = Path(first_line[2:].strip().split()[0])
+            if not shebang_target.exists():
+                return True
+    except OSError:
         return True
     cfg = venv_dir / 'pyvenv.cfg'
     if not cfg.exists():
