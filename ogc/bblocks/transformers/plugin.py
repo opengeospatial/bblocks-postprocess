@@ -11,7 +11,7 @@ from base64 import b64decode
 from pathlib import Path
 
 from ogc.bblocks.log import run_logged, log_indent
-from ogc.bblocks.sandbox import ensure_venv
+from ogc.bblocks.sandbox import ensure_venv, pip_slug
 from ogc.bblocks.models import TransformMetadata, TransformResult
 
 _HARNESS = Path(__file__).parent / '_plugin_harness.py'
@@ -27,8 +27,7 @@ class PluginTransformer:
         self.default_outputs: list = []
 
     def _venv_dir(self, sandbox_dir: Path) -> Path:
-        slug = self.module_path.replace('.', '_')
-        return sandbox_dir / 'plugins' / slug / 'venv'
+        return sandbox_dir / 'plugins' / pip_slug(self.pip_deps) / 'venv'
 
     def ensure_venv(self, sandbox_dir: Path) -> Path:
         venv_dir = self._venv_dir(sandbox_dir)
