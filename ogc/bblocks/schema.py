@@ -73,6 +73,11 @@ def annotate_schema(bblock: BuildingBlock,
     if not schema_fn and not schema_url:
         return result
 
+    if isinstance(context, Path) and context.is_file():
+        context = load_yaml(filename=context)
+        if isinstance(context, dict) and '@context' not in context:
+            context = {'@context': context}
+
     override_schema = load_yaml(filename=schema_fn, url=schema_url, test_alternate_suffix=False)
     override_schema = resolve_all_schema_references(override_schema, bblocks_register, bblock,
                                                     bblock.schema, base_url)
