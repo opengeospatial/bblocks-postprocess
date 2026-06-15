@@ -75,7 +75,7 @@ def annotate_schema(bblock: BuildingBlock,
 
     if isinstance(context, Path) and context.is_file():
         context = load_yaml(filename=context)
-        if isinstance(context, dict) and '@context' not in context:
+        if not isinstance(context, dict) or '@context' not in context:
             context = {'@context': context}
 
     override_schema = load_yaml(filename=schema_fn, url=schema_url, test_alternate_suffix=False)
