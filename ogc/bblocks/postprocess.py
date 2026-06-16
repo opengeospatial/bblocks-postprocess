@@ -509,7 +509,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         logger.info("Postprocessing building block %s%s", building_block.identifier, lightmsg)
         with log_indent():
             if do_postprocess(building_block, light=light):
-                output_bblocks.append(_apply_bblocks_uri_refs(building_block.metadata))
+                output_bblocks.append(building_block.metadata)
             else:
                 logger.error("%s failed postprocessing, skipping...", building_block.identifier)
 
@@ -596,7 +596,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
         if imported_bblocks.real_metadata_urls:
             output_register_json['imports'] = list(imported_bblocks.real_metadata_urls.values())
-        output_register_json['bblocks'] = output_bblocks
+        output_register_json['bblocks'] = [_apply_bblocks_uri_refs(bb) for bb in output_bblocks]
 
         if viewer_config:
             output_register_json['viewer'] = viewer_config
