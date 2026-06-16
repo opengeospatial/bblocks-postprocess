@@ -12,8 +12,8 @@ transform:
       | .openAPIDocument |= if . then { "prof:hasArtifact": . , "prof:hasRole": "role:schema", "dct:format": "application/yaml", "dct:conformsTo": "https://spec.openapis.org/oas/v3.1.0.html" } else null end
       | .ontology |= if . then { "prof:hasArtifact": . , "prof:hasRole": "role:specification", "dct:format": "text/turtle", "dct:conformsTo": "http://www.w3.org/2002/07/owl#Ontology" } else null end
       | .rdfData |= if length > 0 then map({ "prof:hasArtifact": . , "prof:hasRole": "role:data", "dct:format": "text/turtle" }) else [] end
-      | .dependsOn |= if length > 0 then map("bblocks://\(.)") else null end
-      | .isProfileOf |= if length > 0 then if type == "array" then map("bblocks://\(.)") else "bblocks://\(.)" end else null end
+      | .dependsOn |= if length > 0 then map(if startswith("bblocks://") then . else "bblocks://\(.)" end) else null end
+      | .isProfileOf |= if length > 0 then if type == "array" then map(if startswith("bblocks://") then . else "bblocks://\(.)" end) else if startswith("bblocks://") then . else "bblocks://\(.)" end end else null end
       | if $CS_URI then ."skos:topConceptOf" = {"@id": $CS_URI} end
     )
   # Add ConceptScheme

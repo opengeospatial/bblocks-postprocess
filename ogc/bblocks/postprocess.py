@@ -27,12 +27,31 @@ from ogc.bblocks.extension import Extender
 from ogc.bblocks.generate_docs import DocGenerator
 from ogc.bblocks.oas30 import oas31_to_oas30
 from ogc.bblocks.util import write_jsonld_context, CustomJSONEncoder, \
-    PathOrUrl, get_git_repo_url, load_yaml
+    PathOrUrl, get_git_repo_url, load_yaml, add_bblocks_uri
 from ogc.bblocks.schema import annotate_schema, resolve_all_schema_references, write_annotated_schema
 from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister, ImportedBuildingBlocks, BuildingBlockError
 from ogc.bblocks.validate import validate_test_resources, write_report, load_validation_plugins
 from ogc.bblocks.transform import _rel, apply_transforms, load_transform_plugins, transformers, cleanup_sandbox
 from ogc.bblocks.permissions import check_permissions
+
+
+def _apply_bblocks_uri_refs(metadata: dict) -> dict:
+    result = dict(metadata)
+    if result.get('dependsOn'):
+        result['dependsOn'] = [add_bblocks_uri(d) for d in result['dependsOn']]
+    if result.get('isProfileOf'):
+        v = result['isProfileOf']
+        result['isProfileOf'] = ([add_bblocks_uri(i) for i in v]
+                                  if isinstance(v, list) else add_bblocks_uri(v))
+    ep = result.get('extensionPoints')
+    if ep:
+        result['extensionPoints'] = dict(ep)
+        if 'baseBuildingBlock' in ep:
+            result['extensionPoints']['baseBuildingBlock'] = add_bblocks_uri(ep['baseBuildingBlock'])
+        if 'extensions' in ep:
+            result['extensionPoints']['extensions'] = {add_bblocks_uri(k): add_bblocks_uri(v)
+                                                       for k, v in ep['extensions'].items()}
+    return result
 
 
 def postprocess(registered_items_path: str | Path = 'registereditems',
@@ -490,7 +509,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         logger.info("Postprocessing building block %s%s", building_block.identifier, lightmsg)
         with log_indent():
             if do_postprocess(building_block, light=light):
-                output_bblocks.append(building_block.metadata)
+                output_bblocks.append(_apply_bblocks_uri_refs(building_block.metadata))
             else:
                 logger.error("%s failed postprocessing, skipping...", building_block.identifier)
 
