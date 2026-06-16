@@ -26,7 +26,7 @@ from rdflib import Graph
 
 from ogc.bblocks import mimetypes
 from ogc.bblocks.util import get_schema, PathOrUrl, load_file, find_references_yaml, \
-    find_references_xml
+    find_references_xml, strip_bblocks_uri, add_bblocks_uri
 from ogc.bblocks.schema import RegisterSchemaResolver
 
 BBLOCK_METADATA_FILE = 'bblock.json'
@@ -156,6 +156,23 @@ class BuildingBlock:
         # Fix for profileOf -> isProfileOf
         if 'profileOf' in self.metadata and 'isProfileOf' not in self.metadata:
             self.metadata['isProfileOf'] = self.metadata.pop('profileOf')
+
+        # Normalize bblocks:// URIs to plain identifiers in all cross-bblock reference fields
+        if 'isProfileOf' in self.metadata:
+            v = self.metadata['isProfileOf']
+            self.metadata['isProfileOf'] = ([strip_bblocks_uri(i) for i in v]
+                                            if isinstance(v, list) else strip_bblocks_uri(v))
+
+        if 'dependsOn' in self.metadata:
+            self.metadata['dependsOn'] = [strip_bblocks_uri(d) for d in self.metadata['dependsOn']]
+
+        ep = self.metadata.get('extensionPoints')
+        if ep:
+            if 'baseBuildingBlock' in ep:
+                ep['baseBuildingBlock'] = strip_bblocks_uri(ep['baseBuildingBlock'])
+            if 'extensions' in ep:
+                ep['extensions'] = {strip_bblocks_uri(k): strip_bblocks_uri(v)
+                                    for k, v in ep['extensions'].items()}
 
     def _find_path_or_url(self, metadata_property: str,
                           default_filenames: tuple[str, ...]) -> PathOrUrl | list[PathOrUrl] | None:
@@ -580,6 +597,19 @@ class ImportedBuildingBlocks:
         self.imported_registers[metadata_url] = []
         for bblock in bblock_list:
             bblock['register'] = self
+            if 'dependsOn' in bblock:
+                bblock['dependsOn'] = [strip_bblocks_uri(d) for d in bblock['dependsOn']]
+            if 'isProfileOf' in bblock:
+                v = bblock['isProfileOf']
+                bblock['isProfileOf'] = ([strip_bblocks_uri(i) for i in v]
+                                         if isinstance(v, list) else strip_bblocks_uri(v))
+            ep = bblock.get('extensionPoints')
+            if ep:
+                if 'baseBuildingBlock' in ep:
+                    ep['baseBuildingBlock'] = strip_bblocks_uri(ep['baseBuildingBlock'])
+                if 'extensions' in ep:
+                    ep['extensions'] = {strip_bblocks_uri(k): strip_bblocks_uri(v)
+                                        for k, v in ep['extensions'].items()}
             self.bblocks[bblock['itemIdentifier']] = bblock
             self.imported_registers[metadata_url].append(bblock['itemIdentifier'])
         return dependencies, metadata_url

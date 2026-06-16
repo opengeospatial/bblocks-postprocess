@@ -26,6 +26,15 @@ if TYPE_CHECKING:
     from ogc.bblocks.models import BuildingBlockRegister
 
 BBLOCKS_REF_ANNOTATION = 'x-bblocks-ref'
+BBLOCKS_URI_PREFIX = 'bblocks://'
+
+
+def strip_bblocks_uri(v: str) -> str:
+    return v[len(BBLOCKS_URI_PREFIX):] if v.startswith(BBLOCKS_URI_PREFIX) else v
+
+
+def add_bblocks_uri(v: str) -> str:
+    return v if v.startswith(BBLOCKS_URI_PREFIX) else f'{BBLOCKS_URI_PREFIX}{v}'
 
 loaded_schemas: dict[str, dict] = {}
 
