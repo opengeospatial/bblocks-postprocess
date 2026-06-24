@@ -1,6 +1,6 @@
 {
   "dependencies": {
     "jsonld": "^9.0.0",
-    "undici": ">=6.24.0"
+    "undici": "^7.28.0"
   }
 }
