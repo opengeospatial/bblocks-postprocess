@@ -30,7 +30,14 @@ def _save_cache(sandbox_dir: Path, cache: dict) -> None:
         json.dump(cache, f, indent=2)
 
 
-def _ask_yes_no(prompt: str) -> bool:
+_DEFAULT_NO_INPUT_MESSAGE = (
+    "No interactive input available to answer this prompt (stdin is closed) "
+    "- denying by default. Run `docker run -i ...` to answer prompts interactively, "
+    "or pass --skip-permissions true to bypass permission checks entirely."
+)
+
+
+def ask_yes_no(prompt: str, no_input_message: str = _DEFAULT_NO_INPUT_MESSAGE) -> bool:
     """Ask a y/n question.
 
     If stdin has no interactive input to offer (e.g. `docker run` without `-i`),
@@ -41,11 +48,7 @@ def _ask_yes_no(prompt: str) -> bool:
         try:
             answer = input(f"{prompt} [y/N] ").strip().lower()
         except EOFError:
-            logger.warning(
-                "No interactive input available to answer this prompt (stdin is closed) "
-                "- denying by default. Run `docker run -i ...` to answer prompts interactively, "
-                "or pass --skip-permissions true to bypass permission checks entirely."
-            )
+            logger.warning(no_input_message)
             return False
         if answer in ('y', 'yes'):
             return True
@@ -126,7 +129,7 @@ def _check_plugin_permissions(
             if pip_deps:
                 print(f"║ Dependencies: {', '.join(pip_deps)}")
             print()
-            if _ask_yes_no(f"Allow {label.lower()} plugin '{module}' to be installed and run?"):
+            if ask_yes_no(f"Allow {label.lower()} plugin '{module}' to be installed and run?"):
                 cached[module] = version_key
                 allowed.add(module)
                 cache[cache_key] = cached
@@ -169,7 +172,7 @@ def check_permissions(
             for bb_id, bb_name in unapproved_types[t_type]:
                 print(f"║    • {bb_id}  ({bb_name})")
         print("║")
-        if _ask_yes_no("Allow these transforms to run?"):
+        if ask_yes_no("Allow these transforms to run?"):
             for t_type in unapproved_types:
                 cached_types.add(t_type)
             cache['transform-types'] = sorted(cached_types)
