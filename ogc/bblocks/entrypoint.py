@@ -68,6 +68,16 @@ if __name__ == '__main__':
     )
 
     parser.add_argument(
+        '--update-template-files',
+        default='ask',
+        choices=('ask', 'always', 'never'),
+        help="Whether to update outdated scaffolding files (build.sh, view.sh, ...) inherited "
+             "from bblocks-template: 'ask' to prompt (falls back to leaving them untouched if "
+             "stdin isn't interactive), 'always' to update without asking, or 'never' to skip "
+             "the check entirely (set to 'never' in CI)",
+    )
+
+    parser.add_argument(
         '--annotated-path',
         default='build-local/annotated',
         help='Fail run if an error is encountered',
@@ -311,7 +321,7 @@ if __name__ == '__main__':
         logger.warning("Could not autodetect base_url / github_base_url: %s", e)
 
     if git_repo_path:
-        check_template_files(git_repo_path)
+        check_template_files(git_repo_path, mode=args.update_template_files)
 
     steps = args.steps.split(',') if args.steps else None
 
