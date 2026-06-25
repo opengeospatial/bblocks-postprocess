@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
-import sys
+import logging
 from pathlib import Path
 
 import yaml
 
 from ogc.bblocks.transform import _PERMISSION_CHECKED_TYPES as _RISKY_TRANSFORM_TYPES, read_plugin_entries
+
+logger = logging.getLogger(__name__)
+
 _PERMISSIONS_FILE = 'permissions.json'
 
 
@@ -27,19 +30,23 @@ def _save_cache(sandbox_dir: Path, cache: dict) -> None:
         json.dump(cache, f, indent=2)
 
 
-def _require_tty() -> None:
-    if not sys.stdin.isatty():
-        raise RuntimeError(
-            "Transform permission check required but stdin is not a TTY. "
-            "Run with --skip-permissions true to bypass permission checks "
-            "in non-interactive environments (e.g. CI)."
-        )
-
-
 def _ask_yes_no(prompt: str) -> bool:
-    _require_tty()
+    """Ask a y/n question.
+
+    If stdin has no interactive input to offer (e.g. `docker run` without `-i`),
+    `input()` hits EOF immediately rather than blocking, so we treat that as a
+    denial instead of crashing the whole run.
+    """
     while True:
-        answer = input(f"{prompt} [y/N] ").strip().lower()
+        try:
+            answer = input(f"{prompt} [y/N] ").strip().lower()
+        except EOFError:
+            logger.warning(
+                "No interactive input available to answer this prompt (stdin is closed) "
+                "- denying by default. Run `docker run -i ...` to answer prompts interactively, "
+                "or pass --skip-permissions true to bypass permission checks entirely."
+            )
+            return False
         if answer in ('y', 'yes'):
             return True
         if answer in ('', 'n', 'no'):
@@ -113,7 +120,6 @@ def _check_plugin_permissions(
                 allowed.add(module)
                 continue
 
-            _require_tty()
             print()
             print(f"╔══ {label} plugin permission required")
             print(f"║ Plugin: {module}")
@@ -141,7 +147,8 @@ def check_permissions(
         allowed_transform_types:    set of approved type strings
         allowed_plugin_modules:     set of approved transform plugin module paths
         allowed_validator_modules:  set of approved validator plugin module paths
-    Raises RuntimeError if stdin is not a TTY and permissions are needed.
+    Denies (with a warning) any permission that can't be answered interactively,
+    e.g. when stdin is closed because `docker run` was invoked without `-i`.
     """
     cache = _load_cache(sandbox_dir)
     cache_dirty = False
@@ -153,7 +160,6 @@ def check_permissions(
     unapproved_types = {t: blocks for t, blocks in needed_types.items() if t not in cached_types}
 
     if unapproved_types:
-        _require_tty()
         print()
         print("╔══ Transform permission required")
         print("║ The following building blocks contain transforms that can execute arbitrary code on your machine:")
