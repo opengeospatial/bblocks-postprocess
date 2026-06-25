@@ -14,6 +14,7 @@ from pathlib import Path
 from ogc.bblocks.log import setup_logging, log_indent
 
 from ogc.bblocks.postprocess import postprocess
+from ogc.bblocks.template_sync import check_template_files
 from ogc.na import ingest_json, update_vocabs
 
 import jsonschema
@@ -308,6 +309,9 @@ if __name__ == '__main__':
             register_additional_metadata['gitHubRepository'] = github_base_url
     except Exception as e:
         logger.warning("Could not autodetect base_url / github_base_url: %s", e)
+
+    if git_repo_path:
+        check_template_files(git_repo_path)
 
     steps = args.steps.split(',') if args.steps else None
 

@@ -21,10 +21,16 @@ RUN /venv/bin/python -m pip install -r /requirements.txt
 # Apply rdflib fixes
 RUN /venv/bin/python -m pip install git+https://github.com/avillar/rdflib.git@6.x
 
+# Reference copy of bblock-template, used to detect outdated scaffolding scripts
+# (build.sh, view.sh, ...) in the repo being processed
+RUN git clone --depth 1 https://github.com/opengeospatial/bblocks-template.git /opt/bblocks-template && \
+    rm -rf /opt/bblocks-template/.git
+
 ENV PYTHONPATH=/src/
 ENV PYTHONUNBUFFERED=1
 ENV NODE_PATH=/src/node_modules
 ENV BBP_GIT_INFO_FILE=/GIT_INFO
+ENV BBP_TEMPLATE_DIR=/opt/bblocks-template
 
 COPY ogc/ /src/ogc/
 
