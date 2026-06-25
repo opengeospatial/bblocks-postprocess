@@ -21,14 +21,23 @@ def _make_executable(path: Path) -> None:
     path.chmod(path.stat().st_mode | 0o755)
 
 
-def check_template_files(git_repo_path: Path) -> None:
-    """Offer to update scaffolding files (build.sh, view.sh, ...) that are
-    outdated copies of their bblock-template counterparts.
+def check_template_files(git_repo_path: Path, mode: str = 'ask') -> None:
+    """Update scaffolding files (build.sh, view.sh, ...) that are outdated
+    copies of their bblocks-template counterparts.
 
     A file is only treated as a candidate for updating if it has never been
     modified since it was added to the repo's git history - if it has, we
     assume it was intentionally customized and leave it alone.
+
+    mode:
+        'ask'    - prompt before updating (default); if stdin isn't
+                   interactive, warn and leave the file as-is
+        'always' - update without prompting
+        'never'  - skip the check entirely
     """
+    if mode == 'never':
+        return
+
     template_dir = os.environ.get(_TEMPLATE_DIR_ENV)
     if not template_dir:
         return
@@ -71,6 +80,12 @@ def check_template_files(git_repo_path: Path) -> None:
             continue
 
         if target.read_bytes() != template.read_bytes():
+            if mode == 'always':
+                target.write_bytes(template.read_bytes())
+                _make_executable(target)
+                logger.info("Updated %s to the latest bblocks-template version.", filename)
+                continue
+
             print()
             print("╔══ Outdated template file detected")
             print(f"║ {filename} differs from the latest version in bblocks-template,")
@@ -91,6 +106,11 @@ def check_template_files(git_repo_path: Path) -> None:
                 continue
 
         if not _is_executable(target):
+            if mode == 'always':
+                _make_executable(target)
+                logger.info("Made %s executable.", filename)
+                continue
+
             print()
             print("╔══ Template file is not executable")
             print(f"║ {filename} is missing the executable bit.")
