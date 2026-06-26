@@ -8,7 +8,7 @@ import tempfile
 from pathlib import Path
 
 from ogc.bblocks.log import run_logged, log_indent
-from ogc.bblocks.sandbox import ensure_venv, pip_slug
+from ogc.bblocks.sandbox import ensure_venv, pip_slug, pip_install_cached
 from ogc.bblocks.validation import ValidationReportEntry, ValidationReportItem, ValidationReportSection
 
 logger = logging.getLogger(__name__)
@@ -66,16 +66,7 @@ class PluginValidator:
         venv_dir = sandbox_dir / 'plugins' / pip_slug(pip_deps) / 'venv'
         with log_indent():
             ensure_venv(venv_dir)
-            if pip_deps:
-                pip_bin = venv_dir / 'bin' / 'pip'
-                env = os.environ.copy()
-                env['GIT_TERMINAL_PROMPT'] = '0'
-                env['GIT_ASKPASS'] = 'echo'
-                run_logged(
-                    [str(pip_bin), 'install', '--disable-pip-version-check', *pip_deps],
-                    label='pip',
-                    env=env,
-                )
+            pip_install_cached(venv_dir, pip_deps)
         return venv_dir
 
     def ensure_venv(self) -> Path:

@@ -19,7 +19,7 @@ from urllib.parse import urljoin
 import yaml
 
 from ogc.bblocks.log import run_logged, log_indent
-from ogc.bblocks.sandbox import ensure_venv, venv_needs_recreate, pip_slug
+from ogc.bblocks.sandbox import ensure_venv, venv_needs_recreate, pip_slug, pip_install_cached
 
 from ogc.bblocks import mimetypes
 from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister, ImportedBBlockProxy, TransformContext, TransformMetadata, TransformResult, BuildingBlockError
@@ -176,11 +176,9 @@ def _ensure_transform_sandboxes(sandbox_dir: Path, bblock: BuildingBlock,
                 venv_dir = transform_sandbox / 'venv'
                 with log_indent():
                     ensure_venv(venv_dir)
-                    pip_bin = venv_dir / 'bin' / 'pip'
                     logger.info("Ensuring pip dependencies for transform '%s' in '%s': %s",
                                 t_id, bblock.identifier, pip_deps)
-                    run_logged([str(pip_bin), 'install', '--disable-pip-version-check', *pip_deps],
-                               label='pip')
+                    pip_install_cached(venv_dir, pip_deps)
 
         elif t_type == 'node':
             npm_deps = deps.get('npm', [])
