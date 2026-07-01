@@ -4,15 +4,21 @@ from pathlib import Path
 from ogc.bblocks.util import CustomJSONEncoder
 %>
 <%
+MAX_INLINE_SNIPPET_SIZE = 100 * 1024  # 100 KiB
+
 output = {**bblock.metadata}
 if bblock.description:
     output['description'] = bblock.description
 def _serialize_snippet(s):
     result = {k: v for k, v in s.items() if k not in ('full-code', 'code')}
-    if isinstance(s.get('code'), bytes):
+    code = s.get('code')
+    size_bytes = len(code) if isinstance(code, bytes) else len(code.encode('utf-8'))
+    result['sizeBytes'] = size_bytes
+    if isinstance(code, bytes):
         result['binary'] = True
-    else:
-        result['code'] = s['code']
+    elif size_bytes <= MAX_INLINE_SNIPPET_SIZE:
+        result['code'] = code
+    # else: too large to inline - clients should fetch it via 'ref'/'url' instead
     return result
 
 if bblock.examples:

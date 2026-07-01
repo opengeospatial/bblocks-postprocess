@@ -621,6 +621,8 @@ def apply_transforms(bblock: BuildingBlock,
                     mode = 'wb' if result.binary else 'w'
                     with open(output_fn, mode) as f:
                         f.write(result.output)
+                    entry['sizeBytes'] = (len(result.output) if result.binary
+                                           else len(result.output.encode('utf-8')))
                     output_rel_path = str(os.path.relpath(output_fn, cwd))
                     if base_url:
                         output_rel_path = urljoin(base_url, output_rel_path)
