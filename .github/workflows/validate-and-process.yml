@@ -113,7 +113,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: bblocks
+  group: bblocks-${{ github.repository }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

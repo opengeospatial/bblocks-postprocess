@@ -7,7 +7,7 @@ on:
       - develop
 
 concurrency:
-  group: docker
+  group: docker-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
