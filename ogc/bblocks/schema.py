@@ -74,9 +74,13 @@ def annotate_schema(bblock: BuildingBlock,
         return result
 
     if isinstance(context, Path) and context.is_file():
-        context = load_yaml(filename=context)
-        if not isinstance(context, dict) or '@context' not in context:
-            context = {'@context': context}
+        # Only pre-load to check whether the file needs wrapping in an "@context"
+        # key. If it's already well-formed, keep passing the Path unchanged so
+        # ogc-na-tools resolves it itself and can use its directory as the base
+        # for any relative references inside it (e.g. "../other/context.jsonld").
+        loaded_context = load_yaml(filename=context)
+        if not isinstance(loaded_context, dict) or '@context' not in loaded_context:
+            context = {'@context': loaded_context}
 
     override_schema = load_yaml(filename=schema_fn, url=schema_url, test_alternate_suffix=False)
     override_schema = resolve_all_schema_references(override_schema, bblocks_register, bblock,
