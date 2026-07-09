@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from pathlib import Path
 
 from ogc.bblocks.permissions import ask_yes_no
@@ -11,6 +12,83 @@ logger = logging.getLogger(__name__)
 _TEMPLATE_DIR_ENV = 'BBP_TEMPLATE_DIR'
 _TRACKED_FILES = ('build.sh', 'view.sh')
 _MAX_COMMITS_SCANNED = 20
+
+_POSTPROCESS_IMAGE_MARKER = 'bblocks-postprocess'
+_DOCKER_RUN_RE = re.compile(r'docker\s+run\b')
+
+
+def _split_logical_lines(text: str) -> list[tuple[str, int, int]]:
+    """Group physical lines into shell logical lines (joining `\\`-continued ones).
+
+    Returns a list of (joined_text, first_line_index, last_line_index).
+    """
+    lines = text.splitlines(keepends=True)
+    logical = []
+    i = 0
+    while i < len(lines):
+        start = i
+        buf = lines[i]
+        while buf.rstrip('\n').rstrip().endswith('\\') and i + 1 < len(lines):
+            i += 1
+            buf += lines[i]
+        logical.append((buf, start, i))
+        i += 1
+    return logical
+
+
+def _has_interactive_flags(command: str) -> bool:
+    tokens = command.replace('\\\n', ' ').split()
+    if any(t in ('-it', '-ti') for t in tokens):
+        return True
+    has_i = any(t in ('-i', '--interactive') for t in tokens)
+    has_t = any(t in ('-t', '--tty') for t in tokens)
+    return has_i and has_t
+
+
+def ensure_build_script_interactive(git_repo_path: Path) -> bool:
+    """Make sure build.sh's `docker run` for the postprocess image passes `-it`.
+
+    Without `-it`, stdin/a tty aren't available inside the container, so none
+    of the interactive permission prompts (see permissions.py) can ever be
+    answered - they silently deny by default. If the flag is missing, add it
+    and report that the caller should stop and ask the user to re-run.
+
+    Returns True if build.sh was modified (the caller should stop the run).
+    """
+    build_script = git_repo_path / 'build.sh'
+    if not build_script.is_file():
+        return False
+
+    text = build_script.read_text()
+    for logical_command, start, end in _split_logical_lines(text):
+        if not _DOCKER_RUN_RE.search(logical_command) or _POSTPROCESS_IMAGE_MARKER not in logical_command:
+            continue
+        if _has_interactive_flags(logical_command):
+            return False
+
+        lines = text.splitlines(keepends=True)
+        match = _DOCKER_RUN_RE.search(lines[start])
+        if not match:
+            # `docker run` and the image are on different physical lines; bail
+            # out rather than guessing where to insert the flag.
+            logger.warning(
+                "build.sh invokes %s without -it, but the fix couldn't be applied automatically "
+                "(docker run and the image name are on different lines). Please add -it to the "
+                "docker run command by hand.", _POSTPROCESS_IMAGE_MARKER,
+            )
+            return False
+
+        insertion_point = match.end()
+        lines[start] = lines[start][:insertion_point] + ' -it' + lines[start][insertion_point:]
+        build_script.write_text(''.join(lines))
+        print()
+        print("╔══ build.sh updated")
+        print("║ build.sh was missing -it on the docker run command, so interactive")
+        print("║ permission prompts could never be answered. Added it.")
+        print("║ Please re-run build.sh.")
+        return True
+
+    return False
 
 
 def _is_executable(path: Path) -> bool:

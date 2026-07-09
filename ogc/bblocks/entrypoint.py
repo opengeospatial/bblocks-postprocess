@@ -14,7 +14,7 @@ from pathlib import Path
 from ogc.bblocks.log import setup_logging, log_indent
 
 from ogc.bblocks.postprocess import postprocess
-from ogc.bblocks.template_sync import check_template_files
+from ogc.bblocks.template_sync import check_template_files, ensure_build_script_interactive
 from ogc.na import ingest_json, update_vocabs
 
 import jsonschema
@@ -321,6 +321,8 @@ if __name__ == '__main__':
         logger.warning("Could not autodetect base_url / github_base_url: %s", e)
 
     if git_repo_path:
+        if not skip_permissions and ensure_build_script_interactive(git_repo_path):
+            sys.exit(1)
         check_template_files(git_repo_path, mode=args.update_template_files)
 
     steps = args.steps.split(',') if args.steps else None
