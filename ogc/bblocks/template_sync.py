@@ -1,17 +1,17 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import os
 import re
 from pathlib import Path
 
-from ogc.bblocks.permissions import ask_yes_no
-
 logger = logging.getLogger(__name__)
 
 _TEMPLATE_DIR_ENV = 'BBP_TEMPLATE_DIR'
 _TRACKED_FILES = ('build.sh', 'view.sh')
-_MAX_COMMITS_SCANNED = 20
+_HASH_MANIFEST_FILENAME = '.known-template-hashes.json'
 
 _POSTPROCESS_IMAGE_MARKER = 'bblocks-postprocess'
 _DOCKER_RUN_RE = re.compile(r'docker\s+run\b')
@@ -45,7 +45,7 @@ def _has_interactive_flags(command: str) -> bool:
     return has_i and has_t
 
 
-def ensure_build_script_interactive(git_repo_path: Path) -> bool:
+def ensure_build_script_interactive(repo_path: Path) -> bool:
     """Make sure build.sh's `docker run` for the postprocess image passes `-it`.
 
     Without `-it`, stdin/a tty aren't available inside the container, so none
@@ -55,7 +55,7 @@ def ensure_build_script_interactive(git_repo_path: Path) -> bool:
 
     Returns True if build.sh was modified (the caller should stop the run).
     """
-    build_script = git_repo_path / 'build.sh'
+    build_script = repo_path / 'build.sh'
     if not build_script.is_file():
         return False
 
@@ -99,106 +99,91 @@ def _make_executable(path: Path) -> None:
     path.chmod(path.stat().st_mode | 0o755)
 
 
-def check_template_files(git_repo_path: Path, mode: str = 'ask') -> None:
+def _content_hash(data: bytes) -> str:
+    """git's own blob hash, so it lines up with the manifest generated at image
+    build time (scripts/generate_template_hash_manifest.py) without needing an
+    actual git repository to compute it."""
+    header = f"blob {len(data)}\0".encode()
+    return hashlib.sha1(header + data).hexdigest()
+
+
+def _load_known_hashes(template_dir: Path) -> dict[str, set[str]]:
+    manifest_file = template_dir / _HASH_MANIFEST_FILENAME
+    if not manifest_file.is_file():
+        return {}
+    try:
+        raw = json.loads(manifest_file.read_text())
+        return {filename: set(hashes) for filename, hashes in raw.items()}
+    except Exception as e:
+        logger.debug("Could not read template hash manifest at %s: %s", manifest_file, e)
+        return {}
+
+
+def check_template_files(repo_path: Path, enabled: bool = True) -> dict[str, bool]:
     """Update scaffolding files (build.sh, view.sh, ...) that are outdated
     copies of their bblocks-template counterparts.
 
-    A file is only treated as a candidate for updating if it has never been
-    modified since it was added to the repo's git history - if it has, we
-    assume it was intentionally customized and leave it alone.
+    A file is only treated as a candidate for updating if its content hash
+    matches some version the file has genuinely had at some point in
+    bblocks-template's own history (see _HASH_MANIFEST_FILENAME) - if it
+    doesn't, we assume it was intentionally customized and leave it alone.
+    Unlike checking the consumer repo's own git history, this doesn't care how
+    the current content got there (a human commit, an earlier auto-update, or
+    never having been committed at all), so it isn't confused by our own past
+    updates.
 
-    mode:
-        'ask'    - prompt before updating (default); if stdin isn't
-                   interactive, warn and leave the file as-is
-        'always' - update without prompting
-        'never'  - skip the check entirely
+    Since a match against the manifest means the file is provably an
+    unmodified (if outdated) stock copy, updating it - and fixing its
+    executable bit - is applied directly, without prompting: there's nothing
+    to ask permission for, unlike genuinely risky operations (arbitrary
+    transform/plugin code) that permissions.py gates.
+
+    Returns a dict of filename -> whether it now matches the latest template
+    version (whether it already did, or was just updated).
     """
-    if mode == 'never':
-        return
+    up_to_date: dict[str, bool] = {}
+
+    if not enabled:
+        return up_to_date
 
     template_dir = os.environ.get(_TEMPLATE_DIR_ENV)
     if not template_dir:
-        return
+        return up_to_date
     template_dir = Path(template_dir)
     if not template_dir.is_dir():
-        return
+        return up_to_date
 
-    try:
-        import git
-        repo = git.Repo(git_repo_path)
-    except Exception as e:
-        logger.debug("Could not open git repo at %s to check template files: %s", git_repo_path, e)
-        return
+    known_hashes = _load_known_hashes(template_dir)
 
     for filename in _TRACKED_FILES:
-        target = git_repo_path / filename
+        target = repo_path / filename
         template = template_dir / filename
         if not target.is_file() or not template.is_file():
             continue
 
-        commits = list(repo.iter_commits(paths=filename, max_count=_MAX_COMMITS_SCANNED))
-        if not commits:
-            continue
+        template_bytes = template.read_bytes()
+        template_hash = _content_hash(template_bytes)
+        target_bytes = target.read_bytes()
+        target_hash = _content_hash(target_bytes)
 
-        # Commits that only touch the file's mode (e.g. `chmod a+x build.sh`)
-        # leave its blob hash unchanged, so they don't count as customization
-        content_hashes = set()
-        for commit in commits:
-            try:
-                content_hashes.add(commit.tree[filename].hexsha)
-            except KeyError:
-                pass
-        if len(content_hashes) != 1:
-            # Content actually changed across commits (or couldn't be read),
-            # so we can't be sure it's still the pristine template version
+        if target_hash == template_hash:
+            up_to_date[filename] = True
+        elif target_hash not in known_hashes.get(filename, ()):
+            # Content was never a genuine template version, so it's assumed
+            # to be intentionally customized - leave it alone
             logger.debug(
-                "Skipping template check for %s: its content changed across %d commit(s) "
-                "(expected its content to be unchanged since it was added)", filename, len(commits),
+                "Skipping template check for %s: its content doesn't match any known "
+                "bblocks-template version (assumed to be customized)", filename,
             )
-            continue
+            up_to_date[filename] = False
+        else:
+            target.write_bytes(template_bytes)
+            _make_executable(target)
+            logger.info("Updated %s to the latest bblocks-template version.", filename)
+            up_to_date[filename] = True
 
-        if target.read_bytes() != template.read_bytes():
-            if mode == 'always':
-                target.write_bytes(template.read_bytes())
-                _make_executable(target)
-                logger.info("Updated %s to the latest bblocks-template version.", filename)
-                continue
+        if up_to_date[filename] and not _is_executable(target):
+            _make_executable(target)
+            logger.info("Made %s executable.", filename)
 
-            print()
-            print("╔══ Outdated template file detected")
-            print(f"║ {filename} differs from the latest version in bblocks-template,")
-            print(f"║ and does not appear to have been customized.")
-            print("║")
-            if ask_yes_no(
-                f"Update {filename} to the latest bblocks-template version?",
-                no_input_message=(
-                    f"No interactive input available to ask about updating {filename} "
-                    f"(stdin is closed) - leaving it as-is. It may be outdated; compare "
-                    f"against https://github.com/opengeospatial/bblocks-template/blob/master/{filename}"
-                ),
-            ):
-                target.write_bytes(template.read_bytes())
-                _make_executable(target)
-                print(f"  Updated {filename}.")
-                # The executable bit was implicitly accepted along with the content update
-                continue
-
-        if not _is_executable(target):
-            if mode == 'always':
-                _make_executable(target)
-                logger.info("Made %s executable.", filename)
-                continue
-
-            print()
-            print("╔══ Template file is not executable")
-            print(f"║ {filename} is missing the executable bit.")
-            print("║")
-            if ask_yes_no(
-                f"Make {filename} executable?",
-                no_input_message=(
-                    f"No interactive input available to ask about making {filename} executable "
-                    f"(stdin is closed) - leaving it as-is."
-                ),
-            ):
-                _make_executable(target)
-                print(f"  Made {filename} executable.")
+    return up_to_date

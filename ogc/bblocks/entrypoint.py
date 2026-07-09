@@ -69,12 +69,12 @@ if __name__ == '__main__':
 
     parser.add_argument(
         '--update-template-files',
-        default='ask',
-        choices=('ask', 'always', 'never'),
+        default='true',
         help="Whether to update outdated scaffolding files (build.sh, view.sh, ...) inherited "
-             "from bblocks-template: 'ask' to prompt (falls back to leaving them untouched if "
-             "stdin isn't interactive), 'always' to update without asking, or 'never' to skip "
-             "the check entirely (set to 'never' in CI)",
+             "from bblocks-template, and add -it to build.sh's docker run command if missing. "
+             "Only ever applied to files that are still an unmodified (if outdated) copy of the "
+             "template, so it's never overwriting customizations. Always skipped when "
+             "skip_permissions is set, since it's meaningless in CI.",
     )
 
     parser.add_argument(
@@ -320,10 +320,11 @@ if __name__ == '__main__':
     except Exception as e:
         logger.warning("Could not autodetect base_url / github_base_url: %s", e)
 
-    if git_repo_path:
-        if not skip_permissions and ensure_build_script_interactive(git_repo_path):
+    update_template_files = args.update_template_files in ('true', 'on', 'yes', '1')
+    if not skip_permissions and update_template_files:
+        sync_status = check_template_files(Path.cwd(), enabled=True)
+        if not sync_status.get('build.sh') and ensure_build_script_interactive(Path.cwd()):
             sys.exit(1)
-        check_template_files(git_repo_path, mode=args.update_template_files)
 
     steps = args.steps.split(',') if args.steps else None
 
