@@ -10,8 +10,8 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 _TEMPLATE_DIR_ENV = 'BBP_TEMPLATE_DIR'
-_TRACKED_FILES = ('build.sh', 'view.sh')
 _HASH_MANIFEST_FILENAME = '.known-template-hashes.json'
+_TRACKED_FILES = tuple((Path(__file__).parent / 'tracked_template_files.txt').read_text().split())
 
 _POSTPROCESS_IMAGE_MARKER = 'bblocks-postprocess'
 _DOCKER_RUN_RE = re.compile(r'docker\s+run\b')

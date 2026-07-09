@@ -26,10 +26,12 @@ RUN /venv/bin/python -m pip install git+https://github.com/avillar/rdflib.git@6.
 # clone is needed to walk the files' full history when building the hash
 # manifest below; .git is stripped afterwards so it isn't carried in the image.
 COPY scripts/generate_template_hash_manifest.py /tmp/generate_template_hash_manifest.py
+COPY ogc/bblocks/tracked_template_files.txt /tmp/tracked_template_files.txt
 RUN git clone https://github.com/opengeospatial/bblocks-template.git /opt/bblocks-template && \
     /venv/bin/python /tmp/generate_template_hash_manifest.py \
-        /opt/bblocks-template /opt/bblocks-template/.known-template-hashes.json && \
-    rm -rf /opt/bblocks-template/.git /tmp/generate_template_hash_manifest.py
+        /opt/bblocks-template /opt/bblocks-template/.known-template-hashes.json \
+        /tmp/tracked_template_files.txt && \
+    rm -rf /opt/bblocks-template/.git /tmp/generate_template_hash_manifest.py /tmp/tracked_template_files.txt
 
 ENV PYTHONPATH=/src/
 ENV PYTHONUNBUFFERED=1

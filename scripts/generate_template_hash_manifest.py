@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Build a manifest of every historical git-blob hash for the bblocks-template
-scaffolding files we track (build.sh, view.sh).
+scaffolding files we track (see ogc/bblocks/tracked_template_files.txt).
 
 This lets bblocks-postprocess recognize an unmodified - if outdated - copy of
 one of these files by content alone, without depending on the consumer repo's
@@ -11,12 +11,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-TRACKED_FILES = ('build.sh', 'view.sh')
 
-
-def main(template_dir: str, output_file: str) -> None:
+def main(template_dir: str, output_file: str, tracked_files_file: str) -> None:
+    tracked_files = Path(tracked_files_file).read_text().split()
     manifest: dict[str, list[str]] = {}
-    for filename in TRACKED_FILES:
+    for filename in tracked_files:
         revs = subprocess.run(
             ['git', 'log', '--format=%H', '--', filename],
             cwd=template_dir, capture_output=True, text=True, check=True,
@@ -34,4 +33,4 @@ def main(template_dir: str, output_file: str) -> None:
 
 
 if __name__ == '__main__':
-    main(sys.argv[1], sys.argv[2])
+    main(sys.argv[1], sys.argv[2], sys.argv[3])
