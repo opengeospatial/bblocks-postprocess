@@ -41,8 +41,8 @@ def _apply_bblocks_uri_refs(metadata: dict) -> dict:
         result['dependsOn'] = [add_bblocks_uri(d) for d in result['dependsOn']]
     if result.get('isProfileOf'):
         v = result['isProfileOf']
-        result['isProfileOf'] = ([add_bblocks_uri(i) for i in v]
-                                  if isinstance(v, list) else add_bblocks_uri(v))
+        v = v if isinstance(v, list) else [v]
+        result['isProfileOf'] = [add_bblocks_uri(i) for i in v]
     ep = result.get('extensionPoints')
     if ep:
         result['extensionPoints'] = dict(ep)

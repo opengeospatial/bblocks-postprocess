@@ -160,8 +160,8 @@ class BuildingBlock:
         # Normalize bblocks:// URIs to plain identifiers in all cross-bblock reference fields
         if 'isProfileOf' in self.metadata:
             v = self.metadata['isProfileOf']
-            self.metadata['isProfileOf'] = ([strip_bblocks_uri(i) for i in v]
-                                            if isinstance(v, list) else strip_bblocks_uri(v))
+            v = v if isinstance(v, list) else [v]
+            self.metadata['isProfileOf'] = [strip_bblocks_uri(i) for i in v]
 
         if 'dependsOn' in self.metadata:
             self.metadata['dependsOn'] = [strip_bblocks_uri(d) for d in self.metadata['dependsOn']]
