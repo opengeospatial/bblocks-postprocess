@@ -101,6 +101,8 @@ The legacy standalone `transform-plugins.yml` file is still read as a fallback f
 | `transforms.yaml` | Transform definitions (type, inputs, outputs, code) |
 | `transform-plugins.yml` | Legacy external transformer plugin loading (deprecated — use `plugins.transforms` in `bblocks-config.yaml`) |
 
+When changing `bblocks-config.yaml` (new keys, examples, documentation comments), the equivalent section in the bblocks-template repository's `bblocks-config.yaml` should also be updated, since downstream repos scaffold from it.
+
 ## Dependencies
 
 - **Python**: ogc-na-tools (semantic annotation + RDF), pyshacl, rdflib (custom fork `avillar/rdflib@6.x`), jsonschema, mako, requests
