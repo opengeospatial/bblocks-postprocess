@@ -149,10 +149,16 @@ $defs:
         format: uri
         description: URL of the plugin's ESM JavaScript module, loaded at runtime via dynamic import().
       export:
-        type: string
         description: >
-          Name of the named export to use from the module. If omitted, the module's
-          default export is used.
+          Name of the named export(s) to use from the module. If omitted, the module's
+          default export is used. Multiple exports can be listed to render several
+          views from the same module.
+        oneOf:
+          - type: string
+          - type: array
+            items:
+              type: string
+            minItems: 1
       weight:
         type: number
         description: >
