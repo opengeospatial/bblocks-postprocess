@@ -14,7 +14,7 @@ from pathlib import Path
 from ogc.bblocks.log import setup_logging, log_indent
 
 from ogc.bblocks.postprocess import postprocess
-from ogc.bblocks.template_sync import check_template_files, ensure_build_script_interactive
+from ogc.bblocks.template_sync import check_template_files, ensure_build_script_interactive, sync_lineage_files
 from ogc.na import ingest_json, update_vocabs
 
 import jsonschema
@@ -297,6 +297,7 @@ if __name__ == '__main__':
     base_url = args.base_url
     github_base_url = args.github_base_url
     git_repo_path = None
+    gh_repo = None
     try:
         import git
         repo = git.Repo()
@@ -325,6 +326,11 @@ if __name__ == '__main__':
         sync_status = check_template_files(Path.cwd(), enabled=True)
         if not sync_status.get('build.sh') and ensure_build_script_interactive(Path.cwd()):
             sys.exit(1)
+
+    # Unlike check_template_files above, this always runs, including in CI:
+    # it creates/updates files such as SECURITY.md, which we want committed
+    # by the workflow's own "Add & Commit" step, not just fixed up locally.
+    sync_lineage_files(Path.cwd(), owner=gh_repo[0] if gh_repo else None, enabled=True)
 
     steps = args.steps.split(',') if args.steps else None
 

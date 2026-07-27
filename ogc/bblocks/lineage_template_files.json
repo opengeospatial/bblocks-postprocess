@@ -1,0 +1,6 @@
+{
+  "SECURITY.md": {
+    "ogc": ".github/SECURITY-bblocks-ogc.md",
+    "thirdparty": ".github/SECURITY-bblocks.md"
+  }
+}

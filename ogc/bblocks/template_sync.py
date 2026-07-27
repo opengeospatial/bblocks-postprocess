@@ -12,6 +12,10 @@ logger = logging.getLogger(__name__)
 _TEMPLATE_DIR_ENV = 'BBP_TEMPLATE_DIR'
 _HASH_MANIFEST_FILENAME = '.known-template-hashes.json'
 _TRACKED_FILES = tuple((Path(__file__).parent / 'tracked_template_files.txt').read_text().split())
+_LINEAGE_FILES: dict[str, dict[str, str]] = json.loads(
+    (Path(__file__).parent / 'lineage_template_files.json').read_text()
+)
+_OGC_ORGS = {'opengeospatial', 'ogcincubator'}
 
 _POSTPROCESS_IMAGE_MARKER = 'bblocks-postprocess'
 _DOCKER_RUN_RE = re.compile(r'docker\s+run\b')
@@ -113,7 +117,22 @@ def _load_known_hashes(template_dir: Path) -> dict[str, set[str]]:
         return {}
     try:
         raw = json.loads(manifest_file.read_text())
-        return {filename: set(hashes) for filename, hashes in raw.items()}
+        return {filename: set(hashes) for filename, hashes in raw.items() if isinstance(hashes, list)}
+    except Exception as e:
+        logger.debug("Could not read template hash manifest at %s: %s", manifest_file, e)
+        return {}
+
+
+def _load_lineage_hashes(template_dir: Path) -> dict[str, dict[str, set[str]]]:
+    manifest_file = template_dir / _HASH_MANIFEST_FILENAME
+    if not manifest_file.is_file():
+        return {}
+    try:
+        raw = json.loads(manifest_file.read_text())
+        return {
+            filename: {lineage: set(hashes) for lineage, hashes in lineages.items()}
+            for filename, lineages in raw.items() if isinstance(lineages, dict)
+        }
     except Exception as e:
         logger.debug("Could not read template hash manifest at %s: %s", manifest_file, e)
         return {}
@@ -187,3 +206,85 @@ def check_template_files(repo_path: Path, enabled: bool = True) -> dict[str, boo
             logger.info("Made %s executable.", filename)
 
     return up_to_date
+
+
+def _lineage_for_owner(owner: str | None) -> str:
+    return 'ogc' if owner in _OGC_ORGS else 'thirdparty'
+
+
+def sync_lineage_files(repo_path: Path, owner: str | None, enabled: bool = True) -> dict[str, str | None]:
+    """Create or update files that have more than one valid "lineage"
+    depending on the kind of repo they live in (currently just SECURITY.md:
+    an OGC-owned-repo version vs. a third-party one - see
+    lineage_template_files.json), unlike check_template_files's tracked
+    files, which have a single canonical version.
+
+    A missing target file is created from the lineage matching `owner`
+    (OGC_ORGS) - this is the only place `owner` is consulted. Once a file
+    exists, which lineage it belongs to is decided purely by matching its
+    content hash against each lineage's known history (see
+    _load_lineage_hashes), exactly like check_template_files - so a
+    deliberately cross-wired repo (e.g. an OGC-controlled repo hosted under
+    a third-party org) is never "corrected" back based on owner, only ever
+    left alone (if customized) or updated within whatever lineage it
+    already matches.
+
+    Returns a dict of target filename -> lineage it now matches, or None if
+    it was left alone as customized.
+    """
+    result: dict[str, str | None] = {}
+
+    if not enabled or not _LINEAGE_FILES:
+        return result
+
+    template_dir = os.environ.get(_TEMPLATE_DIR_ENV)
+    if not template_dir:
+        return result
+    template_dir = Path(template_dir)
+    if not template_dir.is_dir():
+        return result
+
+    lineage_hashes = _load_lineage_hashes(template_dir)
+
+    for filename, sources in _LINEAGE_FILES.items():
+        target = repo_path / filename
+        known = lineage_hashes.get(filename, {})
+
+        if not target.is_file():
+            lineage = _lineage_for_owner(owner)
+            source = template_dir / sources[lineage]
+            if not source.is_file():
+                continue
+            target.write_bytes(source.read_bytes())
+            logger.info("Created %s from the bblocks-template %r lineage.", filename, lineage)
+            result[filename] = lineage
+            continue
+
+        target_hash = _content_hash(target.read_bytes())
+
+        matched_lineage = next(
+            (
+                lineage for lineage, source in sources.items()
+                if (template_dir / source).is_file()
+                and (target_hash == _content_hash((template_dir / source).read_bytes())
+                     or target_hash in known.get(lineage, ()))
+            ),
+            None,
+        )
+
+        if matched_lineage is None:
+            logger.debug(
+                "Skipping lineage check for %s: its content doesn't match any known "
+                "bblocks-template version of any lineage (assumed to be customized)", filename,
+            )
+            result[filename] = None
+            continue
+
+        source = template_dir / sources[matched_lineage]
+        source_bytes = source.read_bytes()
+        if target_hash != _content_hash(source_bytes):
+            target.write_bytes(source_bytes)
+            logger.info("Updated %s to the latest bblocks-template %r version.", filename, matched_lineage)
+        result[filename] = matched_lineage
+
+    return result
