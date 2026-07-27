@@ -353,6 +353,7 @@ if __name__ == '__main__':
                     viewer_path=(args.viewer_path or '.') if deploy_viewer else None,
                     additional_metadata=register_additional_metadata,
                     viewer_config=viewer_config,
+                    default_license=bb_config.get('license') if bb_config else None,
                     schemas_oas30_downcompile=schema_oas30_downcompile,
                     local_url_mappings=local_url_mappings,
                     links=[

@@ -75,7 +75,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 schemas_oas30_downcompile=False,
                 local_url_mappings: dict | None = None,
                 links: list[dict] = None,
-                viewer_config: dict | None = None) -> list[dict]:
+                viewer_config: dict | None = None,
+                default_license: dict | None = None) -> list[dict]:
 
     cwd = Path().resolve()
 
@@ -110,6 +111,16 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
     if base_url and base_url[-1] != '/':
         base_url += '/'
 
+    # Register-wide license, inherited by building blocks that do not declare their own.
+    # If no license URL is given, a LICENSE file in the root of the repository is looked up;
+    # the whole repository is deployed, so it is published under the register's base URL.
+    register_license = dict(default_license) if default_license else {}
+    if not register_license.get('url') and base_url:
+        license_file = next((fn for fn in ('LICENSE', 'LICENSE.md', 'LICENSE.txt')
+                             if (cwd / fn).is_file()), None)
+        if license_file:
+            register_license['url'] = f"{base_url}{license_file}"
+
     test_outputs_base_url = None
     if github_base_url:
         if github_base_url[-1] != '/':
@@ -133,6 +144,10 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                                 annotated_path=annotated_path,
                                 imported_bblocks=imported_bblocks,
                                 base_url=base_url)
+
+    if register_license:
+        for bblock in bbr.bblocks.values():
+            bblock.metadata.setdefault('license', dict(register_license))
 
     doc_generator = DocGenerator(base_url=base_url,
                                  output_dir=generated_docs_path,
@@ -582,6 +597,9 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             output_register_json['baseURL'] = base_url
             if viewer_path:
                 output_register_json['viewerURL'] = urljoin(base_url, viewer_path)
+
+        if register_license:
+            output_register_json['license'] = register_license
 
         if full_validation_report_url:
             output_register_json['validationReport'] = full_validation_report_url

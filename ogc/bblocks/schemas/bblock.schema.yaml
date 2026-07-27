@@ -76,6 +76,22 @@ properties:
     type: string
     format: date
     pattern: '^\d{4}-\d{2}-\d{2}$'
+  license:
+    description: >
+      License under which this Building Block is published. If omitted, the register-wide
+      license declared in bblocks-config.yaml (if any) is used.
+    type: object
+    properties:
+      name:
+        description: Name of the license (e.g. "CC BY 4.0").
+        type: string
+      url:
+        description: Link to the license text.
+        type: string
+        format: uri
+    anyOf:
+      - required: [name]
+      - required: [url]
   sources:
     description: Sources or references for the Building Block definition.
     type: array

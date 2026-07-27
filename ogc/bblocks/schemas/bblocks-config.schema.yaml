@@ -33,6 +33,12 @@ properties:
     type: string
     description: Full description of this register.
 
+  license:
+    description: >
+      Default license for this register and for all of its building blocks. Building blocks
+      that declare their own "license" in bblock.json override this one; the rest inherit it.
+    $ref: '#/$defs/license'
+
   schema-oas30-downcompile:
     type: boolean
     default: false
@@ -98,6 +104,20 @@ properties:
           $ref: '#/$defs/plugin-entry'
 
 $defs:
+  license:
+    type: object
+    properties:
+      name:
+        type: string
+        description: Name of the license (e.g. "CC BY 4.0").
+      url:
+        type: string
+        format: uri
+        description: Link to the license text.
+    anyOf:
+      - required: [name]
+      - required: [url]
+
   plugin-entry:
     type: object
     required:
