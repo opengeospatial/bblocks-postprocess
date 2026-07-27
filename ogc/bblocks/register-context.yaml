@@ -87,6 +87,13 @@ context:
       '@context':
         title: rdfs:label
         link: '@id'
+    license:
+      '@id': dct:license
+      '@context':
+        name: rdfs:label
+        url:
+          '@id': rdfs:seeAlso
+          '@type': '@id'
     schema:
       '@id': prof:hasResource
       '@type': '@id'
