@@ -86,6 +86,14 @@ properties:
           - type: 'null'
           - type: boolean
             enum: [false]
+      view-plugins:
+        type: array
+        description: >
+          Client-side view plugins for the viewer: ESM modules loaded at runtime
+          (via dynamic import) to render custom visualizations for example
+          snippets or transform outputs.
+        items:
+          $ref: '#/$defs/view-plugin-entry'
 
   plugins:
     type: object
@@ -150,3 +158,29 @@ $defs:
         description: >
           URL for this plugin (e.g. its repository or PyPI page). If omitted, the
           postprocessor attempts to derive one automatically from the pip specifier.
+
+  view-plugin-entry:
+    type: object
+    required:
+      - url
+    properties:
+      url:
+        type: string
+        format: uri
+        description: URL of the plugin's ESM JavaScript module, loaded at runtime via dynamic import().
+      export:
+        description: >
+          Name of the named export(s) to use from the module. If omitted, the module's
+          default export is used. Multiple exports can be listed to render several
+          views from the same module.
+        oneOf:
+          - type: string
+          - type: array
+            items:
+              type: string
+            minItems: 1
+      weight:
+        type: number
+        description: >
+          Controls this plugin's tab ordering relative to other view plugins
+          (lower values sort first). If omitted, plugins are ordered as declared.

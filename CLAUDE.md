@@ -10,21 +10,24 @@ A GitHub Action and standalone Python tool that postprocesses OGC Building Block
 
 ```bash
 # Directly via Python module
-python -m ogc.bblocks.bootstrap [options]
+python -m ogc.bblocks.entrypoint [options]
 
 # Key options:
-#   --register-file PATH    Path to register.json output
-#   --items-dir DIR         Directory to scan for building blocks
-#   --base-url URL          Base URL for generated output
-#   --clean                 Delete old build directories first
-#   --steps STEPS           Comma-separated list: annotate,jsonld,tests,transforms,doc,register
-#   --filter FILTER         Process only matching building block or file
-#   --fail-on-errors        Exit non-zero if validation errors found
+#   --register-file PATH     Path to register.json output
+#   --items-dir DIR          Directory to scan for building blocks
+#   --base-url URL           Base URL for generated output
+#   --clean true|false       Delete old build directories first
+#   --steps STEPS            Comma-separated list: annotate,jsonld,tests,transforms,doc,register
+#   --filter FILTER          Process only matching building block or file
+#   --fail-on-error true|false   Exit non-zero if validation errors found
+#   --skip-permissions true|false  Skip interactive prompts for transform/validator plugins (set true in CI)
 
 # Via Docker
 docker build -t bblocks-postprocess .
 docker run -v /path/to/repo:/workspace bblocks-postprocess [options]
 ```
+
+All flags are string-valued (`true`/`false`, not boolean switches) — see [Adding new CLI flags](#adding-new-cli-flags) for why.
 
 ## Local Testing with URL Mappings
 
@@ -41,9 +44,8 @@ The HTTP interceptor (`http_interceptor.py`) monkey-patches urllib/requests to r
 ### Entry & Flow
 
 ```
-bootstrap.py           Loads plugins from transform-plugins.yml, then delegates
-  → entrypoint.py      Parses CLI args, loads bblocks-config.yaml, calls postprocess()
-    → postprocess.py   Core orchestration: discover → annotate → validate → generate docs → register
+entrypoint.py         Parses CLI args, loads bblocks-config.yaml, calls postprocess()
+  → postprocess.py    Core orchestration: discover → annotate → validate → generate docs → register
 ```
 
 ### Core Components
@@ -54,7 +56,7 @@ bootstrap.py           Loads plugins from transform-plugins.yml, then delegates
 
 - **`validate.py`** — Test validation and HTML/JSON/text report generation. Validators (JSON Schema, RDF/SHACL, semantic uplift) live in `validation/`.
 
-- **`transform.py` + `transformers/`** — Applies pluggable transformers to examples. Built-in transformers: RDF (SHACL-AF, SPARQL), jq, XSLT, JSON-LD Frame, semantic uplift. External transformers load via `transform-plugins.yml`.
+- **`transform.py` + `transformers/`** — Applies pluggable transformers to examples. Built-in transformers: RDF (SHACL-AF, SPARQL), jq, XSLT, JSON-LD Frame, semantic uplift. External transform/validator plugins load from the `plugins.transforms` / `plugins.validators` keys in `bblocks-config.yaml` (see below).
 
 - **`generate_docs.py`** — Mako-based documentation generation from templates in `templates/*/`.
 
@@ -76,17 +78,18 @@ For each `bblock.json` found:
 
 After all blocks: generate `register.json`, perform semantic uplift to JSON-LD + Turtle, optionally push to SPARQL triplestore.
 
-### Plugin System (WIP on `transform-plugins` branch)
+### Plugin System
 
-`transform-plugins.yml` allows loading external transformer modules:
+External transform/validator plugins are declared under `plugins.transforms` / `plugins.validators` in `bblocks-config.yaml`:
 ```yaml
 plugins:
-  - modules: [my.custom.Transformer]
-    install:
-      pip: my-custom-package
+  transforms:
+    - modules: [my.custom.Transformer]
+      pip: [my-custom-package]
 ```
+`transform.py`/`validate.py` install each plugin's pip/npm dependencies into a per-plugin sandbox (`sandbox.py`) and register it (`transformers/plugin.py`, `validation/plugin.py`). Unless `--skip-permissions` is set, the user is prompted interactively before installing/running plugin code (`permissions.py`).
 
-`bootstrap.py` loads these before delegating to `entrypoint.py`.
+The legacy standalone `transform-plugins.yml` file is still read as a fallback for `plugins.transforms` (with a deprecation warning) if `bblocks-config.yaml` doesn't declare that key.
 
 ## Key Configuration Files
 
@@ -96,7 +99,17 @@ plugins:
 | `bblock.json` | Per-block metadata: identifier, name, schema path, examples, SHACL, extension points |
 | `examples.yaml` | Example snippets with test cases |
 | `transforms.yaml` | Transform definitions (type, inputs, outputs, code) |
-| `transform-plugins.yml` | External transformer plugin loading |
+| `transform-plugins.yml` | Legacy external transformer plugin loading (deprecated — use `plugins.transforms` in `bblocks-config.yaml`) |
+
+When changing `bblocks-config.yaml` (new keys, examples, documentation comments), also update the equivalent section in the **bblock-template** repository's `bblocks-config.yaml`, since downstream repos scaffold from it.
+
+More generally, changes here often need companion changes in sibling repos — check each one, not just bblock-template:
+- **bblock-template** — scaffold `bblocks-config.yaml` (and other scaffolded files) used by new registers; keep in sync with any config format changes.
+- **bblocks-viewer** — consumes `register.json` and any other postprocessor output; update it for changes to output structure/fields, new config it needs to read (e.g. new `register.json` keys), or new plugin/extension mechanisms it needs to support.
+- **bblocks-docs** — documents authoring/config/CLI behavior for register maintainers; update it for any user-facing behavior change here (new CLI flags, new `bblocks-config.yaml` keys, new bblock.json fields, changed defaults, etc.), not just config-file changes.
+- **ogc-llm-skills** — LLM-facing skills for OGC Building Blocks; update the relevant one(s) for user-facing changes here:
+  - `bblocks/consuming` (skill name `bblocks-consuming`) — how agents consume a published register (register.json fields, schemas, JSON-LD, SHACL, examples, transforms). Update for changes visible from the consumer's side (e.g. new/changed `register.json` fields, new canonical values agents should dispatch on).
+  - `bblocks/authoring` (skill name `bblocks-authoring`) — how agents author bblocks (bblock.json, schema.yaml, examples.yaml, transforms.yaml, etc.). Update for changes to authoring-time behavior (new/changed config keys, accepted field values/formats, validation rules, CLI flags).
 
 ## Dependencies
 
@@ -106,9 +119,11 @@ plugins:
 
 ## CI/CD
 
-- `build-docker.yml` — builds and pushes Docker image to `ghcr.io/opengeospatial/bblocks-postprocess` on push to master
+- `build-docker.yml` — builds and pushes Docker image to `ghcr.io/opengeospatial/bblocks-postprocess`, triggered on push to `develop` or on `v1.*.*` tags (tag pushes also float the `master` tag)
 - `test-postprocess.yml` — regression tests against live bblocks repos (triggered after Docker build)
 - `validate-and-process.yml` — reusable workflow called by downstream repos to postprocess, commit, and deploy their building blocks
+- `test.yml` — exercises this action's own composite/Docker actions (`full/action.yml`, `postprocess/action.yml`)
+- `upload-to-triplestore.yml` — pushes semantic uplift output to a SPARQL triplestore
 
 ### Adding new CLI flags
 
