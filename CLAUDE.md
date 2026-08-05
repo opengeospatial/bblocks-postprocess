@@ -101,10 +101,10 @@ The legacy standalone `transform-plugins.yml` file is still read as a fallback f
 | `transforms.yaml` | Transform definitions (type, inputs, outputs, code) |
 | `transform-plugins.yml` | Legacy external transformer plugin loading (deprecated — use `plugins.transforms` in `bblocks-config.yaml`) |
 
-When changing `bblocks-config.yaml` (new keys, examples, documentation comments), also update the equivalent section in the **bblock-template** repository's `bblocks-config.yaml`, since downstream repos scaffold from it.
+When changing `bblocks-config.yaml` (new keys, examples, documentation comments), also update the equivalent section in the **bblocks-template** repository's `bblocks-config.yaml`, since downstream repos scaffold from it.
 
-More generally, changes here often need companion changes in sibling repos — check each one, not just bblock-template:
-- **bblock-template** — scaffold `bblocks-config.yaml` (and other scaffolded files) used by new registers; keep in sync with any config format changes.
+More generally, changes here often need companion changes in sibling repos — check each one, not just bblocks-template:
+- **bblocks-template** — scaffold `bblocks-config.yaml` (and other scaffolded files) used by new registers; keep in sync with any config format changes.
 - **bblocks-viewer** — consumes `register.json` and any other postprocessor output; update it for changes to output structure/fields, new config it needs to read (e.g. new `register.json` keys), or new plugin/extension mechanisms it needs to support.
 - **bblocks-docs** — documents authoring/config/CLI behavior for register maintainers; update it for any user-facing behavior change here (new CLI flags, new `bblocks-config.yaml` keys, new bblock.json fields, changed defaults, etc.), not just config-file changes.
 - **ogc-llm-skills** — LLM-facing skills for OGC Building Blocks; update the relevant one(s) for user-facing changes here:

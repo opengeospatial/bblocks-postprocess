@@ -243,7 +243,7 @@ jobs:
             -exec gzip \{\} \; || true
           git pull
       - name: Add & Commit
-        if: ${{ !endsWith(github.repository, '/bblock-template') && !inputs.skip-build }}
+        if: ${{ !endsWith(github.repository, '/bblocks-template') && !inputs.skip-build }}
         uses: EndBug/add-and-commit@v10
         with:
           message: Building blocks postprocessing
