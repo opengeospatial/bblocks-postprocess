@@ -91,6 +91,36 @@ def ensure_build_script_interactive(repo_path: Path) -> bool:
     return False
 
 
+def _was_deliberately_removed(repo_path: Path, filename: str) -> bool:
+    """Best-effort check for whether `filename` was committed and later
+    removed from `repo_path`'s own git history (as opposed to never having
+    existed there).
+
+    Note this is a narrower question than the one the hash-manifest approach
+    replaced consumer-repo git history for (see check_template_files):
+    that heuristic judged whether *existing* content was still pristine, and
+    broke because every auto-update added a new "changed" commit to the same
+    history it was reading from. Here we only ever ask "does any commit touch
+    this path at all", while the file is absent - a question our own writes
+    can't retroactively pollute the answer to, since a create only happens
+    when there's currently nothing on disk to have written over.
+
+    Still best-effort: on a shallow clone (the default for `actions/checkout`
+    in CI) history older than the fetch depth simply isn't there, so a
+    genuine past deletion can look identical to "never existed". When that
+    happens - or there's no git repo at all - this returns False, i.e. we
+    fall back to treating the file as never having existed and create it,
+    rather than risk skipping a file that should be added.
+    """
+    try:
+        import git
+        repo = git.Repo(repo_path)
+        return next(repo.iter_commits(paths=filename, max_count=1), None) is not None
+    except Exception as e:
+        logger.debug("Could not check git history for %s: %s", filename, e)
+        return False
+
+
 def _is_executable(path: Path) -> bool:
     return bool(path.stat().st_mode & 0o111)
 
@@ -120,17 +150,22 @@ def _load_known_hashes(template_dir: Path) -> dict[str, set[str]]:
 
 
 def check_template_files(repo_path: Path, enabled: bool = True) -> dict[str, bool]:
-    """Update scaffolding files (build.sh, view.sh, ...) that are outdated
-    copies of their bblocks-template counterparts.
+    """Create or update scaffolding files (build.sh, view.sh, ...) that are
+    missing or outdated copies of their bblocks-template counterparts.
 
-    A file is only treated as a candidate for updating if its content hash
-    matches some version the file has genuinely had at some point in
-    bblocks-template's own history (see _HASH_MANIFEST_FILENAME) - if it
-    doesn't, we assume it was intentionally customized and leave it alone.
-    Unlike checking the consumer repo's own git history, this doesn't care how
-    the current content got there (a human commit, an earlier auto-update, or
-    never having been committed at all), so it isn't confused by our own past
-    updates.
+    A missing file is created from the current template version, unless this
+    repo's own git history shows it was committed and later deliberately
+    removed (see _was_deliberately_removed - best-effort only, since a
+    shallow CI clone can't always tell).
+
+    An existing file is only treated as a candidate for updating if its
+    content hash matches some version the file has genuinely had at some
+    point in bblocks-template's own history (see _HASH_MANIFEST_FILENAME) -
+    if it doesn't, we assume it was intentionally customized and leave it
+    alone. Unlike checking the consumer repo's own git history, this doesn't
+    care how the current content got there (a human commit, an earlier
+    auto-update, or never having been committed at all), so it isn't confused
+    by our own past updates.
 
     Since a match against the manifest means the file is provably an
     unmodified (if outdated) stock copy, updating it - and fixing its
@@ -158,11 +193,31 @@ def check_template_files(repo_path: Path, enabled: bool = True) -> dict[str, boo
     for filename in _TRACKED_FILES:
         target = repo_path / filename
         template = template_dir / filename
-        if not target.is_file() or not template.is_file():
+        if not template.is_file():
             continue
 
         template_bytes = template.read_bytes()
         template_hash = _content_hash(template_bytes)
+
+        if not target.is_file():
+            if _was_deliberately_removed(repo_path, filename):
+                logger.debug(
+                    "Skipping template check for %s: it was previously committed and removed "
+                    "from this repo's history, so it's assumed to be an intentional removal", filename,
+                )
+                up_to_date[filename] = False
+                continue
+
+            # Nothing to preserve - either the repo predates this file being
+            # tracked, or it was deleted and we couldn't tell (e.g. a shallow
+            # CI clone). Either way, treat it the same as an outdated stock
+            # copy and (re)create it.
+            target.write_bytes(template_bytes)
+            _make_executable(target)
+            logger.info("Added %s from the latest bblocks-template version.", filename)
+            up_to_date[filename] = True
+            continue
+
         target_bytes = target.read_bytes()
         target_hash = _content_hash(target_bytes)
 
