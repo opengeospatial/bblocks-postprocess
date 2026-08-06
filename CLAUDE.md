@@ -128,6 +128,12 @@ More generally, changes here often need companion changes in sibling repos — c
 - `test.yml` — exercises this action's own composite/Docker actions (`full/action.yml`, `postprocess/action.yml`)
 - `upload-to-triplestore.yml` — pushes semantic uplift output to a SPARQL triplestore
 
+### Releasing
+
+`full@v1` / `postprocess@v1` (as used by `validate-and-process.yml`, `pr-check.yml`, and downstream repos) resolve against a `v1` git tag, which `build-docker.yml` only force-moves — atomically alongside the `:latest`/`:master`/`:v1` Docker image tags — when a `v1.*.*` tag is pushed. So changes to `full/action.yml`, `postprocess/action.yml`, or the Docker image (`entrypoint.py` etc.) sit inert for existing `@v1`-pinned consumers until a new release tag ships; a push to `master`/`develop` alone doesn't reach them. (`validate-and-process.yml` itself is the exception — downstream `process-bblocks.yml` callers pin it via `@master`, so changes there go live immediately on merge.)
+
+Cut a release with `scripts/tag-release.sh [major|minor|patch] [--push]` (defaults to `patch`), which tags the next `v1.<minor>.<patch>` off the highest existing tag and optionally pushes it.
+
 ### Adding new CLI flags
 
 The postprocessing chain has four layers that all need to be updated:
