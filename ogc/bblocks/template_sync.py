@@ -198,6 +198,10 @@ def check_template_files(repo_path: Path, enabled: bool = True) -> dict[str, boo
 
         template_bytes = template.read_bytes()
         template_hash = _content_hash(template_bytes)
+        # Mirror the template's own executable bit (e.g. the .sh scripts are
+        # executable, a .github/workflows/*.yml tracked file isn't) rather
+        # than assuming every tracked file should be made executable.
+        should_be_executable = _is_executable(template)
 
         if not target.is_file():
             if _was_deliberately_removed(repo_path, filename):
@@ -212,8 +216,10 @@ def check_template_files(repo_path: Path, enabled: bool = True) -> dict[str, boo
             # tracked, or it was deleted and we couldn't tell (e.g. a shallow
             # CI clone). Either way, treat it the same as an outdated stock
             # copy and (re)create it.
+            target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(template_bytes)
-            _make_executable(target)
+            if should_be_executable:
+                _make_executable(target)
             logger.info("Added %s from the latest bblocks-template version.", filename)
             up_to_date[filename] = True
             continue
@@ -233,11 +239,12 @@ def check_template_files(repo_path: Path, enabled: bool = True) -> dict[str, boo
             up_to_date[filename] = False
         else:
             target.write_bytes(template_bytes)
-            _make_executable(target)
+            if should_be_executable:
+                _make_executable(target)
             logger.info("Updated %s to the latest bblocks-template version.", filename)
             up_to_date[filename] = True
 
-        if up_to_date[filename] and not _is_executable(target):
+        if up_to_date[filename] and should_be_executable and not _is_executable(target):
             _make_executable(target)
             logger.info("Made %s executable.", filename)
 

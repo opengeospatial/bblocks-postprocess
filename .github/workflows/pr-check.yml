@@ -1,0 +1,143 @@
+name: Validate Building Blocks PR
+on:
+  workflow_call:
+    inputs:
+      register_file:
+        type: string
+        description: JSON register file for output
+        default: build/register.json
+      items_dir:
+        type: string
+        description: Root directory where building blocks (subdirectories with bblock.json) are located
+        default: _sources
+      generated_docs_path:
+        type: string
+        description: Output directory for documentation
+        default: build/generateddocs
+      annotated_path:
+        type: string
+        description: Output path for annotated schemas
+        default: build/annotated
+      config_file:
+        type: string
+        description: Building blocks submodule config file
+        default: 'bblocks-config.yaml'
+      test_outputs_path:
+        type: string
+        description: Directory for test output resources
+        default: build/tests
+      skip_permissions:
+        type: string
+        description: Skip interactive permission prompts for transforms and plugins
+        default: 'true'
+      before_postprocess:
+        type: string
+        description: |
+          Shell code to run before running the bblocks postprocessing (e.g., for setting up custom settings)
+        default: ''
+    secrets:
+      gh_pat:
+        description: GitHub Personal Access Token to use when cloning repository-mapping dependencies
+        required: false
+
+# Read-only: this workflow only validates a PR. It never commits, deploys, or
+# pushes anything (see full/action.yml's enable_sparql: 'false' below) -
+# unlike validate-and-process.yml, which this deliberately does not reuse.
+permissions:
+  contents: read
+
+concurrency:
+  group: bblocks-pr-check-${{ github.repository }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pr-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: Update submodules
+        run: git submodule update --recursive --remote
+      - name: Sanity-check items_dir
+        run: |
+          if [ ! -d "${{ inputs.items_dir }}" ] || [ -z "$(find "${{ inputs.items_dir }}" -name bblock.json -print -quit)" ]; then
+            echo "::error::No bblock.json files found under items_dir '${{ inputs.items_dir }}' - the check would otherwise silently pass without validating anything. If this repo overrides items_dir in its main postprocessing workflow (e.g. process-bblocks.yml), pass the same override to this workflow's items_dir input."
+            exit 1
+          fi
+      - name: Process GitHub repository mappings
+        env:
+          GH_PAT: ${{ secrets.gh_pat }}
+        run: |
+          export RANDOM_DIR="_repos_$(openssl rand -hex 8)"
+          mkdir "$RANDOM_DIR"
+          echo '*' > "${RANDOM_DIR}/.gitignore"
+
+          if [ -f "bblocks-github.yaml" ]; then
+            INPUT_YML="bblocks-github.yaml"
+          elif [ -f "bblocks-github.yml" ]; then
+            INPUT_YML="bblocks-github.yml"
+          fi
+
+          if [ -z "$INPUT_YML" ]; then
+            echo "No GitHub repository mappings found"
+            exit 0
+          fi
+
+          MAPPINGS_YML="bblocks-config-local.yml"
+          echo 'url-mappings:' > $MAPPINGS_YML
+
+          if [ -z "$GH_PAT" ]; then
+            GH_AUTH=
+            echo "*WARNING* Cloning repository without a PAT"
+          else
+            GH_AUTH="x-access-token:${GH_PAT}@"
+            echo "Using a GitHub PAT"
+          fi
+          export GH_AUTH
+          yq -r '."repository-mappings" | to_entries[] |
+            "\(strenv(RANDOM_DIR))/\(.value | sub(\"[^A-Za-z0-9]\", \"_\"))" as $SUBDIR |
+            "
+            if [ ! -d \"\($SUBDIR)\" ]; then
+              git clone \"https://\(strenv(GH_AUTH))github.com/\(.value).git\" \"\($SUBDIR)\"
+            fi
+            echo \"  \\\"\(.key)\\\": \\\"\($SUBDIR)\\\"\" >> bblocks-config-local.yml
+            "
+          ' < $INPUT_YML > _script.sh
+          cat _script.sh
+          bash _script.sh
+
+          echo "Repositories cloned and mapped in $RANDOM_DIR — output saved to $MAPPINGS_YML"
+      - name: Restore bblocks sandbox cache
+        uses: actions/cache/restore@v6
+        with:
+          path: .bblocks-sandbox
+          key: bblocks-sandbox-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            bblocks-sandbox-${{ runner.os }}-
+      - name: Before postprocess
+        if: ${{ inputs.before_postprocess }}
+        run: ${{ inputs.before_postprocess }}
+      - name: OGC BB postprocess
+        uses: opengeospatial/bblocks-postprocess/full@v1
+        with:
+          register_file: ${{ inputs.register_file }}
+          items_dir: ${{ inputs.items_dir }}
+          generated_docs_path: ${{ inputs.generated_docs_path }}
+          annotated_path: ${{ inputs.annotated_path }}
+          config_file: ${{ inputs.config_file }}
+          test_outputs_path: ${{ inputs.test_outputs_path }}
+          skip_permissions: ${{ inputs.skip_permissions }}
+          # This is a validation-only check: fail on the first error rather
+          # than limping through with a report full of them, and never
+          # deploy or push anything anywhere.
+          fail_on_error: 'true'
+          deploy_viewer: 'false'
+          enable_sparql: 'false'
+      - name: Save bblocks sandbox cache
+        if: always()
+        uses: actions/cache/save@v6
+        with:
+          path: .bblocks-sandbox
+          key: bblocks-sandbox-${{ runner.os }}-${{ github.run_id }}

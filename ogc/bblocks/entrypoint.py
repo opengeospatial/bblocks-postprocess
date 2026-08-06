@@ -136,8 +136,8 @@ if __name__ == '__main__':
 
     parser.add_argument(
         '--enable-sparql',
-        help='Enable SPARQL push, if configured',
-        action='store_true',
+        default='false',
+        help='Enable SPARQL push, if configured (set to false to skip pushing entirely, e.g. for PR checks)',
     )
 
     parser.add_argument(
@@ -160,6 +160,7 @@ if __name__ == '__main__':
     skip_permissions = args.skip_permissions in ('true', 'on', 'yes', '1')
     clean = args.clean in ('true', 'on', 'yes', '1')
     deploy_viewer = args.deploy_viewer in ('true', 'on', 'yes', '1')
+    enable_sparql = args.enable_sparql in ('true', 'on', 'yes', '1')
     bb_config_file = Path(args.config_file) if args.config_file else None
 
     if version_file.is_file():
@@ -389,7 +390,7 @@ if __name__ == '__main__':
                              transform_args=uplift_args)
 
     # 3. Push to triplestore
-    if args.enable_sparql:
+    if enable_sparql:
         sparql_gsp = sparql_conf.get('push')
         if sparql_gsp:
             if os.environ.get('SPARQL_USERNAME'):

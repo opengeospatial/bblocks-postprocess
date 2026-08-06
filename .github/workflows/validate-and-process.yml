@@ -85,6 +85,10 @@ on:
         type: string
         description: Skip interactive permission prompts for transforms and plugins
         default: 'true'
+      enable_sparql:
+        type: string
+        description: Whether to push to the SPARQL Graph Store Protocol endpoint, if configured
+        default: 'true'
       before_postprocess:
         type: string
         description: |
@@ -234,6 +238,7 @@ jobs:
           deploy_viewer: ${{ inputs.deploy_viewer && 'true' || 'false' }}
           viewer_path: ${{ inputs.viewer_path }}
           skip_permissions: ${{ inputs.skip_permissions }}
+          enable_sparql: ${{ inputs.enable_sparql }}
           sparql_username: ${{ secrets.sparql_username }}
           sparql_password: ${{ secrets.sparql_password }}
       - name: Fix permissions, compress large _visited_properties.tsv, git pull
