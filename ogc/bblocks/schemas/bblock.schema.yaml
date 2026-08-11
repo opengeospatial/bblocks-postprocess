@@ -207,8 +207,10 @@ properties:
       type: string
   extends:
     description: |
+      Deprecated. Use 'extensionPoints' instead.
       Used to declare that the schema for this Building Block extends another one. The schemas will be joined
       with an "allOf" declaration.
+    deprecated: true
     oneOf:
       - description: Identifier of the base Building Block to extend
         type: string
