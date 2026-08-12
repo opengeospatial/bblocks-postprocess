@@ -21,7 +21,7 @@ RUN /venv/bin/python -m pip install -r /requirements.txt
 # Apply rdflib fixes
 RUN /venv/bin/python -m pip install git+https://github.com/avillar/rdflib.git@6.x
 
-# Reference copy of bblock-template, used to detect outdated scaffolding scripts
+# Reference copy of bblocks-template, used to detect outdated scaffolding scripts
 # (build.sh, view.sh, ...) in the repo being processed. A full (non-shallow)
 # clone is needed to walk the files' full history when building the hash
 # manifest below; .git is stripped afterwards so it isn't carried in the image.

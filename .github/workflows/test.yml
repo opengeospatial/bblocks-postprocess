@@ -11,7 +11,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          repository: ${{ github.event.repository.owner.login }}/bblock-template
+          repository: ${{ github.event.repository.owner.login }}/bblocks-template
       - name: OGC BB postprocess
         uses: opengeospatial/bblocks-postprocess/full@master
       - name: Log resulting files

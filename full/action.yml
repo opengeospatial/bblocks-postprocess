@@ -44,6 +44,9 @@ inputs:
   skip_permissions:
     description: Skip interactive permission prompts for transforms and plugins (set to true in CI)
     default: 'true'
+  enable_sparql:
+    description: Whether to push to the SPARQL Graph Store Protocol endpoint, if configured (set to false to skip pushing entirely, e.g. for PR checks)
+    default: 'true'
   sparql_username:
     description: SPARQL GSP push user name
     default: ''
@@ -70,5 +73,6 @@ runs:
         deploy_viewer: ${{ inputs.deploy_viewer }}
         viewer_path: ${{ inputs.viewer_path }}
         skip_permissions: ${{ inputs.skip_permissions }}
+        enable_sparql: ${{ inputs.enable_sparql }}
         sparql_username: ${{ inputs.sparql_username }}
         sparql_password: ${{ inputs.sparql_password }}

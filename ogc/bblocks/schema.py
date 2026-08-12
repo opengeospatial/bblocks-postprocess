@@ -90,6 +90,12 @@ def annotate_schema(bblock: BuildingBlock,
 
     bb_extends = bblock.extends
     if bb_extends:
+        logger.warning(
+            '!' * 78 + '\n'
+            "DEPRECATED: Building Block %s uses 'extends', which is deprecated and will\n"
+            "be removed in a future release. Use 'extensionPoints' instead.\n" + '!' * 78,
+            bblock.identifier,
+        )
         bb_path = None
         if isinstance(bb_extends, dict):
             bb_path = bb_extends.get('path')

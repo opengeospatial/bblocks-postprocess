@@ -46,29 +46,37 @@ properties:
       When true, JSON Schemas are downcompiled to OpenAPI 3.0 format during annotation.
 
   sparql:
-    type: object
-    description: SPARQL endpoint configuration for semantic publishing.
-    properties:
-      query:
-        type: string
-        description: SPARQL query endpoint URL. Exposed as sparqlEndpoint in register.json.
-      push:
-        type: string
-        description: >
-          SPARQL Graph Store Protocol endpoint URL. When --enable-sparql is set, the
-          register Turtle is pushed here.
-      graph:
-        type: string
-        description: >
-          Named graph URI to use when pushing to the GSP endpoint. Defaults to the
-          register base URL if omitted.
-      resources:
-        type: object
-        description: Additional resources to upload to the triplestore beyond building block metadata.
+    description: >
+      SPARQL endpoint configuration for semantic publishing. Set to null or false
+      (typically in bblocks-config-override.yml, e.g. on a fork without upload
+      credentials) to disable both the postprocessor's SPARQL push and the
+      "upload to triplestore" workflow job, even if the base bblocks-config.yaml
+      configures one.
+    oneOf:
+      - type: object
         properties:
-          ontologies:
-            type: boolean
-            description: When true, ontology files from building blocks are uploaded to the triplestore.
+          query:
+            type: string
+            description: SPARQL query endpoint URL. Exposed as sparqlEndpoint in register.json.
+          push:
+            type: string
+            description: >
+              SPARQL Graph Store Protocol endpoint URL. When --enable-sparql is set, the
+              register Turtle is pushed here.
+          graph:
+            type: string
+            description: >
+              Named graph URI to use when pushing to the GSP endpoint. Defaults to the
+              register base URL if omitted.
+          resources:
+            type: object
+            description: Additional resources to upload to the triplestore beyond building block metadata.
+            properties:
+              ontologies:
+                type: boolean
+                description: When true, ontology files from building blocks are uploaded to the triplestore.
+      - const: null
+      - const: false
 
   viewer:
     type: object

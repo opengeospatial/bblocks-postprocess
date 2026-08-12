@@ -23,6 +23,7 @@ import yaml
 import requests
 from ogc.bblocks.util import is_url, load_yaml
 from rdflib import Graph
+import rdflib.util
 
 from ogc.bblocks import mimetypes
 from ogc.bblocks.util import get_schema, PathOrUrl, load_file, find_references_yaml, \
@@ -32,6 +33,68 @@ from ogc.bblocks.schema import RegisterSchemaResolver
 BBLOCK_METADATA_FILE = 'bblock.json'
 
 EPOCH_STR = '1970-01-01T00:00:00'
+
+# Ontology links must resolve to machine-readable RDF (not e.g. a human-readable
+# documentation/landing page), so ask for it explicitly instead of relying on
+# whatever the server sends an unqualified request.
+RDF_ACCEPT_HEADER = ('text/turtle, application/rdf+xml;q=0.9, application/ld+json;q=0.8, '
+                     'application/n-triples;q=0.7, text/n3;q=0.6, application/trig;q=0.5, */*;q=0.1')
+
+# rdflib registers its RDF parsers under mimetype plugin names, so a Content-Type that
+# exactly matches one of these can be used directly as a `format=` hint for Graph.parse().
+_RDF_MIMETYPES = {
+    'text/turtle', 'application/rdf+xml', 'application/ld+json', 'application/n-triples',
+    'text/n3', 'application/trig', 'application/n-quads', 'application/trix',
+}
+
+
+def _looks_like_rdf_xml(contents: str) -> bool:
+    # rdflib's RDF/XML parser is lenient enough to accept arbitrary XML/HTML as "abbreviated"
+    # RDF/XML (fabricating bogus triples from e.g. an HTML error page), so 'xml' must only be
+    # attempted when there's actual evidence the content is RDF/XML, not just XML-shaped.
+    head = contents.lstrip()[:4096]
+    return head.startswith('<') and ('rdf:RDF' in head or 'rdf-syntax-ns' in head)
+
+
+def _parse_rdf_best_effort(contents: str, content_type: str | None, source: str) -> Graph:
+    """
+    Attempts to parse `contents` as an RDF graph, trying in turn: the format implied by the
+    response's Content-Type (if it looks like RDF), a format guessed from `source`'s file
+    extension, and finally a handful of common RDF serializations. This works around servers
+    with broken or absent content negotiation that don't honor RDF_ACCEPT_HEADER.
+    """
+    formats_to_try = []
+    if content_type and content_type in _RDF_MIMETYPES:
+        formats_to_try.append(content_type)
+    guessed = rdflib.util.guess_format(source)
+    if guessed and guessed not in formats_to_try:
+        formats_to_try.append(guessed)
+    fallbacks = ['turtle', 'json-ld', 'nt', 'n3', 'trig']
+    if 'xml' in formats_to_try or _looks_like_rdf_xml(contents):
+        fallbacks.insert(1, 'xml')
+    for fallback in fallbacks:
+        if fallback not in formats_to_try:
+            formats_to_try.append(fallback)
+
+    last_error = None
+    for fmt in formats_to_try:
+        try:
+            graph = Graph().parse(data=contents, format=fmt)
+            if len(graph):
+                return graph
+            # A "successful" parse with zero triples usually means the format was wrong and the
+            # parser just didn't happen to raise (e.g. non-RDF text parsed leniently as Turtle/N3
+            # with no statements extracted) rather than a genuinely empty ontology -- keep trying
+            # other formats instead of accepting it.
+            last_error = last_error or ValueError(f"parsing as '{fmt}' produced an empty graph")
+        except Exception as e:
+            last_error = e
+
+    hint = (f" (server returned Content-Type '{content_type}', which does not look like RDF -- "
+           f"check that the ontology URL supports content negotiation for machine-readable formats)"
+           if content_type and content_type not in _RDF_MIMETYPES else '')
+    raise ValueError(f"Could not parse ontology from {source} as RDF "
+                     f"(tried: {', '.join(formats_to_try)}){hint}") from last_error
 
 
 def get_bblock_subdirs(identifier: str) -> Path:
@@ -316,8 +379,11 @@ class BuildingBlock:
         if 'ontology_graph' not in self._lazy_properties:
             if not self.ontology.exists:
                 return None
-            contents = load_file(self.ontology.value, self.remote_cache_dir)
-            self._lazy_properties['ontology_graph'] = Graph().parse(data=contents)
+            contents, content_type = load_file(
+                self.ontology.value, self.remote_cache_dir, return_content_type=True,
+                headers={'Accept': RDF_ACCEPT_HEADER} if self.ontology.is_url else None)
+            self._lazy_properties['ontology_graph'] = _parse_rdf_best_effort(
+                contents, content_type, str(self.ontology.value))
         return self._lazy_properties['ontology_graph']
 
     @property

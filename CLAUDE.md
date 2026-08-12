@@ -64,6 +64,8 @@ entrypoint.py         Parses CLI args, loads bblocks-config.yaml, calls postproc
 
 - **`http_interceptor.py`** — URL mapping for local testing.
 
+- **`template_sync.py`** — keeps a consumer repo's scaffolding files (listed in `ogc/bblocks/tracked_template_files.txt`: `build.sh`, `build-devel.sh`, `view.sh`, `create-clean-pr.sh`, `.github/workflows/pr-check.yml`) in sync with their canonical versions in **bblocks-template**. Runs from `entrypoint.py` after repo autodetection, gated by `--update-template-files` (default `true`) and always skipped when `--skip-permissions` is set — so it only ever runs on local/interactive invocations, never in CI. The Dockerfile bakes a shallow clone of bblocks-template into the image at `BBP_TEMPLATE_DIR` (`/opt/bblocks-template`) and generates `.known-template-hashes.json` (via `scripts/generate_template_hash_manifest.py`), recording every git-blob hash each tracked file has ever had across bblocks-template's history, before discarding the `.git` dir. `check_template_files()` then, per tracked file: creates it (making parent dirs as needed) if missing on disk *unless* the consumer repo's own git history shows the path was previously committed and deliberately removed (best-effort — degrades to "create" on a shallow CI-style clone); updates it in place only if its current content hash matches some known past template version (i.e. it's still an unmodified, if outdated, stock copy) — a file that's been customized is never touched. The executable bit is only set/preserved for tracked files that are executable in bblocks-template itself (the shell scripts, not the workflow YAML). Separately, `ensure_build_script_interactive()` patches `build.sh` to add `-it` to its `docker run` for the postprocess image if missing, since without a tty the interactive permission prompts (`permissions.py`) can never be answered.
+
 ### Per-Building-Block Processing
 
 For each `bblock.json` found:
@@ -101,10 +103,10 @@ The legacy standalone `transform-plugins.yml` file is still read as a fallback f
 | `transforms.yaml` | Transform definitions (type, inputs, outputs, code) |
 | `transform-plugins.yml` | Legacy external transformer plugin loading (deprecated — use `plugins.transforms` in `bblocks-config.yaml`) |
 
-When changing `bblocks-config.yaml` (new keys, examples, documentation comments), also update the equivalent section in the **bblock-template** repository's `bblocks-config.yaml`, since downstream repos scaffold from it.
+When changing `bblocks-config.yaml` (new keys, examples, documentation comments), also update the equivalent section in the **bblocks-template** repository's `bblocks-config.yaml`, since downstream repos scaffold from it.
 
-More generally, changes here often need companion changes in sibling repos — check each one, not just bblock-template:
-- **bblock-template** — scaffold `bblocks-config.yaml` (and other scaffolded files) used by new registers; keep in sync with any config format changes.
+More generally, changes here often need companion changes in sibling repos — check each one, not just bblocks-template:
+- **bblocks-template** — scaffold `bblocks-config.yaml` (and other scaffolded files) used by new registers; keep in sync with any config format changes.
 - **bblocks-viewer** — consumes `register.json` and any other postprocessor output; update it for changes to output structure/fields, new config it needs to read (e.g. new `register.json` keys), or new plugin/extension mechanisms it needs to support.
 - **bblocks-docs** — documents authoring/config/CLI behavior for register maintainers; update it for any user-facing behavior change here (new CLI flags, new `bblocks-config.yaml` keys, new bblock.json fields, changed defaults, etc.), not just config-file changes.
 - **ogc-llm-skills** — LLM-facing skills for OGC Building Blocks; update the relevant one(s) for user-facing changes here:
@@ -122,8 +124,15 @@ More generally, changes here often need companion changes in sibling repos — c
 - `build-docker.yml` — builds and pushes Docker image to `ghcr.io/opengeospatial/bblocks-postprocess`, triggered on push to `develop` or on `v1.*.*` tags (tag pushes also float the `master` tag)
 - `test-postprocess.yml` — regression tests against live bblocks repos (triggered after Docker build)
 - `validate-and-process.yml` — reusable workflow called by downstream repos to postprocess, commit, and deploy their building blocks
+- `pr-check.yml` — reusable workflow called by downstream repos (via a `pull_request`-triggered caller scaffolded from bblocks-template, tracked in `ogc/bblocks/tracked_template_files.txt`) to validate a PR before merge: runs postprocess with `fail_on_error: 'true'` so broken bblock dependencies etc. are caught early, but deliberately never commits, deploys, or pushes to a triplestore (`enable_sparql: 'false'`) — read-only by design, unlike `validate-and-process.yml`, which it does not reuse. Since a downstream repo's `items_dir`/etc. overrides live only in that repo's own caller workflow (there's no cross-workflow-file inheritance in GitHub Actions), a mismatched override would make the check silently validate nothing — guarded against with an explicit "does `items_dir` contain any `bblock.json`" sanity check that fails loudly instead.
 - `test.yml` — exercises this action's own composite/Docker actions (`full/action.yml`, `postprocess/action.yml`)
 - `upload-to-triplestore.yml` — pushes semantic uplift output to a SPARQL triplestore
+
+### Releasing
+
+`full@v1` / `postprocess@v1` (as used by `validate-and-process.yml`, `pr-check.yml`, and downstream repos) resolve against a `v1` git tag, which `build-docker.yml` only force-moves — atomically alongside the `:latest`/`:master`/`:v1` Docker image tags — when a `v1.*.*` tag is pushed. So changes to `full/action.yml`, `postprocess/action.yml`, or the Docker image (`entrypoint.py` etc.) sit inert for existing `@v1`-pinned consumers until a new release tag ships; a push to `master`/`develop` alone doesn't reach them. (`validate-and-process.yml` itself is the exception — downstream `process-bblocks.yml` callers pin it via `@master`, so changes there go live immediately on merge.)
+
+Cut a release with `scripts/tag-release.sh [major|minor|patch] [--push]` (defaults to `patch`), which tags the next `v1.<minor>.<patch>` off the highest existing tag and optionally pushes it.
 
 ### Adding new CLI flags
 

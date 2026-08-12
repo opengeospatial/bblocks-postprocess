@@ -85,6 +85,10 @@ on:
         type: string
         description: Skip interactive permission prompts for transforms and plugins
         default: 'true'
+      enable_sparql:
+        type: string
+        description: Whether to push to the SPARQL Graph Store Protocol endpoint, if configured
+        default: 'true'
       before_postprocess:
         type: string
         description: |
@@ -234,6 +238,7 @@ jobs:
           deploy_viewer: ${{ inputs.deploy_viewer && 'true' || 'false' }}
           viewer_path: ${{ inputs.viewer_path }}
           skip_permissions: ${{ inputs.skip_permissions }}
+          enable_sparql: ${{ inputs.enable_sparql }}
           sparql_username: ${{ secrets.sparql_username }}
           sparql_password: ${{ secrets.sparql_password }}
       - name: Fix permissions, compress large _visited_properties.tsv, git pull
@@ -243,7 +248,7 @@ jobs:
             -exec gzip \{\} \; || true
           git pull
       - name: Add & Commit
-        if: ${{ !endsWith(github.repository, '/bblock-template') && !inputs.skip-build }}
+        if: ${{ !endsWith(github.repository, '/bblocks-template') && !inputs.skip-build }}
         uses: EndBug/add-and-commit@v10
         with:
           message: Building blocks postprocessing
@@ -338,9 +343,24 @@ jobs:
             cp "${{ inputs.viewer_path }}/index.html" 404.html
           fi
           
+          # Apply bblocks-config-override.yml (if present) before reading .sparql, so a
+          # downstream fork can disable the triplestore upload (e.g. `sparql: null` or
+          # `sparql: false`) without editing the upstream bblocks-config.yaml.
+          OVERRIDE_FILE=""
+          for f in bblocks-config-override.yml bblocks-config-override.yaml; do
+            if [ -f "$f" ]; then
+              OVERRIDE_FILE="$f"
+              break
+            fi
+          done
+
           {
             echo 'sparql_config<<eirue3biu8Cai6cioraaJie8theechi7ahgheiM0dojooho0unii2deech4abiaX'
-            yq -o=json '.sparql' '${{ inputs.config_file }}'
+            if [ -n "$OVERRIDE_FILE" ]; then
+              yq eval-all -o=json 'select(fi==0) * select(fi==1) | .sparql' '${{ inputs.config_file }}' "$OVERRIDE_FILE"
+            else
+              yq -o=json '.sparql' '${{ inputs.config_file }}'
+            fi
             echo 'eirue3biu8Cai6cioraaJie8theechi7ahgheiM0dojooho0unii2deech4abiaX'
           } >> "$GITHUB_OUTPUT"
           
