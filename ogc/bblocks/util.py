@@ -57,11 +57,12 @@ def load_file_cached(fn):
     return load_file(fn)
 
 
-def load_file(fn, remote_cache_dir: Path | None = None, binary: bool = False):
+def load_file(fn, remote_cache_dir: Path | None = None, binary: bool = False,
+             headers: dict[str, str] | None = None, return_content_type: bool = False):
     if isinstance(fn, PathOrUrl):
         fn = fn.value
     if isinstance(fn, str) and is_url(fn):
-        r = requests.get(fn)
+        r = requests.get(fn, headers=headers)
         r.raise_for_status()
 
         if remote_cache_dir:
@@ -76,18 +77,27 @@ def load_file(fn, remote_cache_dir: Path | None = None, binary: bool = False):
 
         if binary:
             try:
-                return r.content.decode('utf-8')
+                contents = r.content.decode('utf-8')
             except UnicodeDecodeError:
-                return r.content
-        return r.text
+                contents = r.content
+        else:
+            contents = r.text
+        if return_content_type:
+            content_type = r.headers.get('Content-Type', '').split(';', 1)[0].strip().lower()
+            return contents, content_type
+        return contents
     with open(fn, 'rb') as f:
         data = f.read()
-    if not binary:
-        return data.decode('utf-8')
     try:
-        return data.decode('utf-8')
+        contents = data.decode('utf-8')
     except UnicodeDecodeError:
-        return data
+        if binary:
+            contents = data
+        else:
+            raise
+    if return_content_type:
+        return contents, None
+    return contents
 
 
 def get_schema(t: str) -> dict:

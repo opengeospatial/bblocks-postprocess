@@ -29,7 +29,7 @@ from ogc.bblocks.oas30 import oas31_to_oas30
 from ogc.bblocks.util import write_jsonld_context, CustomJSONEncoder, \
     PathOrUrl, get_git_repo_url, load_yaml, add_bblocks_uri
 from ogc.bblocks.schema import annotate_schema, resolve_all_schema_references, write_annotated_schema
-from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister, ImportedBuildingBlocks, BuildingBlockError
+from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister, ImportedBuildingBlocks
 from ogc.bblocks.validate import validate_test_resources, write_report, load_validation_plugins
 from ogc.bblocks.transform import _rel, apply_transforms, load_transform_plugins, transformers, cleanup_sandbox
 from ogc.bblocks.permissions import check_permissions
@@ -450,11 +450,13 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                         _ = building_block.ontology_graph
                         building_block.metadata['ontology'] = building_block.ontology.value
                 except Exception as e:
-                    if fail_on_error:
-                        raise BuildingBlockError(f'Error processing ontology '
-                                                 f'for {building_block.identifier}') from e
-                    logger.error("Exception when processing ontology for %s",
-                                 building_block.identifier, exc_info=e)
+                    # Ontology is supplementary metadata (not consumed by schema/JSON-LD/SHACL
+                    # generation, only by the optional triplestore ontology upload), so a bad
+                    # link is never allowed to fail the whole build, regardless of fail_on_error --
+                    # fall back to the user-provided value as-is.
+                    logger.warning("Could not process ontology for %s, keeping user-provided value as-is: %s",
+                                   building_block.identifier, e)
+                    building_block.metadata['ontology'] = building_block.ontology.with_base_url(base_url)
 
         if base_url and building_block.remote_cache_dir.is_dir():
             building_block.metadata['remoteCacheDir'] = (
