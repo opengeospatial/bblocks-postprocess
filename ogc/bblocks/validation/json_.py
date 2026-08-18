@@ -135,7 +135,7 @@ class JsonValidator(Validator):
                 ))
             # json_doc = jsonref.replace_refs(json_doc, base_uri=filename.as_uri(), merge_props=True, proxies=False)
 
-            if '@graph' in json_doc:
+            if isinstance(json_doc, dict) and '@graph' in json_doc:
                 json_doc = json_doc['@graph']
                 report.add_entry(ValidationReportEntry(
                     section=ValidationReportSection.FILES,
