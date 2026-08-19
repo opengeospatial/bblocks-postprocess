@@ -259,7 +259,8 @@ def write_jsonld_context(annotated_schema: Path | str,
                 f"bblocks://{bblock_id}"
                 for s in rp.sources
                 if (bblock_id := (
-                    bblocks_register.local_bblock_files.get(os.path.relpath(s))
+                    bblocks_register.local_bblock_files.get(
+                        s if isinstance(s, str) and is_url(s) else os.path.relpath(s))
                     or bblocks_register.imported_bblock_files.get(str(s))
                 ))
             ]
