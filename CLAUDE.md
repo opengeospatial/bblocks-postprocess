@@ -113,6 +113,8 @@ More generally, changes here often need companion changes in sibling repos — c
   - `bblocks/consuming` (skill name `bblocks-consuming`) — how agents consume a published register (register.json fields, schemas, JSON-LD, SHACL, examples, transforms). Update for changes visible from the consumer's side (e.g. new/changed `register.json` fields, new canonical values agents should dispatch on).
   - `bblocks/authoring` (skill name `bblocks-authoring`) — how agents author bblocks (bblock.json, schema.yaml, examples.yaml, transforms.yaml, etc.). Update for changes to authoring-time behavior (new/changed config keys, accepted field values/formats, validation rules, CLI flags).
 
+This cross-repo propagation is for changes that have actually shipped (merged to `master`, released) — not for work still sitting on `develop` or a feature branch. Don't touch sibling repos for user-facing surface that isn't live yet; revisit the propagation once the change lands on `master`.
+
 ## Dependencies
 
 - **Python**: ogc-na-tools (semantic annotation + RDF), pyshacl, rdflib (custom fork `avillar/rdflib@6.x`), jsonschema, mako, requests
