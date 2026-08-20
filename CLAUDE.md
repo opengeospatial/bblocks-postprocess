@@ -58,7 +58,7 @@ entrypoint.py         Parses CLI args, loads bblocks-config.yaml, calls postproc
 
 - **`transform.py` + `transformers/`** — Applies pluggable transformers to examples. Built-in transformers: RDF (SHACL-AF, SPARQL), jq, XSLT, JSON-LD Frame, semantic uplift. External transform/validator plugins load from the `plugins.transforms` / `plugins.validators` keys in `bblocks-config.yaml` (see below).
 
-- **`generate_docs.py`** — Mako-based documentation generation from templates in `templates/*/`.
+- **`generate_docs.py`** — Mako-based documentation generation from templates in `templates/*/`. `templates/json-full/index.json` renders each block's full per-block JSON dump; it must stay a superset of that block's `register.json` entry (all fields `register.json` has for that block, plus `json-full`'s own extra detail like inlined `annotatedSchema`/example contents) — when a field is added to what gets published into `register.json`'s `bblocks` array (in `postprocess.py`), update `json-full`'s template to publish the same (already-resolved) value too, rather than letting it independently reimplement or drift from that value.
 
 - **`oas30.py`** — Converts JSON Schema to OpenAPI 3.0.
 
