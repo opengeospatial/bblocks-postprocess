@@ -31,8 +31,10 @@ if bblock.example_prefixes:
     output['examplePrefixes'] = bblock.example_prefixes
 if bblock.annotated_schema:
     output['annotatedSchema'] = bblock.annotated_schema_contents
-if bblock.semantic_uplift:
-    output['semanticUplift'] = bblock.semantic_uplift
+if bblock.published_semantic_uplift:
+    # Must match register.json's published value exactly (json-full is a superset of
+    # register.json per bblock, never a divergent view) - see postprocess.py's do_postprocess.
+    output['semanticUplift'] = bblock.published_semantic_uplift
 if bblock.transforms:
     output['transforms'] = bblock.transforms
 if git_repo:

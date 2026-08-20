@@ -414,6 +414,32 @@ class BuildingBlock:
         return self._lazy_properties['semantic_uplift']
 
     @property
+    def published_semantic_uplift(self) -> dict:
+        """The subset of this bblock's own semantic-uplift.yaml that gets published for other
+        bblocks (in this register or, via register.json, another one) to inherit: only
+        "post"-stage additionalSteps marked "inheritable", with any "ref" resolved and inlined
+        into "code" - a snapshot at publish time, not a live reference, so a wrapping bblock in
+        another register can consume it without needing filesystem access to this repo.
+        Non-inheritable steps are never published; there is nothing else for another bblock to
+        consume them for.
+        """
+        if 'published_semantic_uplift' not in self._lazy_properties:
+            published_steps = []
+            for step in self.semantic_uplift.get('additionalSteps', ()):
+                if not step.get('inheritable'):
+                    continue
+                published_step = {k: v for k, v in step.items() if k not in ('ref', 'stage')}
+                if 'code' not in published_step:
+                    ref = step['ref']
+                    resolved_ref = ref if is_url(ref) else self.files_path / ref
+                    published_step['code'] = load_file(resolved_ref, self.remote_cache_dir)
+                published_steps.append(published_step)
+            self._lazy_properties['published_semantic_uplift'] = (
+                {'additionalSteps': published_steps} if published_steps else {}
+            )
+        return self._lazy_properties['published_semantic_uplift']
+
+    @property
     def transforms(self) -> list:
         if 'transforms' not in self._lazy_properties:
             transforms = {}
@@ -552,9 +578,11 @@ class ImportedBBlockProxy:
 
     @property
     def semantic_uplift(self) -> dict:
-        # Imported bblocks have no local semantic-uplift.yaml; return empty so
-        # Uplifter skips additionalSteps without needing a None check.
-        return {}
+        # Imported bblocks have no local semantic-uplift.yaml on disk, but their own
+        # register.json entry may publish a (filtered-to-inheritable, ref-inlined)
+        # "semanticUplift" - see BuildingBlock.published_semantic_uplift and
+        # BuildingBlockRegister.get_inherited_post_uplift_steps.
+        return self.metadata.get('semanticUplift', {})
 
     def resolve_file(self, fn_or_url):
         """For imported bblocks all SHACL shapes are absolute URLs; pass through unchanged."""
@@ -922,6 +950,78 @@ class BuildingBlockRegister:
                                    first_level_id, dep_id)
 
         return shapes
+
+    def get_inherited_post_uplift_steps(self, identifier: str) -> list[dict]:
+        """Postorder-resolves the "post"-stage semantic uplift steps this bblock inherits from its
+        transitive dependencies (dependsOn + isProfileOf, same edges as find_dependencies), subject
+        to this bblock's own "inheritedPostSteps" setting and each dependency's own "inheritable"
+        flag on the individual step. Unlike find_dependencies's preorder list (fine for
+        get_inherited_shacl_shapes, where results are deduped by identifier in a dict anyway), the
+        order here is significant - steps must run children-before-parents, so this is a genuine
+        postorder traversal with "already emitted" (not "already visited in this path") dedup: a
+        diamond-shared dependency's steps are collected exactly once, at the earliest point its own
+        subtree is fully resolved. See docs/inheritable-post-uplift-steps.md.
+        """
+        if identifier in self.bblocks:
+            root_semantic_uplift = self.bblocks[identifier].semantic_uplift
+        elif identifier in self.imported_bblocks:
+            root_semantic_uplift = self.imported_bblocks[identifier].get('semanticUplift', {})
+        else:
+            return []
+
+        inherited_setting = root_semantic_uplift.get('inheritedPostSteps', False)
+        if inherited_setting is False:
+            return []
+        allow_all = inherited_setting is True
+        allow_list = set(inherited_setting) if not allow_all else None
+
+        result: list[dict] = []
+        emitted: set[str] = set()
+
+        def visit(dep_id: str, seen: tuple[str, ...]):
+            if dep_id in emitted or dep_id in seen:
+                return
+            if dep_id in self.bblocks:
+                dep_bblock = self.bblocks[dep_id]
+                dep_metadata = dep_bblock.metadata
+                dep_steps = dep_bblock.published_semantic_uplift.get('additionalSteps', ())
+            elif dep_id in self.imported_bblocks:
+                dep_metadata = self.imported_bblocks[dep_id]
+                dep_steps = dep_metadata.get('semanticUplift', {}).get('additionalSteps', ())
+            else:
+                return
+
+            seen = seen + (dep_id,)
+            for d in dep_metadata.get('dependsOn', ()):
+                visit(d, seen)
+            dep_is_profile_of = dep_metadata.get('isProfileOf', dep_metadata.get('profileOf'))
+            if dep_is_profile_of:
+                for d in dep_is_profile_of if isinstance(dep_is_profile_of, list) else [dep_is_profile_of]:
+                    visit(d, seen)
+
+            emitted.add(dep_id)
+
+            if dep_id == identifier:
+                return
+            if not (allow_all or dep_id in allow_list):
+                return
+
+            for step in dep_steps:
+                step = dict(step, _source_bblock=dep_id)
+                result.append(step)
+
+        if identifier in self.bblocks:
+            root_metadata = self.bblocks[identifier].metadata
+        else:
+            root_metadata = self.imported_bblocks[identifier]
+        for d in root_metadata.get('dependsOn', ()):
+            visit(d, (identifier,))
+        root_is_profile_of = root_metadata.get('isProfileOf', root_metadata.get('profileOf'))
+        if root_is_profile_of:
+            for d in root_is_profile_of if isinstance(root_is_profile_of, list) else [root_is_profile_of]:
+                visit(d, (identifier,))
+
+        return result
 
     def get(self, identifier: str):
         return self.bblocks.get(identifier, self.imported_bblocks.get(identifier))

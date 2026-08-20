@@ -330,11 +330,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                         transform['ref'] = urljoin(bblock.metadata['sourceFiles'], transform['ref'])
                     bblock.metadata['transforms'].append(transform)
 
-            for step in bblock.semantic_uplift.get('additionalSteps', ()):
-                if step.get('ref'):
-                    step['ref'] = PathOrUrl(bblock.files_path).resolve_ref(step['ref']).with_base_url(
-                        base_url, cwd if base_url else output_file_root
-                    )
+        if bblock.published_semantic_uplift:
+            bblock.metadata['semanticUplift'] = bblock.published_semantic_uplift
 
         return True
 

@@ -143,7 +143,8 @@ class RdfValidator(Validator):
 
         bblock.metadata['shaclShapes'] = inherited_shacl_shapes
 
-        self.uplifter = Uplifter(self.bblock)
+        inherited_post_steps = register.get_inherited_post_uplift_steps(bblock.identifier)
+        self.uplifter = Uplifter(self.bblock, inherited_post_steps=inherited_post_steps)
 
     def _load_graph(self, filename: Path, output_filename: Path, report: ValidationReportItem,
                     contents: str | None = None,
