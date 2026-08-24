@@ -81,6 +81,8 @@ class Extender:
                              'Please check that your extension point declarations contain no fragment '
                              'identifiers ("#")')
 
+        self._check_extension_cycle(bblock.identifier, parent_id)
+
         parent_bblock = register.bblocks.get(parent_id)
 
         parent_is_openapi = False
@@ -150,7 +152,7 @@ class Extender:
                 source_bblock_schema = source_bblock.get('schema', {}).get('application/yaml')
 
             if not source_bblock_schema:
-                raise ValueError(f'No schema was found for extension source {extension_target_id}. '
+                raise ValueError(f'No schema was found for extension source {extension_source_id}. '
                                  f'Only building blocks with schemas are supported for extensions.')
 
             extension_schema_mappings[source_bblock_schema] = {
@@ -167,6 +169,32 @@ class Extender:
                   if parent_is_openapi
                   else self._process_schema(bblock, root_schema, parent_id, extensions, extension_schema_mappings))
         return result, parent_is_openapi
+
+    def _check_extension_cycle(self, bblock_id: str, parent_id: str):
+        """
+        Walks the chain of baseBuildingBlock pointers starting at parent_id, raising
+        immediately if bblock_id (or any other identifier) is revisited. Deliberately not
+        delegated to BuildingBlockRegister's general dependsOn cycle handling, which
+        tolerates cycles by logging a warning and silently dropping an edge - a
+        baseBuildingBlock cycle is nonsensical and must fail loudly rather than leave
+        one of the bblocks processed against a stale/nonexistent parent output.
+        """
+        register = self.register
+        chain = [bblock_id]
+        current_id = parent_id
+        while True:
+            if current_id in chain:
+                cycle = ' -> '.join(chain + [current_id])
+                raise ValueError(f'Extension point cycle detected: {cycle}')
+            chain.append(current_id)
+            current = register.bblocks.get(current_id) or register.imported_bblocks.get(current_id)
+            if current is None:
+                # Unknown parent - reported with a clearer message elsewhere in process_extensions
+                return
+            ep = current.get('extensionPoints')
+            if not ep:
+                return
+            current_id = ep['baseBuildingBlock']
 
     def _process_openapi(self):
         logger.warning("Extension points in OpenAPI building blocks are merely declarative."
