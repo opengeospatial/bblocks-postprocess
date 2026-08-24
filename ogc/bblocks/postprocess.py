@@ -33,7 +33,14 @@ from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister, ImportedBui
 from ogc.bblocks.validate import validate_test_resources, write_report, load_validation_plugins
 from ogc.bblocks.transform import _rel, apply_transforms, load_transform_plugins, transformers, cleanup_sandbox
 from ogc.bblocks.permissions import check_permissions, check_build_plugin_permissions
-from ogc.bblocks.hooks.plugin import load_build_plugins, dispatch_before_run
+from ogc.bblocks.hooks.plugin import load_build_plugins, dispatch_before_run, dispatch_after_register
+
+# Best-effort breadcrumb of which pipeline stage postprocess() is currently in,
+# read by entrypoint.py's on_error dispatch to populate error.phase when
+# postprocess() itself raises. Module-level (not thread-local): postprocess()
+# is not re-entrant/concurrent within a process. See docs/build-lifecycle-hooks.md's
+# on_error "phase" field.
+_hook_phase = 'before_run'
 
 
 def _apply_bblocks_uri_refs(metadata: dict) -> dict:
@@ -131,7 +138,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
     transform_plugins = load_transform_plugins(sandbox_dir, allowed_modules=allowed_plugin_modules)
     plugin_validators, validator_plugins = load_validation_plugins(sandbox_dir, allowed_modules=allowed_validator_modules)
-    build_plugins = load_build_plugins(sandbox_dir, allowed_classes=allowed_build_classes)
+    build_plugins, build_plugin_entries = load_build_plugins(sandbox_dir, allowed_classes=allowed_build_classes)
 
     if not isinstance(test_outputs_path, Path):
         test_outputs_path = Path(test_outputs_path)
@@ -179,20 +186,26 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         for bblock in bbr.bblocks.values():
             bblock.metadata.setdefault('license', dict(register_license))
 
+    # Run-level config for build plugins, present on every event regardless of
+    # whether any are configured - also reused at after_register below.
+    hook_context = {
+        'itemsDir': str(registered_items_path),
+        'baseUrl': base_url,
+        'registerFile': str(output_file) if output_file else None,
+        'steps': list(steps) if steps else None,
+        'filter': bb_filter,
+        'failOnError': fail_on_error,
+    }
+
     if build_plugins:
-        # before_run: register skeleton (no per-bblock processing done yet) plus
-        # run-level config. See docs/build-lifecycle-hooks.md's "before_run fires
-        # after the register is loaded, not before everything".
-        hook_context = {
-            'itemsDir': str(registered_items_path),
-            'baseUrl': base_url,
-            'registerFile': str(output_file) if output_file else None,
-            'steps': list(steps) if steps else None,
-            'filter': bb_filter,
-            'failOnError': fail_on_error,
-        }
+        # before_run: register skeleton (no per-bblock processing done yet).
+        # See docs/build-lifecycle-hooks.md's "before_run fires after the
+        # register is loaded, not before everything".
         hook_register = {'bblocks': sorted(bbr.bblocks.keys())}
         dispatch_before_run(build_plugins, sandbox_dir, hook_register, hook_context)
+
+    global _hook_phase
+    _hook_phase = 'annotate'
 
     doc_generator = DocGenerator(base_url=base_url,
                                  output_dir=generated_docs_path,
@@ -509,6 +522,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
         child_bblocks.append(building_block)
 
+    _hook_phase = 'jsonld'
     if not steps or 'jsonld' in steps:
         logger.info("Writing JSON-LD contexts")
         # Create JSON-LD contexts
@@ -545,6 +559,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                         logger.error("Error writing context for %s%s",
                                      building_block.identifier, written_context_msg, exc_info=e)
 
+    _hook_phase = 'finalize'
     output_bblocks = []
     for building_block in child_bblocks:
         light = filter_id is not None and building_block.identifier != filter_id
@@ -556,6 +571,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
             else:
                 logger.error("%s failed postprocessing, skipping...", building_block.identifier)
 
+    _hook_phase = 'transforms'
     if not steps or 'transforms' in steps:
         logger.info("Running transforms")
         with log_indent():
@@ -578,6 +594,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
     if filter_id is None:
         cleanup_sandbox(sandbox_dir, child_bblocks)
 
+    _hook_phase = 'doc'
     if not steps or 'doc' in steps:
         logger.info("Generating documentation")
         with log_indent():
@@ -614,6 +631,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                      json_report_fn=test_outputs_path / 'report.json',
                      base_url=base_url)
 
+    _hook_phase = 'register'
     if output_file and (not steps or 'register' in steps):
 
         output_register_json = {}
@@ -653,6 +671,9 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         if validator_plugins:
             output_register_json['validatorPlugins'] = validator_plugins
 
+        if build_plugin_entries:
+            output_register_json['buildPlugins'] = build_plugin_entries
+
         remote_cache_dir_url = f"{base_url}{os.path.relpath(Path(remote_cache_dir).resolve(), cwd)}"
         output_register_json['remoteCacheDir'] = remote_cache_dir_url
 
@@ -672,6 +693,12 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                     **link,
                     'href': PathOrUrl(link['href']).with_base_url(base_url),
                 })
+
+        if build_plugins:
+            _hook_phase = 'after_register'
+            output_register_json = dispatch_after_register(
+                build_plugins, sandbox_dir, output_register_json, hook_context)
+            _hook_phase = 'register'
 
         if output_file == '-':
             print(json.dumps(output_register_json, indent=2, cls=CustomJSONEncoder))
