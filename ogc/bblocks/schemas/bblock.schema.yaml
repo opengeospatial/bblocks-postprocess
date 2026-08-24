@@ -300,6 +300,24 @@ properties:
     description: |
       Extension points can be defined using a base building block and declaring specializations for other building
       blocks referenced by the base one.
+
+      For a JSON Schema base building block, the result is the base schema with every substitution wrapped in an
+      "allOf", so the output stays valid against both the original and the substituted content.
+
+      For an OpenAPI base building block, the result is a full copy of the base document with every reference to a
+      declared extension source substituted for its target, wherever it is used (components.schemas/parameters/
+      headers/requestBodies/responses, and paths/webhooks including operations and their parameters/requestBody/
+      responses). Substitution for a Schema Object source/target is wrapped the same "valid as both" way as the
+      plain JSON Schema case; for every other kind (Parameter, Header, RequestBody, Response, Example, Link, or a
+      bare Path Item), OAS has no composition mechanism to lean on, so the target wholesale replaces the source -
+      authors of a target bblock for one of these kinds are responsible for making it a complete, self-sufficient
+      replacement. If this bblock also has its own "openapi.yaml", it is *not* treated as a standalone document in
+      this case: it is read as an additions document instead, and only its "paths"/"webhooks"/"components.*" keys
+      are merged as brand-new additions on top of the base (any other top-level key is ignored, with a warning) -
+      a key that already exists in the base is a build error, not a silent override. components.callbacks is not
+      processed (out of scope); securitySchemes cannot be extension sources/targets, since they aren't $ref-able.
+      OpenAPI base documents must be 3.1 or 3.2 - a 3.0 base is rejected, since its Schema Objects predate the
+      2020-12 JSON Schema alignment this substitution logic depends on.
     type: object
     required:
       - baseBuildingBlock
