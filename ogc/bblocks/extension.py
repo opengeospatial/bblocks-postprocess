@@ -263,12 +263,48 @@ class Extender:
         document['x-bblocks-extensions'] = extensions
         return document
 
+    def _merge_additive_map(self, target_map: dict, additions_map: dict, label: str, bblock_id: str) -> None:
+        """
+        Merge additions_map into target_map in place, entry by entry:
+        - entry_value is boolean False: remove entry_key from target_map. Removing an
+          entry that doesn't exist there is an authoring error (raises) - as unambiguous
+          a mistake as declaring one that already does. False is an unambiguous "delete"
+          sentinel because no real OAS value at this granularity (a Path/Response/
+          Schema/etc. object) is ever a bare boolean.
+        - any other entry_value: add entry_key to target_map. entry_key already existing
+          there is an authoring error (raises), rather than a silent override - remove it
+          first (with False) if the intent is to replace it; note a single YAML/JSON map
+          can't repeat the same key twice, so "remove then reintroduce under the same
+          key" isn't expressible in one additions document - only in a further extending
+          bblock's own additions, layered on top of this one's output.
+        """
+        for entry_key, entry_value in additions_map.items():
+            if entry_value is False:
+                if entry_key not in target_map:
+                    raise ValueError(f"{bblock_id}'s openapi.yaml declares {label} entry {entry_key!r} as "
+                                     f"removed (false), but it does not exist in its base building "
+                                     f"block's document")
+                del target_map[entry_key]
+                continue
+            if entry_key in target_map:
+                raise ValueError(f"{bblock_id}'s openapi.yaml redeclares {label} entry {entry_key!r}, "
+                                 f"which already exists in its base building block's document - "
+                                 f"extensionPoints only supports adding new {label} entries (or "
+                                 f"removing an existing one first with `false`), not silently "
+                                 f"overriding one in place")
+            target_map[entry_key] = entry_value
+
     def _merge_openapi_additions(self, document: dict, additions: dict, bblock_id: str):
         """
         Merge an extending bblock's own openapi.yaml into the (already-copied) base
         document as an additions document. Two different behaviors, by key:
-        - paths/webhooks/components.*: additive only - a key that already exists in the
-          base is an authoring error (raises), rather than a silent override.
+        - paths/webhooks/components.*: additive/subtractive - each entry is either added
+          (authoring error if it already exists in the base) or, if declared as `false`,
+          removed (authoring error if it doesn't exist) - see _merge_additive_map. This is
+          how a downstream bblock replaces, say, the base's templated `/processes/{id}`
+          path with its own fixed set of concrete paths: `/processes/{id}: false` plus
+          whatever new concrete paths it wants. Removing something still referenced
+          elsewhere in the document (by a $ref) is on the author to avoid - not checked.
         - info/servers/security/tags/externalDocs: whole-value overrides - if present in
           the additions document, wholesale replace the base's value (there's nothing to
           "add" to a single title/description/server list; declaring one means taking
@@ -282,7 +318,7 @@ class Extender:
         ignored_keys = [k for k in additions.keys() if k not in known_keys]
         if ignored_keys:
             logger.warning("Ignoring top-level key(s) %s in %s's openapi.yaml - when extensionPoints "
-                           "is set, only paths/webhooks/components (additive) and "
+                           "is set, only paths/webhooks/components (additive/subtractive) and "
                            "info/servers/security/tags/externalDocs (overrides) are read from it",
                            ', '.join(ignored_keys), bblock_id)
 
@@ -295,13 +331,7 @@ class Extender:
             if not additions_map:
                 continue
             target_map = document.setdefault(top_key, {})
-            for entry_key, entry_value in additions_map.items():
-                if entry_key in target_map:
-                    raise ValueError(f"{bblock_id}'s openapi.yaml redeclares {top_key} entry "
-                                     f"{entry_key!r}, which already exists in its base building "
-                                     f"block's document - extensionPoints only supports adding new "
-                                     f"{top_key}, not overriding existing ones")
-                target_map[entry_key] = entry_value
+            self._merge_additive_map(target_map, additions_map, top_key, bblock_id)
 
         additions_components = additions.get('components')
         if additions_components:
@@ -311,13 +341,8 @@ class Extender:
                 if not additions_comp_map:
                     continue
                 target_comp_map = target_components.setdefault(comp_key, {})
-                for entry_key, entry_value in additions_comp_map.items():
-                    if entry_key in target_comp_map:
-                        raise ValueError(f"{bblock_id}'s openapi.yaml redeclares components."
-                                         f"{comp_key} entry {entry_key!r}, which already exists in "
-                                         f"its base building block's document - extensionPoints only "
-                                         f"supports adding new components, not overriding existing ones")
-                    target_comp_map[entry_key] = entry_value
+                self._merge_additive_map(target_comp_map, additions_comp_map, f'components.{comp_key}',
+                                         bblock_id)
 
             ignored_component_keys = [k for k in additions_components.keys()
                                       if k not in self._OPENAPI_ADDITIVE_COMPONENT_KEYS]

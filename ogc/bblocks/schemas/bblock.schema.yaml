@@ -315,7 +315,10 @@ properties:
       this case: it is read as an additions document instead - not required at all for a bblock that only does
       substitution, with no new paths/components/metadata of its own. Its "paths"/"webhooks"/"components.*" keys
       are merged as brand-new additions on top of the base (a key that already exists in the base is a build
-      error, not a silent override); its "info"/"servers"/"security"/"tags"/"externalDocs" keys, if present,
+      error, not a silent override) - or, if declared as "false" instead of real content, that entry is removed
+      from the base instead (a build error if it doesn't exist there), e.g. dropping the base's generic templated
+      "/processes/{processId}" path in favor of a fixed set of concrete ones. Its "info"/"servers"/"security"/
+      "tags"/"externalDocs" keys, if present,
       wholesale replace the base's own value for that key (there is nothing to "add" to a single title/server
       list, so declaring one of these means taking ownership of it for this extending bblock). Any other
       top-level key (in particular the "openapi" version itself, which is never overridable this way) is
