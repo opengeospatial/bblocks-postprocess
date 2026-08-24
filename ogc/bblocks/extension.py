@@ -113,7 +113,7 @@ class Extender:
                                  f" in register or imports.")
             root_schema = schema_resolver.resolve_schema(bblock_schema)
 
-        extension_schema_mappings: dict[str, dict] = {}
+        extension_ref_mappings: dict[str, dict] = {}
         for extension_source_id, extension_target_id in extensions.items():
             source_bblock = register.bblocks.get(extension_source_id)
             target_bblock = register.bblocks.get(extension_target_id)
@@ -157,19 +157,19 @@ class Extender:
                 raise ValueError(f'No schema was found for extension source {extension_source_id}. '
                                  f'Only building blocks with schemas are supported for extensions.')
 
-            extension_schema_mappings[source_bblock_schema] = {
+            extension_ref_mappings[source_bblock_schema] = {
                 'extension_source_id': extension_source_id,
                 'extension_target_id': extension_target_id,
                 'extension_target_ref': target_bblock_schema,
             }
 
             source_bblock_resolved_schema = schema_resolver.resolve_schema(source_bblock_schema)
-            extension_schema_mappings.update(self.extract_aliases(source_bblock_resolved_schema, extension_source_id,
+            extension_ref_mappings.update(self.extract_aliases(source_bblock_resolved_schema, extension_source_id,
                                                                   extension_target_id, target_bblock_schema))
 
-        result = (self._process_openapi(bblock, root_schema, parent_id, extensions, extension_schema_mappings)
+        result = (self._process_openapi(bblock, root_schema, parent_id, extensions, extension_ref_mappings)
                   if parent_is_openapi
-                  else self._process_schema(bblock, root_schema, parent_id, extensions, extension_schema_mappings))
+                  else self._process_schema(bblock, root_schema, parent_id, extensions, extension_ref_mappings))
         return result, parent_is_openapi
 
     def _check_extension_cycle(self, bblock_id: str, parent_id: str):
@@ -207,21 +207,23 @@ class Extender:
     _OPENAPI_OPERATION_KEYS = ('get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace', 'query')
 
     def _process_openapi(self, bblock: BuildingBlock, root_schema: ReferencedSchema, parent_id: str,
-                         extensions: dict[str, str], extension_schema_mappings: dict[str, dict[str, str]]):
+                         extensions: dict[str, str], extension_ref_mappings: dict[str, dict[str, str]]):
         """
         Produce a real, merged/substituted OpenAPI document for an OpenAPI-typed
         extending bblock: start from a full copy of the base document, merge in the
         extending bblock's own openapi.yaml (if any) as an additions document (new
-        paths/webhooks/components only), then substitute every Schema Object slot that
-        (transitively) references a declared extension source.
+        paths/webhooks/components only), then substitute every reference slot that
+        (transitively) references a declared extension source - Schema Object slots via
+        the allOf-wrapped substitute_extensions walk, and every other OAS reference-slot
+        kind (Parameter, Header, RequestBody, Response, Example, Link, Path Item) via a
+        pure-swap bare-$ref match (see _substitute_pure_ref_slot).
 
-        v1 limitation: only Schema Object slots are substituted (the
-        components.schemas.*/parameters/headers/requestBodies/responses/paths/webhooks
-        tree, reusing substitute_extensions per slot). Extension sources/targets backed
-        by a non-Schema OAS object kind (Parameter/Response/RequestBody/Header/Example/
-        Link/Path Item), and dereferencing a Path Item/Operation/Parameter/Response that
-        is itself an external $ref (rather than inline or a local #/components/* ref),
-        are not yet implemented - see docs/openapi-extension-points.md.
+        v1 limitation: dereferencing a Path Item/Operation/Parameter/Response/etc. that
+        is itself an *external* $ref (a URL/file outside this document's own
+        components.*, rather than inline content or a local #/components/* ref) is not
+        chased beyond one hop - see docs/openapi-extension-points.md. components.callbacks
+        is out of scope entirely (recurses the whole document shape); securitySchemes
+        aren't $ref-able per the OAS spec.
         """
         version = str(root_schema.full_contents.get('openapi', ''))
         if version.startswith('3.0'):
@@ -242,7 +244,7 @@ class Extender:
                                                        self.base_url)
             self._merge_openapi_additions(document, additions, bblock.identifier)
 
-        self._substitute_openapi_schemas(document, root_schema, extension_schema_mappings)
+        self._substitute_openapi_schemas(document, root_schema, extension_ref_mappings)
 
         document['x-bblocks-extends'] = parent_id
         document['x-bblocks-extensions'] = extensions
@@ -298,7 +300,7 @@ class Extender:
                 logger.warning("Ignoring components.%s in %s's openapi.yaml additions document",
                                ', components.'.join(ignored_component_keys), bblock_id)
 
-    def _substitute_schema_slot(self, container: dict, key: str, from_schema: ReferencedSchema,
+    def _substitute_schema_slot(self, container: dict | list, key: str | int, from_schema: ReferencedSchema,
                                 extension_ref_mappings: dict[str, dict]) -> None:
         """
         Substitute extension-source references (if any) within container[key] (a Schema
@@ -310,7 +312,7 @@ class Extender:
         that entry gets substituted independently as its own slot, and this $ref
         transparently inherits whatever ends up there.
         """
-        schema_slot = container.get(key)
+        schema_slot = container[key]
         if not isinstance(schema_slot, dict):
             return
         if set(schema_slot.keys()) == {'$ref'} and schema_slot['$ref'].startswith('#/components/schemas/'):
@@ -320,8 +322,36 @@ class Extender:
         if overlay is not None:
             container[key] = {'allOf': [original, overlay]}
 
-    def _substitute_parameter_or_header_schemas(self, obj: dict | None, from_schema: ReferencedSchema,
-                                                extension_ref_mappings: dict[str, dict]) -> None:
+    def _substitute_pure_ref_slot(self, container: dict | list, key: str | int, from_schema: ReferencedSchema,
+                                  extension_ref_mappings: dict[str, dict]) -> bool:
+        """
+        Substitute a non-Schema-kind reference slot in place - a Parameter, Header,
+        RequestBody, Response, Example, Link or (OAS 3.1) Path Item Object slot that is
+        a bare Reference Object ({'$ref': ...}, optionally with 3.1 summary/description
+        siblings) pointing at a declared extension source. Unlike Schema Object slots
+        (_substitute_schema_slot), OAS has no composition mechanism for these kinds, so
+        a match is a pure swap: the target replaces the whole slot, with no "valid as
+        both" guarantee - see the "Component substitution" warning in
+        docs/openapi-extension-points.md. Inline (non-$ref) content is never a match:
+        only bare Reference Object slots are chased for these kinds. Returns True if a
+        substitution was applied, so callers can skip descending further into the slot.
+        """
+        slot = container[key]
+        if not isinstance(slot, dict) or '$ref' not in slot:
+            return False
+        target_schema = self.schema_resolver.resolve_schema(slot['$ref'], from_schema, return_none_on_loop=False)
+        substitution = self.substitute_ref(self._full_ref(target_schema), extension_ref_mappings)
+        if substitution is None:
+            return False
+        container[key] = substitution
+        return True
+
+    def _substitute_parameter_or_header_slot(self, container: dict | list, key: str | int,
+                                             from_schema: ReferencedSchema,
+                                             extension_ref_mappings: dict[str, dict]) -> None:
+        if self._substitute_pure_ref_slot(container, key, from_schema, extension_ref_mappings):
+            return
+        obj = container[key]
         if not isinstance(obj, dict):
             return
         if 'schema' in obj:
@@ -336,59 +366,108 @@ class Extender:
         if not content:
             return
         for media_type_obj in content.values():
-            if isinstance(media_type_obj, dict) and 'schema' in media_type_obj:
+            if not isinstance(media_type_obj, dict):
+                continue
+            if 'schema' in media_type_obj:
                 self._substitute_schema_slot(media_type_obj, 'schema', from_schema, extension_ref_mappings)
+            for example_key in list((media_type_obj.get('examples') or {}).keys()):
+                self._substitute_pure_ref_slot(media_type_obj['examples'], example_key, from_schema,
+                                               extension_ref_mappings)
 
-    def _substitute_response_schemas(self, response: dict | None, from_schema: ReferencedSchema,
-                                     extension_ref_mappings: dict[str, dict]) -> None:
+    def _substitute_request_body_slot(self, container: dict, key: str, from_schema: ReferencedSchema,
+                                      extension_ref_mappings: dict[str, dict]) -> None:
+        if self._substitute_pure_ref_slot(container, key, from_schema, extension_ref_mappings):
+            return
+        self._substitute_content_object_schemas(container[key], from_schema, extension_ref_mappings)
+
+    def _substitute_response_slot(self, container: dict, key: str, from_schema: ReferencedSchema,
+                                  extension_ref_mappings: dict[str, dict]) -> None:
+        if self._substitute_pure_ref_slot(container, key, from_schema, extension_ref_mappings):
+            return
+        response = container[key]
         if not isinstance(response, dict):
             return
         self._substitute_content_object_schemas(response, from_schema, extension_ref_mappings)
-        for header in (response.get('headers') or {}).values():
-            self._substitute_parameter_or_header_schemas(header, from_schema, extension_ref_mappings)
+        headers = response.get('headers') or {}
+        for header_key in list(headers.keys()):
+            self._substitute_parameter_or_header_slot(headers, header_key, from_schema, extension_ref_mappings)
+        links = response.get('links') or {}
+        for link_key in list(links.keys()):
+            self._substitute_pure_ref_slot(links, link_key, from_schema, extension_ref_mappings)
 
-    def _substitute_path_item_schemas(self, path_item: dict | None, from_schema: ReferencedSchema,
+    def _substitute_path_item_schemas(self, container: dict, key: str, from_schema: ReferencedSchema,
                                       extension_ref_mappings: dict[str, dict]) -> None:
+        # A path/webhook entry can itself be a bare Reference Object (OAS 3.1 Path Item
+        # Object) - try that first, same as any other non-Schema slot.
+        if self._substitute_pure_ref_slot(container, key, from_schema, extension_ref_mappings):
+            return
+        path_item = container[key]
         if not isinstance(path_item, dict):
             return
-        for param in (path_item.get('parameters') or []):
-            self._substitute_parameter_or_header_schemas(param, from_schema, extension_ref_mappings)
+        parameters = path_item.get('parameters') or []
+        for i in range(len(parameters)):
+            self._substitute_parameter_or_header_slot(parameters, i, from_schema, extension_ref_mappings)
         for method in self._OPENAPI_OPERATION_KEYS:
             operation = path_item.get(method)
             if not isinstance(operation, dict):
                 continue
-            for param in (operation.get('parameters') or []):
-                self._substitute_parameter_or_header_schemas(param, from_schema, extension_ref_mappings)
-            self._substitute_content_object_schemas(operation.get('requestBody'), from_schema,
-                                                    extension_ref_mappings)
-            for response in (operation.get('responses') or {}).values():
-                self._substitute_response_schemas(response, from_schema, extension_ref_mappings)
+            op_params = operation.get('parameters') or []
+            for i in range(len(op_params)):
+                self._substitute_parameter_or_header_slot(op_params, i, from_schema, extension_ref_mappings)
+            if 'requestBody' in operation:
+                self._substitute_request_body_slot(operation, 'requestBody', from_schema, extension_ref_mappings)
+            responses = operation.get('responses') or {}
+            for resp_key in list(responses.keys()):
+                self._substitute_response_slot(responses, resp_key, from_schema, extension_ref_mappings)
 
     def _substitute_openapi_schemas(self, document: dict, from_schema: ReferencedSchema,
                                     extension_ref_mappings: dict[str, dict]) -> None:
         """
-        Walk every Schema Object slot in document (components.* and paths/webhooks,
+        Walk every reference slot in document (components.* and paths/webhooks,
         including whatever the additions document contributed) and substitute extension
-        sources in place. components.callbacks is not visited (out of scope for v1, per
-        docs/openapi-extension-points.md).
+        sources in place - Schema Object slots via substitute_extensions/allOf-wrap,
+        every other OAS reference-slot kind (Parameter, Header, RequestBody, Response,
+        Example, Link, Path Item) via a pure-swap bare-$ref match. components.callbacks
+        and securitySchemes are not visited (out of scope, per
+        docs/openapi-extension-points.md - callbacks recurse the whole document shape,
+        and security schemes aren't $ref-able at all).
         """
         components = document.get('components') or {}
 
-        for name in list((components.get('schemas') or {}).keys()):
-            self._substitute_schema_slot(components['schemas'], name, from_schema, extension_ref_mappings)
-        for param in (components.get('parameters') or {}).values():
-            self._substitute_parameter_or_header_schemas(param, from_schema, extension_ref_mappings)
-        for header in (components.get('headers') or {}).values():
-            self._substitute_parameter_or_header_schemas(header, from_schema, extension_ref_mappings)
-        for req_body in (components.get('requestBodies') or {}).values():
-            self._substitute_content_object_schemas(req_body, from_schema, extension_ref_mappings)
-        for response in (components.get('responses') or {}).values():
-            self._substitute_response_schemas(response, from_schema, extension_ref_mappings)
+        schemas = components.get('schemas') or {}
+        for name in list(schemas.keys()):
+            self._substitute_schema_slot(schemas, name, from_schema, extension_ref_mappings)
 
-        for path_item in (document.get('paths') or {}).values():
-            self._substitute_path_item_schemas(path_item, from_schema, extension_ref_mappings)
-        for path_item in (document.get('webhooks') or {}).values():
-            self._substitute_path_item_schemas(path_item, from_schema, extension_ref_mappings)
+        parameters = components.get('parameters') or {}
+        for name in list(parameters.keys()):
+            self._substitute_parameter_or_header_slot(parameters, name, from_schema, extension_ref_mappings)
+
+        headers = components.get('headers') or {}
+        for name in list(headers.keys()):
+            self._substitute_parameter_or_header_slot(headers, name, from_schema, extension_ref_mappings)
+
+        request_bodies = components.get('requestBodies') or {}
+        for name in list(request_bodies.keys()):
+            self._substitute_request_body_slot(request_bodies, name, from_schema, extension_ref_mappings)
+
+        responses = components.get('responses') or {}
+        for name in list(responses.keys()):
+            self._substitute_response_slot(responses, name, from_schema, extension_ref_mappings)
+
+        examples = components.get('examples') or {}
+        for name in list(examples.keys()):
+            self._substitute_pure_ref_slot(examples, name, from_schema, extension_ref_mappings)
+
+        links = components.get('links') or {}
+        for name in list(links.keys()):
+            self._substitute_pure_ref_slot(links, name, from_schema, extension_ref_mappings)
+
+        paths = document.get('paths') or {}
+        for path_key in list(paths.keys()):
+            self._substitute_path_item_schemas(paths, path_key, from_schema, extension_ref_mappings)
+        webhooks = document.get('webhooks') or {}
+        for path_key in list(webhooks.keys()):
+            self._substitute_path_item_schemas(webhooks, path_key, from_schema, extension_ref_mappings)
 
     def substitute_ref(self, ref: str, extension_ref_mappings: dict[str, dict]) -> dict | None:
         """
@@ -405,6 +484,24 @@ class Extender:
             'x-bblocks-extension-source': extension_target['extension_source_id'],
             'x-bblocks-extension-target': extension_target['extension_target_id'],
         }
+
+    def _full_ref(self, schema: ReferencedSchema) -> str:
+        """
+        Canonical full ref string for a resolved ReferencedSchema (location + fragment,
+        with a local Path location made absolute/base_url-relative). Used both as the
+        SchemaNode-tree walk's own ref identity and as the lookup key into
+        extension_ref_mappings from any other reference-slot substitution site (see
+        _substitute_pure_ref_slot).
+        """
+        full_ref = schema.location
+        if isinstance(schema.location, Path):
+            full_ref = schema.location.resolve()
+            if self.base_url:
+                full_ref = urljoin(self.base_url,
+                                   os.path.relpath(full_ref))
+        if schema.fragment:
+            full_ref += '#' + schema.fragment
+        return full_ref
 
     def substitute_extensions(self, schema_root: dict, from_schema: ReferencedSchema,
                               extension_ref_mappings: dict[str, dict]) -> dict | None:
@@ -433,17 +530,6 @@ class Extender:
                 parent_node.children.append(node)
             return node
 
-        def get_ref(schema: ReferencedSchema):
-            full_ref = schema.location
-            if isinstance(schema.location, Path):
-                full_ref = schema.location.resolve()
-                if self.base_url:
-                    full_ref = urljoin(self.base_url,
-                                       os.path.relpath(full_ref))
-            if schema.fragment:
-                full_ref += '#' + schema.fragment
-            return full_ref
-
         def walk_subschema(subschema, from_schema: ReferencedSchema, parent_node: SchemaNode | None):
             if not subschema or not isinstance(subschema, dict):
                 return
@@ -453,7 +539,7 @@ class Extender:
                 if self.ref_mapper:
                     ref = self.ref_mapper(ref, subschema)
                 target_schema = schema_resolver.resolve_schema(ref, from_schema, return_none_on_loop=False)
-                target_schema_full_ref = get_ref(target_schema)
+                target_schema_full_ref = self._full_ref(target_schema)
 
                 substitution = self.substitute_ref(target_schema_full_ref, extension_ref_mappings)
 
@@ -471,7 +557,7 @@ class Extender:
                                 # undetected alias found in another schema
                                 undetected_alias = schema_resolver.resolve_schema(cast(dict, pn.subschema)['$ref'],
                                                                                   pn.from_schema)
-                                extension_ref_mappings[get_ref(undetected_alias)] = {
+                                extension_ref_mappings[self._full_ref(undetected_alias)] = {
                                     'extension_source_id': substitution['x-bblocks-extension-source'],
                                     'extension_target_id': substitution['x-bblocks-extension-target'],
                                     'extension_target_ref': substitution['$ref'],
@@ -597,8 +683,8 @@ class Extender:
         return overlay
 
     def _process_schema(self, bblock: BuildingBlock, root_schema: ReferencedSchema, parent_id: str,
-                        extensions: dict[str, str], extension_schema_mappings: dict[str, dict[str, str]]):
-        overlay = self.substitute_extensions(root_schema.full_contents, root_schema, extension_schema_mappings)
+                        extensions: dict[str, str], extension_ref_mappings: dict[str, dict[str, str]]):
+        overlay = self.substitute_extensions(root_schema.full_contents, root_schema, extension_ref_mappings)
 
         root_schema_location = root_schema.location
         if isinstance(root_schema_location, Path):
