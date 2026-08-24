@@ -32,7 +32,8 @@ from ogc.bblocks.schema import annotate_schema, resolve_all_schema_references, w
 from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister, ImportedBuildingBlocks
 from ogc.bblocks.validate import validate_test_resources, write_report, load_validation_plugins
 from ogc.bblocks.transform import _rel, apply_transforms, load_transform_plugins, transformers, cleanup_sandbox
-from ogc.bblocks.permissions import check_permissions
+from ogc.bblocks.permissions import check_permissions, check_build_plugin_permissions
+from ogc.bblocks.hooks.plugin import load_build_plugins, dispatch_before_run
 
 
 def _apply_bblocks_uri_refs(metadata: dict) -> dict:
@@ -120,14 +121,17 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         allowed_transform_types = None
         allowed_plugin_modules = None
         allowed_validator_modules = None
+        allowed_build_classes = None
     else:
         allowed_transform_types, allowed_plugin_modules, allowed_validator_modules = check_permissions(
             sandbox_dir, registered_items_path if isinstance(registered_items_path, Path)
             else Path(registered_items_path),
         )
+        allowed_build_classes = check_build_plugin_permissions(sandbox_dir)
 
     transform_plugins = load_transform_plugins(sandbox_dir, allowed_modules=allowed_plugin_modules)
     plugin_validators, validator_plugins = load_validation_plugins(sandbox_dir, allowed_modules=allowed_validator_modules)
+    build_plugins = load_build_plugins(sandbox_dir, allowed_classes=allowed_build_classes)
 
     if not isinstance(test_outputs_path, Path):
         test_outputs_path = Path(test_outputs_path)
@@ -174,6 +178,21 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
     if register_license:
         for bblock in bbr.bblocks.values():
             bblock.metadata.setdefault('license', dict(register_license))
+
+    if build_plugins:
+        # before_run: register skeleton (no per-bblock processing done yet) plus
+        # run-level config. See docs/build-lifecycle-hooks.md's "before_run fires
+        # after the register is loaded, not before everything".
+        hook_context = {
+            'itemsDir': str(registered_items_path),
+            'baseUrl': base_url,
+            'registerFile': str(output_file) if output_file else None,
+            'steps': list(steps) if steps else None,
+            'filter': bb_filter,
+            'failOnError': fail_on_error,
+        }
+        hook_register = {'bblocks': sorted(bbr.bblocks.keys())}
+        dispatch_before_run(build_plugins, sandbox_dir, hook_register, hook_context)
 
     doc_generator = DocGenerator(base_url=base_url,
                                  output_dir=generated_docs_path,

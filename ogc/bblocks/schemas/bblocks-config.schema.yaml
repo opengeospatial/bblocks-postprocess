@@ -118,6 +118,16 @@ properties:
         description: External validator plugins.
         items:
           $ref: '#/$defs/plugin-entry'
+      build:
+        type: array
+        description: >
+          Build (lifecycle-hook) plugins: code that runs at defined points in the
+          postprocessing lifecycle (before_run, before_bblock/after_bblock,
+          after_register, after_uplift, after_run, on_error), locally and in CI
+          alike. Unlike transform/validator plugins, classes are named explicitly
+          rather than discovered.
+        items:
+          $ref: '#/$defs/build-plugin-entry'
 
 $defs:
   license:
@@ -154,6 +164,41 @@ $defs:
         description: >
           One or more dotted Python module paths to import. Each module is scanned for
           plugin classes (transformers or validators depending on context).
+        oneOf:
+          - type: string
+          - type: array
+            items:
+              type: string
+            minItems: 1
+      url:
+        type: string
+        format: uri
+        description: >
+          URL for this plugin (e.g. its repository or PyPI page). If omitted, the
+          postprocessor attempts to derive one automatically from the pip specifier.
+
+  build-plugin-entry:
+    type: object
+    required:
+      - classes
+    properties:
+      pip:
+        description: >
+          One or more pip install specifiers for packages that provide the plugin
+          classes. Accepts any specifier that `pip install` understands (package
+          name, version constraint, GitHub URL, etc.).
+        oneOf:
+          - type: string
+          - type: array
+            items:
+              type: string
+            minItems: 1
+      classes:
+        description: >
+          One or more fully-qualified `module.ClassName` paths to import and
+          instantiate directly - unlike transform/validator plugins' `modules`,
+          these are not scanned; each class named here is used exactly as given,
+          and implements only the lifecycle-hook methods it needs.
         oneOf:
           - type: string
           - type: array
