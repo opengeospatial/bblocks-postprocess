@@ -30,6 +30,11 @@ from ogc.bblocks.validate import validate_transform_output, report_to_dict
 _SUBPROCESS_TRANSFORM_TYPES = ('python', 'node')
 _PERMISSION_CHECKED_TYPES = frozenset({'python', 'node', 'xslt'})
 
+# The plugin kinds declared under the `plugins.<section>` key in bblocks-config.yaml.
+# Shared between cleanup_sandbox() and check_permissions() so that adding a new plugin
+# kind can't be done in one and forgotten in the other.
+_PLUGIN_SECTIONS = ('transforms', 'validators', 'build')
+
 
 def _rel(path: Path | str | None, cwd: Path) -> str | None:
     if path is None:
@@ -68,7 +73,7 @@ _BBLOCKS_CONFIG_NAMES = ('bblocks-config.yaml', 'bblocks-config.yml')
 
 
 def read_plugin_entries(section: str) -> list[dict]:
-    """Return plugin config entries for *section* ('transforms' or 'validators').
+    """Return plugin config entries for *section* ('transforms', 'validators' or 'build').
 
     Reads from the ``plugins.<section>`` key in bblocks-config.yaml first.
     For 'transforms', falls back to transform-plugins.yml with a deprecation warning.
@@ -289,7 +294,7 @@ def cleanup_sandbox(sandbox_dir: Path, bblocks: list[BuildingBlock]) -> None:
     plugins_dir = sandbox_dir / 'plugins'
     if plugins_dir.exists():
         expected_slugs: set[str] = set()
-        for section in ('transforms', 'validators'):
+        for section in _PLUGIN_SECTIONS:
             for plugin in read_plugin_entries(section):
                 pip_deps = plugin.get('pip', [])
                 if isinstance(pip_deps, str):

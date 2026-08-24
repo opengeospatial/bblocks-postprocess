@@ -54,6 +54,32 @@ def _apply_bblocks_uri_refs(metadata: dict) -> dict:
     return result
 
 
+def local_metadata_snapshot(bblock: BuildingBlock, cwd: Path) -> dict:
+    """Deep-copy bblock.metadata with any still-local paths re-anchored relative to cwd.
+
+    Must be called before the with_base_url block in do_postprocess() rewrites schema/
+    context/etc. paths to published URLs - this is the only point where cwd-relative
+    paths and metadata still coexist for a given bblock.
+    """
+    snap = copy.deepcopy(bblock.metadata)
+    for field in ('ldContext', 'schema', 'openAPIDocument'):
+        v = snap.get(field)
+        if v and isinstance(v, str) and not is_url(v):
+            snap[field] = _rel(bblock.files_path / v, cwd)
+    shapes = snap.get('shaclRules') or snap.get('shaclShapes')
+    if isinstance(shapes, list):
+        key = 'shaclRules' if 'shaclRules' in snap else 'shaclShapes'
+        snap[key] = [
+            _rel(bblock.files_path / s, cwd) if isinstance(s, str) and not is_url(s) else s
+            for s in shapes
+        ]
+    for r in snap.get('resources', []):
+        ref = r.get('ref')
+        if ref and not is_url(ref):
+            r['ref'] = _rel(bblock.files_path / ref, cwd)
+    return snap
+
+
 def postprocess(registered_items_path: str | Path = 'registereditems',
                 output_file: str | Path | None = 'register.json',
                 base_url: str | None = None,
@@ -196,23 +222,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
         # Snapshot metadata with local paths re-anchored to cwd before the
         # with_base_url block rewrites everything to published URLs.
-        _snap = copy.deepcopy(bblock.metadata)
-        for _field in ('ldContext', 'schema', 'openAPIDocument'):
-            _v = _snap.get(_field)
-            if _v and isinstance(_v, str) and not is_url(_v):
-                _snap[_field] = _rel(bblock.files_path / _v, cwd)
-        _shapes = _snap.get('shaclRules') or _snap.get('shaclShapes')
-        if isinstance(_shapes, list):
-            _key = 'shaclRules' if 'shaclRules' in _snap else 'shaclShapes'
-            _snap[_key] = [
-                _rel(bblock.files_path / s, cwd) if isinstance(s, str) and not is_url(s) else s
-                for s in _shapes
-            ]
-        for _r in _snap.get('resources', []):
-            _ref = _r.get('ref')
-            if _ref and not is_url(_ref):
-                _r['ref'] = _rel(bblock.files_path / _ref, cwd)
-        bblock.pre_baseurl_metadata = _snap
+        bblock.pre_baseurl_metadata = local_metadata_snapshot(bblock, cwd)
 
         if bblock.annotated_schema.is_file():
             schema_url_yaml = PathOrUrl(bblock.annotated_schema).with_base_url(
