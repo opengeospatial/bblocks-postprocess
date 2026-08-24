@@ -1,3 +1,4 @@
+import copy
 import logging
 import os
 from dataclasses import dataclass, field
@@ -11,6 +12,7 @@ from ogc.na.annotate_schema import ReferencedSchema
 from ogc.na.util import is_url
 
 from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister
+from ogc.bblocks.schema import resolve_all_schema_references
 
 # All JSON Schema keywords
 JSON_SCHEMA_ALL_KEYWORDS = {'$anchor', '$comment', '$defs', '$dynamicAnchor', '$dynamicRef', '$id', '$ref', '$schema',
@@ -165,7 +167,7 @@ class Extender:
             extension_schema_mappings.update(self.extract_aliases(source_bblock_resolved_schema, extension_source_id,
                                                                   extension_target_id, target_bblock_schema))
 
-        result = (self._process_openapi()
+        result = (self._process_openapi(bblock, root_schema, parent_id, extensions, extension_schema_mappings)
                   if parent_is_openapi
                   else self._process_schema(bblock, root_schema, parent_id, extensions, extension_schema_mappings))
         return result, parent_is_openapi
@@ -196,9 +198,197 @@ class Extender:
                 return
             current_id = ep['baseBuildingBlock']
 
-    def _process_openapi(self):
-        logger.warning("Extension points in OpenAPI building blocks are merely declarative."
-                       " No additional postprocessing of the OpenAPI document will be done.")
+    # Top-level keys read from an extending bblock's own openapi.yaml when it is being
+    # treated as an additions document (extensionPoints + OpenAPI base). Anything else in
+    # that file is ignored, with a warning - see _merge_openapi_additions.
+    _OPENAPI_ADDITIVE_TOP_LEVEL_KEYS = ('paths', 'webhooks')
+    _OPENAPI_ADDITIVE_COMPONENT_KEYS = ('schemas', 'parameters', 'responses', 'requestBodies',
+                                        'headers', 'securitySchemes', 'examples', 'links')
+    _OPENAPI_OPERATION_KEYS = ('get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace', 'query')
+
+    def _process_openapi(self, bblock: BuildingBlock, root_schema: ReferencedSchema, parent_id: str,
+                         extensions: dict[str, str], extension_schema_mappings: dict[str, dict[str, str]]):
+        """
+        Produce a real, merged/substituted OpenAPI document for an OpenAPI-typed
+        extending bblock: start from a full copy of the base document, merge in the
+        extending bblock's own openapi.yaml (if any) as an additions document (new
+        paths/webhooks/components only), then substitute every Schema Object slot that
+        (transitively) references a declared extension source.
+
+        v1 limitation: only Schema Object slots are substituted (the
+        components.schemas.*/parameters/headers/requestBodies/responses/paths/webhooks
+        tree, reusing substitute_extensions per slot). Extension sources/targets backed
+        by a non-Schema OAS object kind (Parameter/Response/RequestBody/Header/Example/
+        Link/Path Item), and dereferencing a Path Item/Operation/Parameter/Response that
+        is itself an external $ref (rather than inline or a local #/components/* ref),
+        are not yet implemented - see docs/openapi-extension-points.md.
+        """
+        version = str(root_schema.full_contents.get('openapi', ''))
+        if version.startswith('3.0'):
+            raise ValueError(f"Building block {parent_id} has an OpenAPI 3.0 document "
+                             f"({version!r}); extensionPoints only supports OpenAPI 3.1/3.2 base "
+                             f"documents (3.0 Schema Objects predate 2020-12 JSON Schema alignment, "
+                             f"which the substitution logic here depends on).")
+
+        document = copy.deepcopy(root_schema.full_contents)
+
+        if bblock.openapi.exists:
+            additions = bblock.openapi.load_yaml()
+            # bblock.openapi is loaded raw here (unlike parent_bblock.output_openapi, which
+            # process_extensions() already resolved via resolve_all_schema_references before
+            # writing it out) - its bblocks:// refs need the same translation to real paths
+            # before anything in it can be walked/resolved by schema_resolver.
+            additions = resolve_all_schema_references(additions, self.register, bblock, bblock.openapi,
+                                                       self.base_url)
+            self._merge_openapi_additions(document, additions, bblock.identifier)
+
+        self._substitute_openapi_schemas(document, root_schema, extension_schema_mappings)
+
+        document['x-bblocks-extends'] = parent_id
+        document['x-bblocks-extensions'] = extensions
+        return document
+
+    def _merge_openapi_additions(self, document: dict, additions: dict, bblock_id: str):
+        """
+        Merge an extending bblock's own openapi.yaml into the (already-copied) base
+        document as an additions document: new paths/webhooks/components only. A key
+        that already exists in the base is an authoring error (raises), rather than a
+        silent override. Any other top-level key in the additions document is ignored,
+        with a logged warning.
+        """
+        ignored_keys = [k for k in additions.keys()
+                        if k not in self._OPENAPI_ADDITIVE_TOP_LEVEL_KEYS and k != 'components']
+        if ignored_keys:
+            logger.warning("Ignoring top-level key(s) %s in %s's openapi.yaml - when extensionPoints "
+                           "is set, only paths/webhooks/components are read from it as additions",
+                           ', '.join(ignored_keys), bblock_id)
+
+        for top_key in self._OPENAPI_ADDITIVE_TOP_LEVEL_KEYS:
+            additions_map = additions.get(top_key)
+            if not additions_map:
+                continue
+            target_map = document.setdefault(top_key, {})
+            for entry_key, entry_value in additions_map.items():
+                if entry_key in target_map:
+                    raise ValueError(f"{bblock_id}'s openapi.yaml redeclares {top_key} entry "
+                                     f"{entry_key!r}, which already exists in its base building "
+                                     f"block's document - extensionPoints only supports adding new "
+                                     f"{top_key}, not overriding existing ones")
+                target_map[entry_key] = entry_value
+
+        additions_components = additions.get('components')
+        if additions_components:
+            target_components = document.setdefault('components', {})
+            for comp_key in self._OPENAPI_ADDITIVE_COMPONENT_KEYS:
+                additions_comp_map = additions_components.get(comp_key)
+                if not additions_comp_map:
+                    continue
+                target_comp_map = target_components.setdefault(comp_key, {})
+                for entry_key, entry_value in additions_comp_map.items():
+                    if entry_key in target_comp_map:
+                        raise ValueError(f"{bblock_id}'s openapi.yaml redeclares components."
+                                         f"{comp_key} entry {entry_key!r}, which already exists in "
+                                         f"its base building block's document - extensionPoints only "
+                                         f"supports adding new components, not overriding existing ones")
+                    target_comp_map[entry_key] = entry_value
+
+            ignored_component_keys = [k for k in additions_components.keys()
+                                      if k not in self._OPENAPI_ADDITIVE_COMPONENT_KEYS]
+            if ignored_component_keys:
+                logger.warning("Ignoring components.%s in %s's openapi.yaml additions document",
+                               ', components.'.join(ignored_component_keys), bblock_id)
+
+    def _substitute_schema_slot(self, container: dict, key: str, from_schema: ReferencedSchema,
+                                extension_ref_mappings: dict[str, dict]) -> None:
+        """
+        Substitute extension-source references (if any) within container[key] (a Schema
+        Object), splicing a local {'allOf': [original, overlay]} in place to keep the
+        slot valid against both the original and the substituted content (OAS has no
+        document-wide composition mechanism the way a JSON Schema allOf-wrapped document
+        does, so this "valid as both" guarantee is per-slot here rather than whole-
+        document). A bare $ref to a local components.schemas entry is left untouched:
+        that entry gets substituted independently as its own slot, and this $ref
+        transparently inherits whatever ends up there.
+        """
+        schema_slot = container.get(key)
+        if not isinstance(schema_slot, dict):
+            return
+        if set(schema_slot.keys()) == {'$ref'} and schema_slot['$ref'].startswith('#/components/schemas/'):
+            return
+        original = copy.deepcopy(schema_slot)
+        overlay = self.substitute_extensions(schema_slot, from_schema, extension_ref_mappings)
+        if overlay is not None:
+            container[key] = {'allOf': [original, overlay]}
+
+    def _substitute_parameter_or_header_schemas(self, obj: dict | None, from_schema: ReferencedSchema,
+                                                extension_ref_mappings: dict[str, dict]) -> None:
+        if not isinstance(obj, dict):
+            return
+        if 'schema' in obj:
+            self._substitute_schema_slot(obj, 'schema', from_schema, extension_ref_mappings)
+        self._substitute_content_object_schemas(obj, from_schema, extension_ref_mappings)
+
+    def _substitute_content_object_schemas(self, obj: dict | None, from_schema: ReferencedSchema,
+                                           extension_ref_mappings: dict[str, dict]) -> None:
+        if not isinstance(obj, dict):
+            return
+        content = obj.get('content')
+        if not content:
+            return
+        for media_type_obj in content.values():
+            if isinstance(media_type_obj, dict) and 'schema' in media_type_obj:
+                self._substitute_schema_slot(media_type_obj, 'schema', from_schema, extension_ref_mappings)
+
+    def _substitute_response_schemas(self, response: dict | None, from_schema: ReferencedSchema,
+                                     extension_ref_mappings: dict[str, dict]) -> None:
+        if not isinstance(response, dict):
+            return
+        self._substitute_content_object_schemas(response, from_schema, extension_ref_mappings)
+        for header in (response.get('headers') or {}).values():
+            self._substitute_parameter_or_header_schemas(header, from_schema, extension_ref_mappings)
+
+    def _substitute_path_item_schemas(self, path_item: dict | None, from_schema: ReferencedSchema,
+                                      extension_ref_mappings: dict[str, dict]) -> None:
+        if not isinstance(path_item, dict):
+            return
+        for param in (path_item.get('parameters') or []):
+            self._substitute_parameter_or_header_schemas(param, from_schema, extension_ref_mappings)
+        for method in self._OPENAPI_OPERATION_KEYS:
+            operation = path_item.get(method)
+            if not isinstance(operation, dict):
+                continue
+            for param in (operation.get('parameters') or []):
+                self._substitute_parameter_or_header_schemas(param, from_schema, extension_ref_mappings)
+            self._substitute_content_object_schemas(operation.get('requestBody'), from_schema,
+                                                    extension_ref_mappings)
+            for response in (operation.get('responses') or {}).values():
+                self._substitute_response_schemas(response, from_schema, extension_ref_mappings)
+
+    def _substitute_openapi_schemas(self, document: dict, from_schema: ReferencedSchema,
+                                    extension_ref_mappings: dict[str, dict]) -> None:
+        """
+        Walk every Schema Object slot in document (components.* and paths/webhooks,
+        including whatever the additions document contributed) and substitute extension
+        sources in place. components.callbacks is not visited (out of scope for v1, per
+        docs/openapi-extension-points.md).
+        """
+        components = document.get('components') or {}
+
+        for name in list((components.get('schemas') or {}).keys()):
+            self._substitute_schema_slot(components['schemas'], name, from_schema, extension_ref_mappings)
+        for param in (components.get('parameters') or {}).values():
+            self._substitute_parameter_or_header_schemas(param, from_schema, extension_ref_mappings)
+        for header in (components.get('headers') or {}).values():
+            self._substitute_parameter_or_header_schemas(header, from_schema, extension_ref_mappings)
+        for req_body in (components.get('requestBodies') or {}).values():
+            self._substitute_content_object_schemas(req_body, from_schema, extension_ref_mappings)
+        for response in (components.get('responses') or {}).values():
+            self._substitute_response_schemas(response, from_schema, extension_ref_mappings)
+
+        for path_item in (document.get('paths') or {}).values():
+            self._substitute_path_item_schemas(path_item, from_schema, extension_ref_mappings)
+        for path_item in (document.get('webhooks') or {}).values():
+            self._substitute_path_item_schemas(path_item, from_schema, extension_ref_mappings)
 
     def substitute_ref(self, ref: str, extension_ref_mappings: dict[str, dict]) -> dict | None:
         """

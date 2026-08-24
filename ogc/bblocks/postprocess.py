@@ -491,7 +491,12 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                             raise Exception(f"Error annotating schema for {building_block.identifier}") from e
                         logger.error("Error annotating schema for %s", building_block.identifier, exc_info=e)
 
-                if building_block.openapi.exists:
+                # When extensionPoints resolved to an OpenAPI document, building_block.openapi (if
+                # present) was already consumed inside process_extensions as an additions document
+                # (new paths/webhooks/components merged into the base) - don't clobber that result
+                # by reloading and treating it as a standalone, full replacement document here.
+                openapi_already_processed = building_block.extensionPoints and openapi_contents is not None
+                if building_block.openapi.exists and not openapi_already_processed:
                     openapi_contents = building_block.openapi.load_yaml()
 
                 if openapi_contents:
