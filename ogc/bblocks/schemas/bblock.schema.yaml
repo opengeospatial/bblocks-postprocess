@@ -312,10 +312,15 @@ properties:
       bare Path Item), OAS has no composition mechanism to lean on, so the target wholesale replaces the source -
       authors of a target bblock for one of these kinds are responsible for making it a complete, self-sufficient
       replacement. If this bblock also has its own "openapi.yaml", it is *not* treated as a standalone document in
-      this case: it is read as an additions document instead, and only its "paths"/"webhooks"/"components.*" keys
-      are merged as brand-new additions on top of the base (any other top-level key is ignored, with a warning) -
-      a key that already exists in the base is a build error, not a silent override. components.callbacks is not
-      processed (out of scope); securitySchemes cannot be extension sources/targets, since they aren't $ref-able.
+      this case: it is read as an additions document instead - not required at all for a bblock that only does
+      substitution, with no new paths/components/metadata of its own. Its "paths"/"webhooks"/"components.*" keys
+      are merged as brand-new additions on top of the base (a key that already exists in the base is a build
+      error, not a silent override); its "info"/"servers"/"security"/"tags"/"externalDocs" keys, if present,
+      wholesale replace the base's own value for that key (there is nothing to "add" to a single title/server
+      list, so declaring one of these means taking ownership of it for this extending bblock). Any other
+      top-level key (in particular the "openapi" version itself, which is never overridable this way) is
+      ignored, with a warning. components.callbacks is not processed (out of scope); securitySchemes cannot be
+      extension sources/targets, since they aren't $ref-able.
       OpenAPI base documents must be 3.1 or 3.2 - a 3.0 base is rejected, since its Schema Objects predate the
       2020-12 JSON Schema alignment this substitution logic depends on.
     type: object

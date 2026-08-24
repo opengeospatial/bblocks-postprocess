@@ -205,6 +205,13 @@ class Extender:
     _OPENAPI_ADDITIVE_TOP_LEVEL_KEYS = ('paths', 'webhooks')
     _OPENAPI_ADDITIVE_COMPONENT_KEYS = ('schemas', 'parameters', 'responses', 'requestBodies',
                                         'headers', 'securitySchemes', 'examples', 'links')
+    # Whole-value overrides: unlike paths/webhooks/components (collections of independently
+    # addressable entries, additive-only), these describe the document as a whole, so an
+    # extending bblock that declares one of them replaces the base's value outright rather
+    # than merging into it. The 'openapi' version itself is deliberately NOT overridable
+    # here - it stays whatever the base declared (or was upconverted to), since the
+    # substitution logic's correctness depends on that version, not on authoring intent.
+    _OPENAPI_OVERRIDABLE_TOP_LEVEL_KEYS = ('info', 'servers', 'security', 'tags', 'externalDocs')
     _OPENAPI_OPERATION_KEYS = ('get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace', 'query')
 
     def _process_openapi(self, bblock: BuildingBlock, root_schema: ReferencedSchema, parent_id: str,
@@ -213,7 +220,9 @@ class Extender:
         Produce a real, merged/substituted OpenAPI document for an OpenAPI-typed
         extending bblock: start from a full copy of the base document, merge in the
         extending bblock's own openapi.yaml (if any) as an additions document (new
-        paths/webhooks/components only), then substitute every reference slot that
+        paths/webhooks/components additively, info/servers/security/tags/externalDocs
+        as whole-value overrides - see _merge_openapi_additions), then substitute every
+        reference slot that
         (transitively) references a declared extension source - Schema Object slots via
         the allOf-wrapped substitute_extensions walk, and every other OAS reference-slot
         kind (Parameter, Header, RequestBody, Response, Example, Link, Path Item) via a
@@ -257,17 +266,29 @@ class Extender:
     def _merge_openapi_additions(self, document: dict, additions: dict, bblock_id: str):
         """
         Merge an extending bblock's own openapi.yaml into the (already-copied) base
-        document as an additions document: new paths/webhooks/components only. A key
-        that already exists in the base is an authoring error (raises), rather than a
-        silent override. Any other top-level key in the additions document is ignored,
+        document as an additions document. Two different behaviors, by key:
+        - paths/webhooks/components.*: additive only - a key that already exists in the
+          base is an authoring error (raises), rather than a silent override.
+        - info/servers/security/tags/externalDocs: whole-value overrides - if present in
+          the additions document, wholesale replace the base's value (there's nothing to
+          "add" to a single title/description/server list; declaring one means taking
+          ownership of it for this extending bblock).
+        Any other top-level key (in particular 'openapi' - the document's declared
+        version is never overridable, see _OPENAPI_OVERRIDABLE_TOP_LEVEL_KEYS) is ignored,
         with a logged warning.
         """
-        ignored_keys = [k for k in additions.keys()
-                        if k not in self._OPENAPI_ADDITIVE_TOP_LEVEL_KEYS and k != 'components']
+        known_keys = (self._OPENAPI_ADDITIVE_TOP_LEVEL_KEYS + self._OPENAPI_OVERRIDABLE_TOP_LEVEL_KEYS
+                     + ('components',))
+        ignored_keys = [k for k in additions.keys() if k not in known_keys]
         if ignored_keys:
             logger.warning("Ignoring top-level key(s) %s in %s's openapi.yaml - when extensionPoints "
-                           "is set, only paths/webhooks/components are read from it as additions",
+                           "is set, only paths/webhooks/components (additive) and "
+                           "info/servers/security/tags/externalDocs (overrides) are read from it",
                            ', '.join(ignored_keys), bblock_id)
+
+        for override_key in self._OPENAPI_OVERRIDABLE_TOP_LEVEL_KEYS:
+            if override_key in additions:
+                document[override_key] = additions[override_key]
 
         for top_key in self._OPENAPI_ADDITIVE_TOP_LEVEL_KEYS:
             additions_map = additions.get(top_key)
