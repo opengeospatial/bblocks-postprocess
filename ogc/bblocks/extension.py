@@ -200,18 +200,43 @@ class Extender:
         logger.warning("Extension points in OpenAPI building blocks are merely declarative."
                        " No additional postprocessing of the OpenAPI document will be done.")
 
-    def _process_schema(self, bblock: BuildingBlock, root_schema: ReferencedSchema, parent_id: str,
-                        extensions: dict[str, str], extension_schema_mappings: dict[str, dict[str, str]]):
+    def substitute_ref(self, ref: str, extension_ref_mappings: dict[str, dict]) -> dict | None:
+        """
+        Look up a resolved (already dereferenced) ref string against extension_ref_mappings.
+        Returns the substitution subschema ({'$ref': target, 'x-bblocks-extension-source': ...,
+        'x-bblocks-extension-target': ...}) to splice in place of the original $ref, or None if
+        `ref` is not a declared extension source.
+        """
+        extension_target = extension_ref_mappings.get(ref)
+        if not extension_target:
+            return None
+        return {
+            '$ref': extension_target['extension_target_ref'],
+            'x-bblocks-extension-source': extension_target['extension_source_id'],
+            'x-bblocks-extension-target': extension_target['extension_target_id'],
+        }
+
+    def substitute_extensions(self, schema_root: dict, from_schema: ReferencedSchema,
+                              extension_ref_mappings: dict[str, dict]) -> dict | None:
+        """
+        Rewrite schema_root (with $refs interpreted relative to from_schema), substituting
+        every branch that (transitively) references an extension source with the
+        corresponding target, tagging substituted $refs with x-bblocks-extension-source/
+        -target. Returns a partial "overlay" schema containing only the touched branches,
+        or None if schema_root contains no extension-source references anywhere, so the
+        caller can leave the original as-is.
+        """
         schema_resolver = self.schema_resolver
         visited_refs = {}
-        schema_branches: list[SchemaNode] = []
+        root_node: SchemaNode | None = None
 
         def create_schema_node(parent_node: SchemaNode | None, tag: str, from_schema: ReferencedSchema,
                                is_properties: bool = False, subschema: dict | list | None = None) -> SchemaNode:
+            nonlocal root_node
             if parent_node is None:
                 node = SchemaNode(tag=tag, from_schema=from_schema, is_properties=is_properties, subschema=subschema)
                 node.root = node
-                schema_branches.append(node)
+                root_node = node
             else:
                 node = SchemaNode(root=parent_node.root, parent=parent_node, tag=tag, from_schema=from_schema,
                                   is_properties=is_properties, subschema=subschema)
@@ -240,10 +265,10 @@ class Extender:
                 target_schema = schema_resolver.resolve_schema(ref, from_schema, return_none_on_loop=False)
                 target_schema_full_ref = get_ref(target_schema)
 
-                extension_target: dict | None = extension_schema_mappings.get(target_schema_full_ref)
+                substitution = self.substitute_ref(target_schema_full_ref, extension_ref_mappings)
 
                 skip_node = False
-                if extension_target:
+                if substitution:
                     # Search up the chain of allOf/anyOf/oneOf and see if there's a reference to the same
                     # schema. This can happen when there is a top-level single-entry allOf/anyOf/oneOf in
                     # the schema.
@@ -256,7 +281,11 @@ class Extender:
                                 # undetected alias found in another schema
                                 undetected_alias = schema_resolver.resolve_schema(cast(dict, pn.subschema)['$ref'],
                                                                                   pn.from_schema)
-                                extension_schema_mappings[get_ref(undetected_alias)] = extension_target
+                                extension_ref_mappings[get_ref(undetected_alias)] = {
+                                    'extension_source_id': substitution['x-bblocks-extension-source'],
+                                    'extension_target_id': substitution['x-bblocks-extension-target'],
+                                    'extension_target_ref': substitution['$ref'],
+                                }
                         elif pn.tag != '[]' and (
                                 pn.tag not in ('oneOf', 'allOf', 'anyOf', '[]') or len(pn.children) > 1):
                             break
@@ -266,13 +295,8 @@ class Extender:
                     ref_node = parent_node
                 else:
                     ref_node = create_schema_node(parent_node, '$ref', from_schema,
-                                                  subschema={'$ref': extension_target['extension_target_ref']
-                                                  if extension_target else ref})
-                    if extension_target:
-                        ref_node.subschema.update({
-                            'x-bblocks-extension-source': extension_target['extension_source_id'],
-                            'x-bblocks-extension-target': extension_target['extension_target_id'],
-                        })
+                                                  subschema=substitution if substitution else {'$ref': ref})
+                    if substitution:
                         ref_node.mark_preserve_branch()
 
                 # Avoid infinite loops
@@ -320,7 +344,71 @@ class Extender:
                         pp_node = create_schema_node(pps_node, pp_k, from_schema=from_schema, is_properties=True)
                         walk_subschema(pp, from_schema, pp_node)
 
-        walk_subschema(root_schema.full_contents, root_schema, None)
+        walk_subschema(schema_root, from_schema, None)
+
+        if root_node is None or not root_node.preserve_branch:
+            return None
+
+        def update_refs(subschema: Any, from_schema: ReferencedSchema, is_properties=False):
+            if isinstance(subschema, dict):
+                if not is_properties and 'x-bblocks-extension-source' in subschema:
+                    # Extension point
+                    return subschema
+                for k in list(subschema.keys()):
+                    if not is_properties and k == '$ref':
+                        ref = subschema[k]
+                        if is_url(ref):
+                            # Leave as is
+                            pass
+                        else:
+                            target = schema_resolver.resolve_schema(subschema['$ref'], from_schema,
+                                                                    return_none_on_loop=False)
+                            subschema[k] = target.location + f"#{target.fragment}" if target.fragment else ''
+                    else:
+                        subschema[k] = update_refs(subschema[k], from_schema,
+                                                   not is_properties and k == 'properties')
+            elif isinstance(subschema, list):
+                return list(map(lambda x: update_refs(x, from_schema), subschema))
+
+            return subschema
+
+        def walk_branch(node: SchemaNode, parent_schema: dict, force_preserve_branch: bool = False):
+            if not force_preserve_branch and not node.preserve_branch:
+                return
+            if node.tag == '$ref' and node.subschema and not node.children:
+                if parent_schema:
+                    parent_schema.setdefault('allOf', []).append(update_refs(node.subschema, node.from_schema))
+                else:
+                    parent_schema.update(update_refs(node.subschema, node.from_schema))
+            elif node.tag in ('oneOf', 'anyOf', 'allOf'):
+                col_schema = parent_schema.setdefault(node.tag, [])
+                for child in node.children:
+                    child_schema = {}
+                    col_schema.append(child_schema)
+                    walk_branch(child, child_schema,
+                                force_preserve_branch=force_preserve_branch or node.tag in ('oneOf', 'anyOf'))
+            else:
+                if node.tag not in ('[]', '$ref') and not node.children:
+                    # End of the line, we append the full subschema
+                    parent_schema[node.tag] = update_refs(node.subschema, node.from_schema)
+                else:
+                    if node.tag in ('[]', '$ref'):
+                        if node.tag == '[]' or 'x-bblocks-extension-target' in node.subschema:
+                            parent_schema.update(update_refs(node.subschema, node.from_schema))
+                        walk_parent = parent_schema
+                    else:
+                        parent_schema[node.tag] = {}
+                        walk_parent = parent_schema[node.tag]
+                    for child in node.children:
+                        walk_branch(child, walk_parent, force_preserve_branch=force_preserve_branch)
+
+        overlay: dict = {}
+        walk_branch(root_node, overlay)
+        return overlay
+
+    def _process_schema(self, bblock: BuildingBlock, root_schema: ReferencedSchema, parent_id: str,
+                        extensions: dict[str, str], extension_schema_mappings: dict[str, dict[str, str]]):
+        overlay = self.substitute_extensions(root_schema.full_contents, root_schema, extension_schema_mappings)
 
         root_schema_location = root_schema.location
         if isinstance(root_schema_location, Path):
@@ -334,67 +422,8 @@ class Extender:
                 {'$ref': root_schema_location}
             ],
         }
-
-        for branch in schema_branches:
-            if not branch.preserve_branch:
-                continue
-
-            def update_refs(subschema: Any, from_schema: ReferencedSchema, is_properties=False):
-                if isinstance(subschema, dict):
-                    if not is_properties and 'x-bblocks-extension-source' in subschema:
-                        # Extension point
-                        return subschema
-                    for k in list(subschema.keys()):
-                        if not is_properties and k == '$ref':
-                            ref = subschema[k]
-                            if is_url(ref):
-                                # Leave as is
-                                pass
-                            else:
-                                target = schema_resolver.resolve_schema(subschema['$ref'], from_schema,
-                                                                        return_none_on_loop=False)
-                                subschema[k] = target.location + f"#{target.fragment}" if target.fragment else ''
-                        else:
-                            subschema[k] = update_refs(subschema[k], from_schema,
-                                                       not is_properties and k == 'properties')
-                elif isinstance(subschema, list):
-                    return list(map(lambda x: update_refs(x, from_schema), subschema))
-
-                return subschema
-
-            def walk_branch(node: SchemaNode, parent_schema: dict, force_preserve_branch: bool = False):
-                if not force_preserve_branch and not node.preserve_branch:
-                    return
-                if node.tag == '$ref' and node.subschema and not node.children:
-                    if parent_schema:
-                        parent_schema.setdefault('allOf', []).append(update_refs(node.subschema, node.from_schema))
-                    else:
-                        parent_schema.update(update_refs(node.subschema, node.from_schema))
-                elif node.tag in ('oneOf', 'anyOf', 'allOf'):
-                    col_schema = parent_schema.setdefault(node.tag, [])
-                    for child in node.children:
-                        child_schema = {}
-                        col_schema.append(child_schema)
-                        walk_branch(child, child_schema,
-                                    force_preserve_branch=force_preserve_branch or node.tag in ('oneOf', 'anyOf'))
-                else:
-                    if node.tag not in ('[]', '$ref') and not node.children:
-                        # End of the line, we append the full subschema
-                        parent_schema[node.tag] = update_refs(node.subschema, node.from_schema)
-                    else:
-                        if node.tag in ('[]', '$ref'):
-                            if node.tag == '[]' or 'x-bblocks-extension-target' in node.subschema:
-                                parent_schema.update(update_refs(node.subschema, node.from_schema))
-                            walk_parent = parent_schema
-                        else:
-                            parent_schema[node.tag] = {}
-                            walk_parent = parent_schema[node.tag]
-                        for child in node.children:
-                            walk_branch(child, walk_parent, force_preserve_branch=force_preserve_branch)
-
-            branch_entry = {}
-            output_schema['allOf'].append(branch_entry)
-            walk_branch(branch, branch_entry)
+        if overlay is not None:
+            output_schema['allOf'].append(overlay)
 
         return output_schema
 
