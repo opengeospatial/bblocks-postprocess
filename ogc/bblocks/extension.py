@@ -12,6 +12,7 @@ from ogc.na.annotate_schema import ReferencedSchema
 from ogc.na.util import is_url
 
 from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister
+from ogc.bblocks.oas30 import oas30_to_oas31
 from ogc.bblocks.schema import resolve_all_schema_references
 
 # All JSON Schema keywords
@@ -216,23 +217,26 @@ class Extender:
         (transitively) references a declared extension source - Schema Object slots via
         the allOf-wrapped substitute_extensions walk, and every other OAS reference-slot
         kind (Parameter, Header, RequestBody, Response, Example, Link, Path Item) via a
-        pure-swap bare-$ref match (see _substitute_pure_ref_slot).
+        pure-swap bare-$ref match (see _substitute_pure_ref_slot) - chased through any
+        number of externally-$ref'd hops (_substitute_external_ref_and_splice) so a
+        schema nested inside, say, an externally-$ref'd Response object is still reached.
 
-        v1 limitation: dereferencing a Path Item/Operation/Parameter/Response/etc. that
-        is itself an *external* $ref (a URL/file outside this document's own
-        components.*, rather than inline content or a local #/components/* ref) is not
-        chased beyond one hop - see docs/openapi-extension-points.md. components.callbacks
-        is out of scope entirely (recurses the whole document shape); securitySchemes
-        aren't $ref-able per the OAS spec.
+        components.callbacks is out of scope entirely (recurses the whole document
+        shape); securitySchemes aren't $ref-able per the OAS spec.
+
+        A 3.0 base document is upconverted to 3.1 first (oas30_to_oas31, oas30.py) - see
+        docs/openapi-30-upconvert.md - since the substitution walk below depends on 2020-12
+        JSON Schema alignment, which 3.0 Schema Objects predate.
         """
         version = str(root_schema.full_contents.get('openapi', ''))
         if version.startswith('3.0'):
-            raise ValueError(f"Building block {parent_id} has an OpenAPI 3.0 document "
-                             f"({version!r}); extensionPoints only supports OpenAPI 3.1/3.2 base "
-                             f"documents (3.0 Schema Objects predate 2020-12 JSON Schema alignment, "
-                             f"which the substitution logic here depends on).")
-
-        document = copy.deepcopy(root_schema.full_contents)
+            logger.warning("Building block %s has an OpenAPI 3.0 document (%r) - upconverting "
+                           "to 3.1 before applying extensionPoints for %s",
+                           parent_id, version, bblock.identifier)
+            # oas30_to_oas31 already returns a deep copy, so no further copying is needed
+            document = oas30_to_oas31(root_schema.full_contents, context=parent_id)
+        else:
+            document = copy.deepcopy(root_schema.full_contents)
 
         if bblock.openapi.exists:
             additions = bblock.openapi.load_yaml()
@@ -301,7 +305,7 @@ class Extender:
                                ', components.'.join(ignored_component_keys), bblock_id)
 
     def _substitute_schema_slot(self, container: dict | list, key: str | int, from_schema: ReferencedSchema,
-                                extension_ref_mappings: dict[str, dict]) -> None:
+                                extension_ref_mappings: dict[str, dict]) -> bool:
         """
         Substitute extension-source references (if any) within container[key] (a Schema
         Object), splicing a local {'allOf': [original, overlay]} in place to keep the
@@ -310,17 +314,22 @@ class Extender:
         does, so this "valid as both" guarantee is per-slot here rather than whole-
         document). A bare $ref to a local components.schemas entry is left untouched:
         that entry gets substituted independently as its own slot, and this $ref
-        transparently inherits whatever ends up there.
+        transparently inherits whatever ends up there. Returns True if a substitution
+        was applied, so callers several dereference hops up an externally-$ref'd chain
+        (see _substitute_external_ref_and_splice) know whether they need to splice their
+        own inlined copy back in.
         """
         schema_slot = container[key]
         if not isinstance(schema_slot, dict):
-            return
+            return False
         if set(schema_slot.keys()) == {'$ref'} and schema_slot['$ref'].startswith('#/components/schemas/'):
-            return
+            return False
         original = copy.deepcopy(schema_slot)
         overlay = self.substitute_extensions(schema_slot, from_schema, extension_ref_mappings)
         if overlay is not None:
             container[key] = {'allOf': [original, overlay]}
+            return True
+        return False
 
     def _substitute_pure_ref_slot(self, container: dict | list, key: str | int, from_schema: ReferencedSchema,
                                   extension_ref_mappings: dict[str, dict]) -> bool:
@@ -346,79 +355,142 @@ class Extender:
         container[key] = substitution
         return True
 
+    def _substitute_external_ref_and_splice(self, container: dict | list, key: str | int,
+                                            from_schema: ReferencedSchema,
+                                            extension_ref_mappings: dict[str, dict],
+                                            process_inline_fn: Callable[[dict, ReferencedSchema], bool]) -> bool:
+        """
+        If container[key] is a bare Reference Object pointing OUTSIDE this document's own
+        #/components/* (a local ref is left alone - its own canonical entry is visited and
+        mutated independently by _substitute_openapi_schemas, and this $ref transparently
+        inherits whatever ends up there), dereference it, run process_inline_fn against a
+        deep copy of the dereferenced content (with the target's own ReferencedSchema as
+        the new from_schema context, so further nested refs inside it resolve correctly),
+        and splice that copy in as container[key] only if process_inline_fn reports a
+        change - otherwise leave the original $ref untouched. This is what lets a schema
+        substitution reach *inside* an externally-$ref'd Response/Parameter/RequestBody/
+        Header/Path Item object, rather than only matching it as a whole (see "Planned v2"
+        in docs/openapi-extension-points.md). Loop-safe via schema_resolver's existing
+        cycle handling (return_none_on_loop=True) - not new protection.
+        """
+        slot = container[key]
+        if not isinstance(slot, dict) or '$ref' not in slot or slot['$ref'].startswith('#/components/'):
+            return False
+        target_schema = self.schema_resolver.resolve_schema(slot['$ref'], from_schema, return_none_on_loop=True)
+        if target_schema is None:
+            return False
+        content_copy = copy.deepcopy(target_schema.subschema)
+        if process_inline_fn(content_copy, target_schema):
+            container[key] = content_copy
+            return True
+        return False
+
     def _substitute_parameter_or_header_slot(self, container: dict | list, key: str | int,
                                              from_schema: ReferencedSchema,
-                                             extension_ref_mappings: dict[str, dict]) -> None:
+                                             extension_ref_mappings: dict[str, dict]) -> bool:
         if self._substitute_pure_ref_slot(container, key, from_schema, extension_ref_mappings):
-            return
-        obj = container[key]
-        if not isinstance(obj, dict):
-            return
-        if 'schema' in obj:
-            self._substitute_schema_slot(obj, 'schema', from_schema, extension_ref_mappings)
-        self._substitute_content_object_schemas(obj, from_schema, extension_ref_mappings)
+            return True
+
+        def process(obj, obj_from_schema) -> bool:
+            changed = False
+            if isinstance(obj, dict) and 'schema' in obj:
+                changed |= self._substitute_schema_slot(obj, 'schema', obj_from_schema, extension_ref_mappings)
+            changed |= self._substitute_content_object_schemas(obj, obj_from_schema, extension_ref_mappings)
+            return changed
+
+        if self._substitute_external_ref_and_splice(container, key, from_schema, extension_ref_mappings, process):
+            return True
+        return process(container[key], from_schema)
 
     def _substitute_content_object_schemas(self, obj: dict | None, from_schema: ReferencedSchema,
-                                           extension_ref_mappings: dict[str, dict]) -> None:
+                                           extension_ref_mappings: dict[str, dict]) -> bool:
         if not isinstance(obj, dict):
-            return
+            return False
         content = obj.get('content')
         if not content:
-            return
+            return False
+        changed = False
         for media_type_obj in content.values():
             if not isinstance(media_type_obj, dict):
                 continue
             if 'schema' in media_type_obj:
-                self._substitute_schema_slot(media_type_obj, 'schema', from_schema, extension_ref_mappings)
+                changed |= self._substitute_schema_slot(media_type_obj, 'schema', from_schema, extension_ref_mappings)
             for example_key in list((media_type_obj.get('examples') or {}).keys()):
-                self._substitute_pure_ref_slot(media_type_obj['examples'], example_key, from_schema,
-                                               extension_ref_mappings)
+                changed |= self._substitute_pure_ref_slot(media_type_obj['examples'], example_key, from_schema,
+                                                          extension_ref_mappings)
+        return changed
 
     def _substitute_request_body_slot(self, container: dict, key: str, from_schema: ReferencedSchema,
-                                      extension_ref_mappings: dict[str, dict]) -> None:
+                                      extension_ref_mappings: dict[str, dict]) -> bool:
         if self._substitute_pure_ref_slot(container, key, from_schema, extension_ref_mappings):
-            return
-        self._substitute_content_object_schemas(container[key], from_schema, extension_ref_mappings)
+            return True
+
+        def process(request_body, request_body_from_schema) -> bool:
+            return self._substitute_content_object_schemas(request_body, request_body_from_schema,
+                                                            extension_ref_mappings)
+
+        if self._substitute_external_ref_and_splice(container, key, from_schema, extension_ref_mappings, process):
+            return True
+        return process(container[key], from_schema)
 
     def _substitute_response_slot(self, container: dict, key: str, from_schema: ReferencedSchema,
-                                  extension_ref_mappings: dict[str, dict]) -> None:
+                                  extension_ref_mappings: dict[str, dict]) -> bool:
         if self._substitute_pure_ref_slot(container, key, from_schema, extension_ref_mappings):
-            return
-        response = container[key]
-        if not isinstance(response, dict):
-            return
-        self._substitute_content_object_schemas(response, from_schema, extension_ref_mappings)
-        headers = response.get('headers') or {}
-        for header_key in list(headers.keys()):
-            self._substitute_parameter_or_header_slot(headers, header_key, from_schema, extension_ref_mappings)
-        links = response.get('links') or {}
-        for link_key in list(links.keys()):
-            self._substitute_pure_ref_slot(links, link_key, from_schema, extension_ref_mappings)
+            return True
+
+        def process(response, response_from_schema) -> bool:
+            if not isinstance(response, dict):
+                return False
+            changed = self._substitute_content_object_schemas(response, response_from_schema, extension_ref_mappings)
+            headers = response.get('headers') or {}
+            for header_key in list(headers.keys()):
+                changed |= self._substitute_parameter_or_header_slot(headers, header_key, response_from_schema,
+                                                                      extension_ref_mappings)
+            links = response.get('links') or {}
+            for link_key in list(links.keys()):
+                changed |= self._substitute_pure_ref_slot(links, link_key, response_from_schema,
+                                                           extension_ref_mappings)
+            return changed
+
+        if self._substitute_external_ref_and_splice(container, key, from_schema, extension_ref_mappings, process):
+            return True
+        return process(container[key], from_schema)
 
     def _substitute_path_item_schemas(self, container: dict, key: str, from_schema: ReferencedSchema,
-                                      extension_ref_mappings: dict[str, dict]) -> None:
+                                      extension_ref_mappings: dict[str, dict]) -> bool:
         # A path/webhook entry can itself be a bare Reference Object (OAS 3.1 Path Item
         # Object) - try that first, same as any other non-Schema slot.
         if self._substitute_pure_ref_slot(container, key, from_schema, extension_ref_mappings):
-            return
-        path_item = container[key]
-        if not isinstance(path_item, dict):
-            return
-        parameters = path_item.get('parameters') or []
-        for i in range(len(parameters)):
-            self._substitute_parameter_or_header_slot(parameters, i, from_schema, extension_ref_mappings)
-        for method in self._OPENAPI_OPERATION_KEYS:
-            operation = path_item.get(method)
-            if not isinstance(operation, dict):
-                continue
-            op_params = operation.get('parameters') or []
-            for i in range(len(op_params)):
-                self._substitute_parameter_or_header_slot(op_params, i, from_schema, extension_ref_mappings)
-            if 'requestBody' in operation:
-                self._substitute_request_body_slot(operation, 'requestBody', from_schema, extension_ref_mappings)
-            responses = operation.get('responses') or {}
-            for resp_key in list(responses.keys()):
-                self._substitute_response_slot(responses, resp_key, from_schema, extension_ref_mappings)
+            return True
+
+        def process(path_item, path_item_from_schema) -> bool:
+            if not isinstance(path_item, dict):
+                return False
+            changed = False
+            parameters = path_item.get('parameters') or []
+            for i in range(len(parameters)):
+                changed |= self._substitute_parameter_or_header_slot(parameters, i, path_item_from_schema,
+                                                                      extension_ref_mappings)
+            for method in self._OPENAPI_OPERATION_KEYS:
+                operation = path_item.get(method)
+                if not isinstance(operation, dict):
+                    continue
+                op_params = operation.get('parameters') or []
+                for i in range(len(op_params)):
+                    changed |= self._substitute_parameter_or_header_slot(op_params, i, path_item_from_schema,
+                                                                          extension_ref_mappings)
+                if 'requestBody' in operation:
+                    changed |= self._substitute_request_body_slot(operation, 'requestBody', path_item_from_schema,
+                                                                   extension_ref_mappings)
+                responses = operation.get('responses') or {}
+                for resp_key in list(responses.keys()):
+                    changed |= self._substitute_response_slot(responses, resp_key, path_item_from_schema,
+                                                               extension_ref_mappings)
+            return changed
+
+        if self._substitute_external_ref_and_splice(container, key, from_schema, extension_ref_mappings, process):
+            return True
+        return process(container[key], from_schema)
 
     def _substitute_openapi_schemas(self, document: dict, from_schema: ReferencedSchema,
                                     extension_ref_mappings: dict[str, dict]) -> None:
