@@ -923,6 +923,23 @@ class BuildingBlockRegister:
 
         return shapes
 
+    def get_inherited_shacl_closures(self, identifier: str) -> set[str | Path]:
+        # Mirrors get_inherited_shacl_shapes, but shaclClosures is always a flat list
+        # (no per-dependency/third-party structure), so this can just be merged into a set.
+        closures: set[str | Path] = set()
+        for dep in self.find_dependencies(identifier):
+            if isinstance(dep, BuildingBlock):
+                dep_closures = dep.shaclClosures
+                resolve = dep.resolve_file
+            else:
+                dep_closures = dep.get('shaclClosures')
+                resolve = lambda c: c  # imported bblocks: shaclClosures are always URLs
+            if not dep_closures:
+                continue
+            for closure in dep_closures:
+                closures.add(resolve(closure))
+        return closures
+
     def get(self, identifier: str):
         return self.bblocks.get(identifier, self.imported_bblocks.get(identifier))
 

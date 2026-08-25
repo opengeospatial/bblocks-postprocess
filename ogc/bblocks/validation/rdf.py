@@ -130,20 +130,27 @@ class RdfValidator(Validator):
 
         self.added_shacl_closures = []
         self.closure_graph_sources: set = set()
-        for shacl_closure in bblock.shaclClosures or ():
-            try:
-                resolved = bblock.resolve_file(shacl_closure)
-                self.closure_graph.parse(resolved, format='turtle')
-                self.added_shacl_closures.append(shacl_closure)
-                self.closure_graph_sources.add(resolved)
-            except HTTPError as e:
-                self.shacl_errors.append(f"Error retrieving {e.url}: {e}")
-            except Exception as e:
-                self.shacl_errors.append(f"Error processing {shacl_closure}: {str(e)}")
+        self._shacl_closures_loaded = False
 
         bblock.metadata['shaclShapes'] = inherited_shacl_shapes
 
         self.uplifter = Uplifter(self.bblock)
+
+    def _ensure_shacl_closures_loaded(self):
+        # Loaded lazily (only once we know there's actually an RDF graph to validate against
+        # SHACL shapes) to avoid needlessly fetching closures when they won't be used.
+        if self._shacl_closures_loaded:
+            return
+        self._shacl_closures_loaded = True
+        for shacl_closure in self.register.get_inherited_shacl_closures(self.bblock.identifier):
+            try:
+                self.closure_graph.parse(shacl_closure, format='turtle')
+                self.added_shacl_closures.append(shacl_closure)
+                self.closure_graph_sources.add(shacl_closure)
+            except HTTPError as e:
+                self.shacl_errors.append(f"Error retrieving {e.url}: {e}")
+            except Exception as e:
+                self.shacl_errors.append(f"Error processing {shacl_closure}: {str(e)}")
 
     def _load_graph(self, filename: Path, output_filename: Path, report: ValidationReportItem,
                     contents: str | None = None,
@@ -392,10 +399,22 @@ class RdfValidator(Validator):
             if not self.shacl_graphs:
                 return None
 
+            self._ensure_shacl_closures_loaded()
+            if self.shacl_errors:
+                for shacl_error in self.shacl_errors:
+                    report.add_entry(ValidationReportEntry(
+                        section=ValidationReportSection.SHACL,
+                        message=shacl_error,
+                        is_error=True,
+                        is_global=True,
+                    ))
+                    return None
+
             if self.added_shacl_closures:
                 report.add_entry(ValidationReportEntry(
                     section=ValidationReportSection.SHACL,
-                    message="Using building block SHACL closures:\n - " + '\n - '.join(self.added_shacl_closures),
+                    message="Using building block SHACL closures:\n - "
+                            + '\n - '.join(str(c) for c in self.added_shacl_closures),
                     is_error=False,
                 ))
 
