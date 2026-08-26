@@ -528,5 +528,13 @@ class RdfValidator(Validator):
                         }
                     ))
                     shacl_errors_found = True
-            return not shacl_errors_found
+            # The validator ran regardless of the SHACL outcome (conformance or
+            # violation) - that outcome is already conveyed via the report
+            # entries above (is_error=not shacl_conforms). Returning False here
+            # would be misread by the caller as "this validator declined to
+            # run" (the convention used elsewhere, e.g. JsonValidator returning
+            # False for a non-JSON file), silently dropping a resource that
+            # actually failed SHACL validation - as expected for a -fail test -
+            # from the report.
+            return True
         return None
