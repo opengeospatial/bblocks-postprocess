@@ -923,21 +923,36 @@ class BuildingBlockRegister:
 
         return shapes
 
-    def get_inherited_shacl_closures(self, identifier: str) -> set[str | Path]:
-        # Mirrors get_inherited_shacl_shapes, but shaclClosures is always a flat list
-        # (no per-dependency/third-party structure), so this can just be merged into a set.
+    def get_inherited_closure_sources(self, identifier: str) -> set[str | Path]:
+        # Mirrors get_inherited_shacl_shapes, but everything here folds into a single flat
+        # SHACL closure graph (no per-dependency/third-party structure needed): each
+        # dependency's declared shaclClosures, its own ontology (if it has one), and any
+        # 'data'-role resources that are actually RDF -- skipping non-RDF data resources
+        # such as CSV or NetCDF, which can't be parsed into the closure graph.
         closures: set[str | Path] = set()
         for dep in self.find_dependencies(identifier):
             if isinstance(dep, BuildingBlock):
-                dep_closures = dep.shaclClosures
                 resolve = dep.resolve_file
+                sources = list(dep.shaclClosures or [])
+                if dep.ontology and dep.ontology.exists:
+                    sources.append(dep.ontology.value)
+                sources.extend(
+                    r['ref'] for r in dep._raw_resources
+                    if r.get('role') == 'data' and r.get('ref')
+                    and mimetypes.normalize(r.get('format') or '') in _RDF_MIMETYPES
+                )
             else:
-                dep_closures = dep.get('shaclClosures')
-                resolve = lambda c: c  # imported bblocks: shaclClosures are always URLs
-            if not dep_closures:
-                continue
-            for closure in dep_closures:
-                closures.add(resolve(closure))
+                resolve = lambda c: c  # imported bblocks: refs are always URLs
+                sources = list(dep.get('shaclClosures') or [])
+                if dep.get('ontology'):
+                    sources.append(dep['ontology'])
+                sources.extend(
+                    r['ref'] for r in (dep.get('resources') or [])
+                    if r.get('role') == 'data' and r.get('ref')
+                    and mimetypes.normalize(r.get('format') or '') in _RDF_MIMETYPES
+                )
+            for source in sources:
+                closures.add(resolve(source))
         return closures
 
     def get(self, identifier: str):

@@ -535,8 +535,8 @@ def apply_transforms(bblock: BuildingBlock,
         target_mime_type = default_output_media_type['mimeType']
 
         bblock_prefixes = bblock.example_prefixes or {}
-        inherited_shacl_closures = ([c if isinstance(c, str) else _rel(c, cwd)
-                                    for c in bblocks_register.get_inherited_shacl_closures(bblock.identifier)]
+        inherited_closure_sources = ([c if isinstance(c, str) else _rel(c, cwd)
+                                    for c in bblocks_register.get_inherited_closure_sources(bblock.identifier)]
                                     if bblocks_register else list(bblock.shaclClosures or []))
 
         for example_id, example in enumerate(bblock.examples):
@@ -577,8 +577,8 @@ def apply_transforms(bblock: BuildingBlock,
                     snippet={
                         **{k: v for k, v in snippet.items() if k != 'code'},
                         **({'shacl-closure': list(dict.fromkeys(
-                            (snippet.get('shacl-closure') or []) + inherited_shacl_closures
-                        ))} if (inherited_shacl_closures or snippet.get('shacl-closure')) else {}),
+                            (snippet.get('shacl-closure') or []) + inherited_closure_sources
+                        ))} if (inherited_closure_sources or snippet.get('shacl-closure')) else {}),
                     },
                     output_file=_rel(output_fn, cwd),
                     output_dir=_rel(output_dir, cwd),

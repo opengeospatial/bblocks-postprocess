@@ -142,15 +142,19 @@ class RdfValidator(Validator):
         if self._shacl_closures_loaded:
             return
         self._shacl_closures_loaded = True
-        for shacl_closure in self.register.get_inherited_shacl_closures(self.bblock.identifier):
+        for closure_source in self.register.get_inherited_closure_sources(self.bblock.identifier):
             try:
-                self.closure_graph.parse(shacl_closure, format='turtle')
-                self.added_shacl_closures.append(shacl_closure)
-                self.closure_graph_sources.add(shacl_closure)
+                # No format= hint: sources are a mix of declared SHACL closures, ontologies
+                # (which may be RDF/XML, e.g. '.owl') and RDF data resources, so let rdflib
+                # guess from the file extension / response Content-Type instead of assuming
+                # Turtle, same as the snippet-declared closures below.
+                self.closure_graph.parse(closure_source)
+                self.added_shacl_closures.append(closure_source)
+                self.closure_graph_sources.add(closure_source)
             except HTTPError as e:
                 self.shacl_errors.append(f"Error retrieving {e.url}: {e}")
             except Exception as e:
-                self.shacl_errors.append(f"Error processing {shacl_closure}: {str(e)}")
+                self.shacl_errors.append(f"Error processing {closure_source}: {str(e)}")
 
     def _load_graph(self, filename: Path, output_filename: Path, report: ValidationReportItem,
                     contents: str | None = None,
@@ -413,7 +417,8 @@ class RdfValidator(Validator):
             if self.added_shacl_closures:
                 report.add_entry(ValidationReportEntry(
                     section=ValidationReportSection.SHACL,
-                    message="Using building block SHACL closures:\n - "
+                    message="Using SHACL closure graph sources "
+                            "(declared closures, ontologies and RDF data resources):\n - "
                             + '\n - '.join(str(c) for c in self.added_shacl_closures),
                     is_error=False,
                 ))
