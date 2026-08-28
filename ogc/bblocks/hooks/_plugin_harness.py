@@ -22,6 +22,12 @@ Writes one JSON response per line to stdout:
 return a value to feed back into the pipeline (e.g. after_register); for
 every other event it is always null and purely informational.
 
+For `before_bblock`/`after_bblock`, the wire request carries a `registerPath` field
+instead of an inline `register` (per docs/build-lifecycle-hooks.md's "Payload per
+event") - the harness loads that file itself before calling the plugin method, so the
+plugin's `before_bblock(self, stage, bblock, register, context)` method still just sees
+a plain `register` dict, same shape as every other event.
+
 Mirrors transformers/python.py's persistent-harness precedent: request/response
 framing is line-delimited JSON over stdin/stdout, one process serves every call
 for its plugin class for the life of the run. Build plugins are expected to be
@@ -38,6 +44,8 @@ import json
 import os
 import sys
 import traceback
+
+_BBLOCK_EVENTS = {'before_bblock', 'after_bblock'}
 
 
 def main():
@@ -64,7 +72,18 @@ def main():
             continue
         req = json.loads(line)
         event = req['event']
-        args = req.get('args') or {}
+        args = dict(req.get('args') or {})
+
+        if event in _BBLOCK_EVENTS:
+            register_path = args.pop('registerPath', None)
+            register = None
+            if register_path:
+                try:
+                    with open(register_path) as f:
+                        register = json.load(f)
+                except Exception:
+                    register = None
+            args['register'] = register
 
         capture = io.StringIO()
         prev_stdout, prev_stderr = sys.stdout, sys.stderr

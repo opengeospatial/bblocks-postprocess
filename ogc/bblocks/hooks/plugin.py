@@ -6,6 +6,7 @@ import logging
 import os
 import subprocess
 import traceback
+from enum import Enum
 from pathlib import Path
 from threading import Lock
 
@@ -15,6 +16,20 @@ from ogc.bblocks.transform import read_plugin_entries, _pip_to_url
 from ogc.bblocks.util import CustomJSONEncoder
 
 logger = logging.getLogger(__name__)
+
+
+class Stage(Enum):
+    """The five per-bblock loops before_bblock/after_bblock fire around, in the
+    order the pipeline actually runs them - see docs/build-lifecycle-hooks.md's
+    "Precedent: what 'before/after every bblock' should mean". Stage-major, not
+    bblock-major: every bblock's ANNOTATE pair fires before any bblock's JSONLD
+    pair, and so on.
+    """
+    ANNOTATE = 'annotate'
+    JSONLD = 'jsonld'
+    FINALIZE = 'finalize'
+    TRANSFORMS = 'transforms'
+    DOC = 'doc'
 
 _HARNESS = Path(__file__).parent / '_plugin_harness.py'
 
@@ -310,6 +325,67 @@ def dispatch_after_run(plugins: list[BuildPlugin], sandbox_dir: Path,
     the caller must ensure fires instead on an aborted run.
     """
     _dispatch_checkpoint(plugins, sandbox_dir, 'after_run', {'register': register, 'context': context})
+
+
+def write_register_snapshot(sandbox_dir: Path, stage: Stage, register: dict) -> Path:
+    """Write a register-in-progress snapshot for one Stage's before_bblock/after_bblock
+    calls to a file under sandbox_dir, and return its path.
+
+    Per docs/build-lifecycle-hooks.md's "Payload per event": passing the full register
+    snapshot inline on every one of up to 5 x N before_bblock/after_bblock subprocess
+    calls is wasteful, so it travels as a path instead, with the harness loading it on
+    each call rather than the parent embedding it in every request. One file per stage
+    (not reused across stages) so a later stage's dispatches never see an earlier
+    stage's now-stale snapshot sitting under the same path.
+    """
+    hooks_dir = sandbox_dir / 'hooks'
+    hooks_dir.mkdir(exist_ok=True)
+    path = hooks_dir / f'register-{stage.value}.json'
+    with open(path, 'w') as f:
+        json.dump(_json_safe(register), f)
+    return path
+
+
+def _dispatch_bblock_event(plugins: list[BuildPlugin], sandbox_dir: Path, event: str,
+                           stage: Stage, bblock: dict, register_path: Path | None,
+                           context: dict, fail_on_error: bool) -> None:
+    """Fire before_bblock/after_bblock on every loaded build plugin for one (stage, bblock).
+
+    Failure rule (see "Failure semantics" in the design doc): follows the *exact* core
+    postprocessing error pattern, not a bespoke one - fail_on_error=True raises and
+    aborts the whole run; otherwise the error is logged and the run continues with the
+    bblock intact, exactly like any other non-fatal postprocessing error.
+    """
+    args = {
+        'stage': stage.name,
+        'bblock': bblock,
+        'registerPath': str(register_path) if register_path else None,
+        'context': context,
+    }
+    for plugin in plugins:
+        resp = plugin.dispatch(sandbox_dir, event, args)
+        if not resp.get('success'):
+            message = (f"{event}({stage.name}) failed for {bblock.get('identifier')} in "
+                      f"build plugin '{plugin.class_path}': {resp.get('error')}")
+            if fail_on_error:
+                raise RuntimeError(message)
+            logger.error(message)
+
+
+def dispatch_before_bblock(plugins: list[BuildPlugin], sandbox_dir: Path, stage: Stage,
+                           bblock: dict, register_path: Path | None, context: dict,
+                           fail_on_error: bool) -> None:
+    """Fire before_bblock(stage, bblock, register, context) on every loaded build plugin."""
+    _dispatch_bblock_event(plugins, sandbox_dir, 'before_bblock', stage, bblock,
+                           register_path, context, fail_on_error)
+
+
+def dispatch_after_bblock(plugins: list[BuildPlugin], sandbox_dir: Path, stage: Stage,
+                          bblock: dict, register_path: Path | None, context: dict,
+                          fail_on_error: bool) -> None:
+    """Fire after_bblock(stage, bblock, register, context) on every loaded build plugin."""
+    _dispatch_bblock_event(plugins, sandbox_dir, 'after_bblock', stage, bblock,
+                           register_path, context, fail_on_error)
 
 
 def dispatch_on_error(plugins: list[BuildPlugin], sandbox_dir: Path,
