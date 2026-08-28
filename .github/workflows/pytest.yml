@@ -1,0 +1,42 @@
+name: Unit tests
+
+on:
+  push:
+    branches:
+      - master
+      - develop
+    paths:
+      - 'ogc/**'
+      - 'tests/**'
+      - 'requirements.txt'
+      - 'requirements-dev.txt'
+      - 'pytest.ini'
+      - '.github/workflows/pytest.yml'
+  pull_request:
+    paths:
+      - 'ogc/**'
+      - 'tests/**'
+      - 'requirements.txt'
+      - 'requirements-dev.txt'
+      - 'pytest.ini'
+      - '.github/workflows/pytest.yml'
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run pytest
+        run: python -m pytest -v

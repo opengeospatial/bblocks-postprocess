@@ -29,6 +29,22 @@ docker run -v /path/to/repo:/workspace bblocks-postprocess [options]
 
 All flags are string-valued (`true`/`false`, not boolean switches) — see [Adding new CLI flags](#adding-new-cli-flags) for why.
 
+## Unit Tests
+
+Unit tests live in `tests/` (pytest), mirroring the `ogc/bblocks/` layout. They cover
+individual modules' logic in isolation and are independent of the live-register
+regression tests in `test-postprocess.yml`/`test.yml` (which exercise the packaged
+action end-to-end against real bblocks repos).
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+python -m pytest
+```
+
+CI runs these via `.github/workflows/pytest.yml` on push/PR. See
+`docs/pytest-testing-plan.md` for the prioritized checklist of what still needs
+coverage.
+
 ## Local Testing with URL Mappings
 
 Create `bblocks-config-local.yml` to map remote URLs to local files:
