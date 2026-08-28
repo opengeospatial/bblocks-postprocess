@@ -79,7 +79,16 @@ class _BuildHookProcess:
         return None
 
     def send(self, event: str, args: dict) -> dict:
-        req_line = (json.dumps({'event': event, 'args': args}) + '\n').encode('utf-8')
+        # cls=CustomJSONEncoder: args can carry a raw bblock.metadata snapshot
+        # (before_bblock/after_bblock) or register dict (after_register), either
+        # of which may transiently hold set/Path/PathOrUrl values - e.g.
+        # bblock.metadata['shaclShapes'] is dict[str, set] until postprocess.py's
+        # own urljoin-rewrite runs, which only happens when base_url is set. A
+        # bare json.dumps would raise TypeError on any of those; every other
+        # writer of register/metadata JSON in this codebase already goes through
+        # CustomJSONEncoder (register.json itself, write_report, etc.) - this is
+        # the one spot that didn't.
+        req_line = (json.dumps({'event': event, 'args': args}, cls=CustomJSONEncoder) + '\n').encode('utf-8')
         with self._lock:
             resp = self._send_raw(req_line)
             if resp is None:
@@ -255,13 +264,6 @@ def load_build_plugins(sandbox_dir: Path,
     return result
 
 
-def _json_safe(obj):
-    """Round-trip *obj* through CustomJSONEncoder so it's safe to send as plain
-    JSON over the harness wire - register dicts can hold sets/Path/PathOrUrl
-    values that plain json.dumps can't handle on its own."""
-    return json.loads(json.dumps(obj, cls=CustomJSONEncoder))
-
-
 def _dispatch_checkpoint(plugins: list[BuildPlugin], sandbox_dir: Path, event: str, args: dict) -> None:
     """Fire *event* on every loaded build plugin, in declaration order.
 
@@ -300,8 +302,11 @@ def dispatch_after_register(plugins: list[BuildPlugin], sandbox_dir: Path,
     """
     current = register
     for plugin in plugins:
+        # send() (_BuildHookProcess.send) already applies CustomJSONEncoder, so
+        # current doesn't need pre-sanitizing here even though it may hold
+        # set/Path/PathOrUrl values.
         resp = plugin.dispatch(sandbox_dir, 'after_register',
-                               {'register': _json_safe(current), 'context': context})
+                               {'register': current, 'context': context})
         if not resp.get('success'):
             raise RuntimeError(
                 f"after_register failed in build plugin '{plugin.class_path}': {resp.get('error')}")
@@ -342,7 +347,7 @@ def write_register_snapshot(sandbox_dir: Path, stage: Stage, register: dict) -> 
     hooks_dir.mkdir(exist_ok=True)
     path = hooks_dir / f'register-{stage.value}.json'
     with open(path, 'w') as f:
-        json.dump(_json_safe(register), f)
+        json.dump(register, f, cls=CustomJSONEncoder)
     return path
 
 
