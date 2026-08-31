@@ -17,7 +17,7 @@ from ogc.bblocks.log import setup_logging, log_indent
 from ogc.bblocks import postprocess as postprocess_module
 from ogc.bblocks.postprocess import postprocess
 from ogc.bblocks.permissions import check_build_plugin_permissions
-from ogc.bblocks.hooks.plugin import load_build_plugins, dispatch_after_uplift, dispatch_after_run, \
+from ogc.bblocks.build_hooks.plugin import load_build_plugins, dispatch_after_uplift, dispatch_after_run, \
     dispatch_on_error
 from ogc.bblocks.sandbox import SANDBOX_DIR_NAME
 from ogc.bblocks.template_sync import check_template_files, ensure_build_script_interactive, sync_lineage_files

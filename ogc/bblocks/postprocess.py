@@ -33,7 +33,7 @@ from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister, ImportedBui
 from ogc.bblocks.validate import validate_test_resources, write_report, load_validation_plugins
 from ogc.bblocks.transform import _rel, apply_transforms, load_transform_plugins, transformers, cleanup_sandbox
 from ogc.bblocks.permissions import check_permissions, check_build_plugin_permissions
-from ogc.bblocks.hooks.plugin import load_build_plugins, dispatch_before_run, dispatch_after_register, \
+from ogc.bblocks.build_hooks.plugin import load_build_plugins, dispatch_before_run, dispatch_after_register, \
     Stage, write_register_snapshot, dispatch_before_bblock, dispatch_after_bblock
 
 # Best-effort breadcrumb of which pipeline stage postprocess() is currently in,
