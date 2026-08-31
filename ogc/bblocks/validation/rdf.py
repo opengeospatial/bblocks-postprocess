@@ -130,21 +130,32 @@ class RdfValidator(Validator):
 
         self.added_shacl_closures = []
         self.closure_graph_sources: set = set()
-        for shacl_closure in bblock.shaclClosures or ():
-            try:
-                resolved = bblock.resolve_file(shacl_closure)
-                self.closure_graph.parse(resolved, format='turtle')
-                self.added_shacl_closures.append(shacl_closure)
-                self.closure_graph_sources.add(resolved)
-            except HTTPError as e:
-                self.shacl_errors.append(f"Error retrieving {e.url}: {e}")
-            except Exception as e:
-                self.shacl_errors.append(f"Error processing {shacl_closure}: {str(e)}")
+        self._shacl_closures_loaded = False
 
         bblock.metadata['shaclShapes'] = inherited_shacl_shapes
 
         inherited_post_steps = register.get_inherited_post_uplift_steps(bblock.identifier)
         self.uplifter = Uplifter(self.bblock, inherited_post_steps=inherited_post_steps)
+
+    def _ensure_shacl_closures_loaded(self):
+        # Loaded lazily (only once we know there's actually an RDF graph to validate against
+        # SHACL shapes) to avoid needlessly fetching closures when they won't be used.
+        if self._shacl_closures_loaded:
+            return
+        self._shacl_closures_loaded = True
+        for closure_source in self.register.get_inherited_closure_sources(self.bblock.identifier):
+            try:
+                # No format= hint: sources are a mix of declared SHACL closures, ontologies
+                # (which may be RDF/XML, e.g. '.owl') and RDF data resources, so let rdflib
+                # guess from the file extension / response Content-Type instead of assuming
+                # Turtle, same as the snippet-declared closures below.
+                self.closure_graph.parse(closure_source)
+                self.added_shacl_closures.append(closure_source)
+                self.closure_graph_sources.add(closure_source)
+            except HTTPError as e:
+                self.shacl_errors.append(f"Error retrieving {e.url}: {e}")
+            except Exception as e:
+                self.shacl_errors.append(f"Error processing {closure_source}: {str(e)}")
 
     def _load_graph(self, filename: Path, output_filename: Path, report: ValidationReportItem,
                     contents: str | None = None,
@@ -393,10 +404,23 @@ class RdfValidator(Validator):
             if not self.shacl_graphs:
                 return None
 
+            self._ensure_shacl_closures_loaded()
+            if self.shacl_errors:
+                for shacl_error in self.shacl_errors:
+                    report.add_entry(ValidationReportEntry(
+                        section=ValidationReportSection.SHACL,
+                        message=shacl_error,
+                        is_error=True,
+                        is_global=True,
+                    ))
+                    return None
+
             if self.added_shacl_closures:
                 report.add_entry(ValidationReportEntry(
                     section=ValidationReportSection.SHACL,
-                    message="Using building block SHACL closures:\n - " + '\n - '.join(self.added_shacl_closures),
+                    message="Using SHACL closure graph sources "
+                            "(declared closures, ontologies and RDF data resources):\n - "
+                            + '\n - '.join(str(c) for c in self.added_shacl_closures),
                     is_error=False,
                 ))
 
@@ -510,5 +534,13 @@ class RdfValidator(Validator):
                         }
                     ))
                     shacl_errors_found = True
-            return not shacl_errors_found
+            # The validator ran regardless of the SHACL outcome (conformance or
+            # violation) - that outcome is already conveyed via the report
+            # entries above (is_error=not shacl_conforms). Returning False here
+            # would be misread by the caller as "this validator declined to
+            # run" (the convention used elsewhere, e.g. JsonValidator returning
+            # False for a non-JSON file), silently dropping a resource that
+            # actually failed SHACL validation - as expected for a -fail test -
+            # from the report.
+            return True
         return None
