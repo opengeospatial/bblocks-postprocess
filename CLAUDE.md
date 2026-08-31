@@ -152,6 +152,8 @@ This cross-repo propagation is for changes that have actually shipped (merged to
 
 Cut a release with `scripts/tag-release.sh [major|minor|patch] [--push]` (defaults to `patch`), which tags the next `v1.<minor>.<patch>` off the highest existing tag and optionally pushes it.
 
+**`image_tag` input (testing pre-release Docker images via CI):** `postprocess/action.yml`, `full/action.yml`, and `validate-and-process.yml` all expose an `image_tag` input (default `'latest'`) that selects which `ghcr.io/opengeospatial/bblocks-postprocess` tag to run — e.g. `develop`, built on every push to that branch by `build-docker.yml`. This threading is safe to merge anywhere. But **on `develop` only**, `full/action.yml`'s and `validate-and-process.yml`'s nested `uses:` refs are hardcoded to `@develop` instead of `@v1` (marked with `DEVELOP-ONLY` comments), because nested `uses:` refs can't be parameterized by an input — pinning just the outer call to `@develop` wouldn't be enough on its own. This is a deliberate, permanent divergence from what those lines read on `master`: a straight `develop`→`master` merge will carry `@develop` into `master` verbatim unless someone flips the two pins back to `@v1` by hand at merge time — there's no way to make this automatic.
+
 ### Adding new CLI flags
 
 The postprocessing chain has four layers that all need to be updated:

@@ -53,12 +53,21 @@ inputs:
   sparql_password:
     description: SPARQL GSP push password
     default: ''
+  image_tag:
+    description: >-
+      Docker tag of ghcr.io/opengeospatial/bblocks-postprocess to run (e.g. 'develop' to test
+      pre-release changes). Defaults to the image's 'latest' tag, which only moves on a v1.*.*
+      release.
+    default: 'latest'
 
 runs:
   using: composite
   steps:
+    # DEVELOP-ONLY: pinned to @develop (not @v1) so this resolves against develop's own
+    # postprocess/action.yml instead of the last v1.*.* release. Do not carry this pin into
+    # master — flip it back to @v1 before/at merge time.
     - name: Run OGC BBR postprocess
-      uses: opengeospatial/bblocks-postprocess/postprocess@v1
+      uses: opengeospatial/bblocks-postprocess/postprocess@develop
       with:
         register_file: ${{ inputs.register_file }}
         items_dir: ${{ inputs.items_dir }}
@@ -76,3 +85,4 @@ runs:
         enable_sparql: ${{ inputs.enable_sparql }}
         sparql_username: ${{ inputs.sparql_username }}
         sparql_password: ${{ inputs.sparql_password }}
+        image_tag: ${{ inputs.image_tag }}

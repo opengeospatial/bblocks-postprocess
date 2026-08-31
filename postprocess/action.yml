@@ -53,39 +53,55 @@ inputs:
   sparql_password:
     description: SPARQL GSP push password
     default: ''
+  image_tag:
+    description: >-
+      Docker tag of ghcr.io/opengeospatial/bblocks-postprocess to run (e.g. 'develop' to test
+      pre-release changes). Defaults to the image's 'latest' tag, which only moves on a v1.*.*
+      release.
+    default: 'latest'
 
 runs:
-  using: docker
-  image: docker://ghcr.io/opengeospatial/bblocks-postprocess
-  env:
-    SPARQL_USERNAME: ${{ inputs.sparql_username }}
-    SPARQL_PASSWORD: ${{ inputs.sparql_password }}
-  args:
-    - '--register-file'
-    - ${{ inputs.register_file }}
-    - '--items-dir'
-    - ${{ inputs.items_dir }}
-    - '--generated-docs-path'
-    - ${{ inputs.generated_docs_path }}
-    - '--base-url'
-    - ${{ inputs.base_url }}
-    - '--fail-on-error'
-    - ${{ inputs.fail_on_error }}
-    - '--annotated-path'
-    - ${{ inputs.annotated_path }}
-    - '--clean'
-    - ${{ inputs.clean }}
-    - '--config-file'
-    - ${{ inputs.config_file }}
-    - '--test-outputs'
-    - ${{ inputs.test_outputs_path }}
-    - '--github-base-url'
-    - ${{ inputs.github_base_url }}
-    - '--deploy-viewer'
-    - ${{ inputs.deploy_viewer }}
-    - '--viewer-path'
-    - ${{ inputs.viewer_path }}
-    - '--skip-permissions'
-    - ${{ inputs.skip_permissions }}
-    - '--enable-sparql'
-    - ${{ inputs.enable_sparql }}
+  using: composite
+  steps:
+    - name: Run OGC BB postprocess
+      shell: bash
+      env:
+        BBP_IMAGE_TAG: ${{ inputs.image_tag }}
+        BBP_REGISTER_FILE: ${{ inputs.register_file }}
+        BBP_ITEMS_DIR: ${{ inputs.items_dir }}
+        BBP_GENERATED_DOCS_PATH: ${{ inputs.generated_docs_path }}
+        BBP_BASE_URL: ${{ inputs.base_url }}
+        BBP_FAIL_ON_ERROR: ${{ inputs.fail_on_error }}
+        BBP_ANNOTATED_PATH: ${{ inputs.annotated_path }}
+        BBP_CLEAN: ${{ inputs.clean }}
+        BBP_CONFIG_FILE: ${{ inputs.config_file }}
+        BBP_TEST_OUTPUTS_PATH: ${{ inputs.test_outputs_path }}
+        BBP_GITHUB_BASE_URL: ${{ inputs.github_base_url }}
+        BBP_DEPLOY_VIEWER: ${{ inputs.deploy_viewer }}
+        BBP_VIEWER_PATH: ${{ inputs.viewer_path }}
+        BBP_SKIP_PERMISSIONS: ${{ inputs.skip_permissions }}
+        BBP_ENABLE_SPARQL: ${{ inputs.enable_sparql }}
+        SPARQL_USERNAME: ${{ inputs.sparql_username }}
+        SPARQL_PASSWORD: ${{ inputs.sparql_password }}
+      # Every input is passed through env vars (rather than interpolated directly into this
+      # script) to avoid shell injection via GitHub Actions expression substitution.
+      run: |
+        docker run --rm --pull=always \
+          -v "${{ github.workspace }}:/github/workspace" \
+          --workdir /github/workspace \
+          -e SPARQL_USERNAME -e SPARQL_PASSWORD \
+          "ghcr.io/opengeospatial/bblocks-postprocess:${BBP_IMAGE_TAG}" \
+          --register-file "${BBP_REGISTER_FILE}" \
+          --items-dir "${BBP_ITEMS_DIR}" \
+          --generated-docs-path "${BBP_GENERATED_DOCS_PATH}" \
+          --base-url "${BBP_BASE_URL}" \
+          --fail-on-error "${BBP_FAIL_ON_ERROR}" \
+          --annotated-path "${BBP_ANNOTATED_PATH}" \
+          --clean "${BBP_CLEAN}" \
+          --config-file "${BBP_CONFIG_FILE}" \
+          --test-outputs "${BBP_TEST_OUTPUTS_PATH}" \
+          --github-base-url "${BBP_GITHUB_BASE_URL}" \
+          --deploy-viewer "${BBP_DEPLOY_VIEWER}" \
+          --viewer-path "${BBP_VIEWER_PATH}" \
+          --skip-permissions "${BBP_SKIP_PERMISSIONS}" \
+          --enable-sparql "${BBP_ENABLE_SPARQL}"

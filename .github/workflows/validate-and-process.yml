@@ -99,6 +99,13 @@ on:
         description: |
           Shell code to run before pushing to GH pages (e.g., for cleanup)
         default: ''
+      image_tag:
+        type: string
+        description: >-
+          Docker tag of ghcr.io/opengeospatial/bblocks-postprocess to run (e.g. 'develop' to test
+          pre-release changes). Defaults to the image's 'latest' tag, which only moves on a
+          v1.*.* release.
+        default: 'latest'
     secrets:
       sparql_username:
         description: SPARQL Graph Store Protocol user name for push authentication
@@ -221,9 +228,12 @@ jobs:
       - name: Before postprocess
         if: ${{inputs.before_postprocess}}
         run: ${{inputs.before_postprocess}}
+      # DEVELOP-ONLY: pinned to @develop (not @v1) so this resolves against develop's own
+      # full/action.yml instead of the last v1.*.* release. Do not carry this pin into master —
+      # flip it back to @v1 before/at merge time.
       - name: OGC BB postprocess
         if: ${{ !inputs.skip-build }}
-        uses: opengeospatial/bblocks-postprocess/full@v1
+        uses: opengeospatial/bblocks-postprocess/full@develop
         with:
           register_file: ${{ inputs.register_file }}
           items_dir: ${{ inputs.items_dir }}
@@ -241,6 +251,7 @@ jobs:
           enable_sparql: ${{ inputs.enable_sparql }}
           sparql_username: ${{ secrets.sparql_username }}
           sparql_password: ${{ secrets.sparql_password }}
+          image_tag: ${{ inputs.image_tag }}
       - name: Fix permissions, compress large _visited_properties.tsv, git pull
         run: |
           sudo chown -R $UID:$(id -g) . || true
