@@ -102,10 +102,10 @@ on:
       image_tag:
         type: string
         description: >-
-          Docker tag of ghcr.io/opengeospatial/bblocks-postprocess to run (e.g. 'develop' to test
-          pre-release changes). Defaults to the image's 'latest' tag, which only moves on a
-          v1.*.* release.
-        default: 'latest'
+          Docker tag of ghcr.io/opengeospatial/bblocks-postprocess to run. Leave empty (the
+          default) to auto-resolve based on the ref this workflow is called at (see
+          postprocess/action.yml). Set explicitly to override.
+        default: ''
     secrets:
       sparql_username:
         description: SPARQL Graph Store Protocol user name for push authentication

@@ -55,18 +55,39 @@ inputs:
     default: ''
   image_tag:
     description: >-
-      Docker tag of ghcr.io/opengeospatial/bblocks-postprocess to run (e.g. 'develop' to test
-      pre-release changes). Defaults to the image's 'latest' tag, which only moves on a v1.*.*
-      release.
-    default: 'latest'
+      Docker tag of ghcr.io/opengeospatial/bblocks-postprocess to run. Leave empty (the default)
+      to auto-resolve from the ref this action itself was invoked at: 'develop' when pinned at
+      @develop, otherwise 'latest' (which only moves on a v1.*.* release). Set explicitly to
+      override either way, e.g. to pin an exact pre-release tag.
+    default: ''
 
 runs:
   using: composite
   steps:
+    # Auto-resolves image_tag when left empty, so a caller only has to point this action's own
+    # `uses:` ref at @develop to get the develop image too, instead of also having to set
+    # image_tag explicitly. Uses github.action_ref (the ref this action was invoked at), so no
+    # per-branch default to flip at merge time.
+    - name: Resolve postprocess image tag
+      id: resolve_image_tag
+      shell: bash
+      env:
+        # github.action_ref must not be interpolated directly into `run:` in a composite action;
+        # it has to be threaded through `env:` first.
+        BBP_ACTION_REF: ${{ github.action_ref }}
+      run: |
+        if [ -n "${{ inputs.image_tag }}" ]; then
+          tag="${{ inputs.image_tag }}"
+        elif [ "$BBP_ACTION_REF" = "develop" ]; then
+          tag="develop"
+        else
+          tag="latest"
+        fi
+        echo "tag=$tag" >> "$GITHUB_OUTPUT"
     - name: Run OGC BB postprocess
       shell: bash
       env:
-        BBP_IMAGE_TAG: ${{ inputs.image_tag }}
+        BBP_IMAGE_TAG: ${{ steps.resolve_image_tag.outputs.tag }}
         BBP_REGISTER_FILE: ${{ inputs.register_file }}
         BBP_ITEMS_DIR: ${{ inputs.items_dir }}
         BBP_GENERATED_DOCS_PATH: ${{ inputs.generated_docs_path }}
