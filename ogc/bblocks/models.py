@@ -795,8 +795,9 @@ class BuildingBlockRegister:
                     found_deps.update(deps)
                 if bblock.extensionPoints:
                     found_deps.add(bblock.extensionPoints['baseBuildingBlock'])
-                    found_deps.update(bblock.extensionPoints['extensions'].keys())
-                    found_deps.update(bblock.extensionPoints['extensions'].values())
+                    ep_extensions = bblock.extensionPoints.get('extensions') or {}
+                    found_deps.update(ep_extensions.keys())
+                    found_deps.update(ep_extensions.values())
                 found_deps.discard(bblock.identifier)
                 if found_deps:
                     bblock.metadata['dependsOn'] = list(found_deps)

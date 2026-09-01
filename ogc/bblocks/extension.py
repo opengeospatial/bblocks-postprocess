@@ -74,7 +74,7 @@ class Extender:
     def process_extensions(self, bblock: BuildingBlock):
 
         parent_id = bblock.extensionPoints['baseBuildingBlock']
-        extensions = bblock.extensionPoints['extensions']
+        extensions = bblock.extensionPoints.get('extensions') or {}
 
         register = self.register
         schema_resolver = self.schema_resolver

@@ -329,15 +329,18 @@ properties:
     type: object
     required:
       - baseBuildingBlock
-      - extensions
     properties:
       baseBuildingBlock:
         description: Base building block to extend
         type: string
       extensions:
-        description: Map of "source building block -> specialized building block" extensions
+        description: >
+          Map of "source building block -> specialized building block" extensions.
+          Optional (defaults to none) - a bblock can declare extensionPoints purely to
+          pull in the base document and merge its own "openapi.yaml" additions on top
+          (new paths/webhooks/components, or metadata overrides), with no substitutions
+          at all.
         type: object
-        minProperties: 1
         patternProperties:
           '.*':
             type: string
