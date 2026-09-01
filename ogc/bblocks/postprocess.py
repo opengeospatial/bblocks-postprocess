@@ -32,7 +32,16 @@ from ogc.bblocks.schema import annotate_schema, resolve_all_schema_references, w
 from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister, ImportedBuildingBlocks
 from ogc.bblocks.validate import validate_test_resources, write_report, load_validation_plugins
 from ogc.bblocks.transform import _rel, apply_transforms, load_transform_plugins, transformers, cleanup_sandbox
-from ogc.bblocks.permissions import check_permissions
+from ogc.bblocks.permissions import check_permissions, check_build_plugin_permissions
+from ogc.bblocks.build_hooks.plugin import load_build_plugins, dispatch_before_run, dispatch_after_register, \
+    Stage, write_register_snapshot, dispatch_before_bblock, dispatch_after_bblock
+
+# Best-effort breadcrumb of which pipeline stage postprocess() is currently in,
+# read by entrypoint.py's on_error dispatch to populate error.phase when
+# postprocess() itself raises. Module-level (not thread-local): postprocess()
+# is not re-entrant/concurrent within a process. See docs/build-lifecycle-hooks.md's
+# on_error "phase" field.
+_hook_phase = 'before_run'
 
 
 def _apply_bblocks_uri_refs(metadata: dict) -> dict:
@@ -52,6 +61,48 @@ def _apply_bblocks_uri_refs(metadata: dict) -> dict:
             result['extensionPoints']['extensions'] = {add_bblocks_uri(k): add_bblocks_uri(v)
                                                        for k, v in ep['extensions'].items()}
     return result
+
+
+def local_metadata_snapshot(bblock: BuildingBlock, cwd: Path) -> dict:
+    """Deep-copy bblock.metadata with any still-local paths re-anchored relative to cwd.
+
+    Must be called before the with_base_url block in do_postprocess() rewrites schema/
+    context/etc. paths to published URLs - this is the only point where cwd-relative
+    paths and metadata still coexist for a given bblock.
+    """
+    snap = copy.deepcopy(bblock.metadata)
+    for field in ('ldContext', 'schema', 'openAPIDocument'):
+        v = snap.get(field)
+        if v and isinstance(v, str) and not is_url(v):
+            snap[field] = _rel(bblock.files_path / v, cwd)
+    shapes = snap.get('shaclRules') or snap.get('shaclShapes')
+    if isinstance(shapes, list):
+        key = 'shaclRules' if 'shaclRules' in snap else 'shaclShapes'
+        snap[key] = [
+            _rel(bblock.files_path / s, cwd) if isinstance(s, str) and not is_url(s) else s
+            for s in shapes
+        ]
+    for r in snap.get('resources', []):
+        ref = r.get('ref')
+        if ref and not is_url(ref):
+            r['ref'] = _rel(bblock.files_path / ref, cwd)
+    return snap
+
+
+def _bblock_hook_payload(bblock: BuildingBlock, cwd: Path, urls_resolved: bool) -> dict:
+    """Build the `bblock` argument for a before_bblock/after_bblock dispatch.
+
+    Always a fresh local_metadata_snapshot() call - see docs/build-lifecycle-hooks.md's
+    "Payload per event": the one rule that holds at all five stages is "current
+    metadata, with any still-local paths re-anchored relative to cwd", which is
+    exactly what local_metadata_snapshot() already gives do_postprocess(). urls_resolved
+    flips False -> True at FINALIZE, once with_base_url rewriting has happened.
+    """
+    return {
+        'identifier': bblock.identifier,
+        'metadata': local_metadata_snapshot(bblock, cwd),
+        'urlsResolved': urls_resolved,
+    }
 
 
 def postprocess(registered_items_path: str | Path = 'registereditems',
@@ -94,14 +145,17 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         allowed_transform_types = None
         allowed_plugin_modules = None
         allowed_validator_modules = None
+        allowed_build_classes = None
     else:
         allowed_transform_types, allowed_plugin_modules, allowed_validator_modules = check_permissions(
             sandbox_dir, registered_items_path if isinstance(registered_items_path, Path)
             else Path(registered_items_path),
         )
+        allowed_build_classes = check_build_plugin_permissions(sandbox_dir)
 
     transform_plugins = load_transform_plugins(sandbox_dir, allowed_modules=allowed_plugin_modules)
     plugin_validators, validator_plugins = load_validation_plugins(sandbox_dir, allowed_modules=allowed_validator_modules)
+    build_plugins, build_plugin_entries = load_build_plugins(sandbox_dir, allowed_classes=allowed_build_classes)
 
     if not isinstance(test_outputs_path, Path):
         test_outputs_path = Path(test_outputs_path)
@@ -148,6 +202,31 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
     if register_license:
         for bblock in bbr.bblocks.values():
             bblock.metadata.setdefault('license', dict(register_license))
+
+    # Run-level config for build plugins, present on every event regardless of
+    # whether any are configured - also reused at after_register below.
+    hook_context = {
+        'itemsDir': str(registered_items_path),
+        'baseUrl': base_url,
+        'registerFile': str(output_file) if output_file else None,
+        'steps': list(steps) if steps else None,
+        'filter': bb_filter,
+        'failOnError': fail_on_error,
+    }
+
+    # Register skeleton (no per-bblock processing done yet) - reused as the
+    # before_bblock/after_bblock register payload for every stage (ANNOTATE through
+    # DOC), not just before_run: none of those stages assemble output_register_json,
+    # so there is no more "real" a register snapshot to offer them. See
+    # docs/build-lifecycle-hooks.md's "Payload per event" ("necessarily a *partial*
+    # view") and "before_run fires after the register is loaded, not before everything".
+    hook_register_skeleton = {'bblocks': sorted(bbr.bblocks.keys())}
+
+    if build_plugins:
+        dispatch_before_run(build_plugins, sandbox_dir, hook_register_skeleton, hook_context)
+
+    global _hook_phase
+    _hook_phase = 'annotate'
 
     doc_generator = DocGenerator(base_url=base_url,
                                  output_dir=generated_docs_path,
@@ -196,23 +275,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
         # Snapshot metadata with local paths re-anchored to cwd before the
         # with_base_url block rewrites everything to published URLs.
-        _snap = copy.deepcopy(bblock.metadata)
-        for _field in ('ldContext', 'schema', 'openAPIDocument'):
-            _v = _snap.get(_field)
-            if _v and isinstance(_v, str) and not is_url(_v):
-                _snap[_field] = _rel(bblock.files_path / _v, cwd)
-        _shapes = _snap.get('shaclRules') or _snap.get('shaclShapes')
-        if isinstance(_shapes, list):
-            _key = 'shaclRules' if 'shaclRules' in _snap else 'shaclShapes'
-            _snap[_key] = [
-                _rel(bblock.files_path / s, cwd) if isinstance(s, str) and not is_url(s) else s
-                for s in _shapes
-            ]
-        for _r in _snap.get('resources', []):
-            _ref = _r.get('ref')
-            if _ref and not is_url(_ref):
-                _r['ref'] = _rel(bblock.files_path / _ref, cwd)
-        bblock.pre_baseurl_metadata = _snap
+        bblock.pre_baseurl_metadata = local_metadata_snapshot(bblock, cwd)
 
         if bblock.annotated_schema.is_file():
             schema_url_yaml = PathOrUrl(bblock.annotated_schema).with_base_url(
@@ -358,9 +421,15 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         logger.info("No transformers found")
 
     extender = Extender(bbr)
+    annotate_register_path = (write_register_snapshot(sandbox_dir, Stage.ANNOTATE, hook_register_skeleton)
+                              if build_plugins else None)
     for building_block in bbr.bblocks.values():
         if filter_id is None or building_block.identifier == filter_id:
             if not steps or 'annotate' in steps:
+                if build_plugins:
+                    dispatch_before_bblock(build_plugins, sandbox_dir, Stage.ANNOTATE,
+                                           _bblock_hook_payload(building_block, cwd, urls_resolved=False),
+                                           annotate_register_path, {**hook_context, 'light': False}, fail_on_error)
 
                 openapi_contents = None
                 if building_block.extensionPoints:
@@ -449,6 +518,11 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                         logger.warning("%s while processing OpenAPI document for %s: %s",
                                        type(e).__name__, building_block.identifier, e)
 
+                if build_plugins:
+                    dispatch_after_bblock(build_plugins, sandbox_dir, Stage.ANNOTATE,
+                                          _bblock_hook_payload(building_block, cwd, urls_resolved=False),
+                                          annotate_register_path, {**hook_context, 'light': False}, fail_on_error)
+
             if building_block.ontology.exists:
                 building_block.metadata.pop('ontology', None)
                 try:
@@ -480,13 +554,20 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
         child_bblocks.append(building_block)
 
+    _hook_phase = 'jsonld'
     if not steps or 'jsonld' in steps:
         logger.info("Writing JSON-LD contexts")
         # Create JSON-LD contexts
+        jsonld_register_path = (write_register_snapshot(sandbox_dir, Stage.JSONLD, hook_register_skeleton)
+                                if build_plugins else None)
         with log_indent():
             for building_block in child_bblocks:
                 if filter_id is not None and building_block.identifier != filter_id:
                     continue
+                if build_plugins:
+                    dispatch_before_bblock(build_plugins, sandbox_dir, Stage.JSONLD,
+                                           _bblock_hook_payload(building_block, cwd, urls_resolved=False),
+                                           jsonld_register_path, {**hook_context, 'light': False}, fail_on_error)
                 if building_block.annotated_schema.is_file():
                     written_context = None
                     try:
@@ -515,26 +596,50 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                                             f'{written_context_msg}') from e
                         logger.error("Error writing context for %s%s",
                                      building_block.identifier, written_context_msg, exc_info=e)
+                if build_plugins:
+                    dispatch_after_bblock(build_plugins, sandbox_dir, Stage.JSONLD,
+                                          _bblock_hook_payload(building_block, cwd, urls_resolved=False),
+                                          jsonld_register_path, {**hook_context, 'light': False}, fail_on_error)
 
+    _hook_phase = 'finalize'
+    finalize_register_path = (write_register_snapshot(sandbox_dir, Stage.FINALIZE, hook_register_skeleton)
+                              if build_plugins else None)
+    finalize_context = {**hook_context, 'light': None}
     output_bblocks = []
     for building_block in child_bblocks:
         light = filter_id is not None and building_block.identifier != filter_id
         lightmsg = ' (light)' if light else ''
         logger.info("Postprocessing building block %s%s", building_block.identifier, lightmsg)
         with log_indent():
+            if build_plugins:
+                finalize_context['light'] = light
+                dispatch_before_bblock(build_plugins, sandbox_dir, Stage.FINALIZE,
+                                       _bblock_hook_payload(building_block, cwd, urls_resolved=False),
+                                       finalize_register_path, finalize_context, fail_on_error)
             if do_postprocess(building_block, light=light):
                 output_bblocks.append(building_block.metadata)
             else:
                 logger.error("%s failed postprocessing, skipping...", building_block.identifier)
+            if build_plugins:
+                dispatch_after_bblock(build_plugins, sandbox_dir, Stage.FINALIZE,
+                                      _bblock_hook_payload(building_block, cwd, urls_resolved=True),
+                                      finalize_register_path, finalize_context, fail_on_error)
 
+    _hook_phase = 'transforms'
     if not steps or 'transforms' in steps:
         logger.info("Running transforms")
+        transforms_register_path = (write_register_snapshot(sandbox_dir, Stage.TRANSFORMS, hook_register_skeleton)
+                                    if build_plugins else None)
         with log_indent():
             for building_block in child_bblocks:
                 light = filter_id is not None and building_block.identifier != filter_id
                 if light or not building_block.transforms:
                     continue
                 logger.info("%s", building_block.identifier)
+                if build_plugins:
+                    dispatch_before_bblock(build_plugins, sandbox_dir, Stage.TRANSFORMS,
+                                           _bblock_hook_payload(building_block, cwd, urls_resolved=True),
+                                           transforms_register_path, {**hook_context, 'light': False}, fail_on_error)
                 with log_indent():
                     apply_transforms(building_block, outputs_path=test_outputs_path, base_url=base_url,
                                      sandbox_dir=sandbox_dir, bblocks_register=bbr,
@@ -545,15 +650,28 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                                      transform_plugins=transform_plugins,
                                      allowed_transform_types=allowed_transform_types,
                                      plugin_validators=plugin_validators)
+                if build_plugins:
+                    dispatch_after_bblock(build_plugins, sandbox_dir, Stage.TRANSFORMS,
+                                          _bblock_hook_payload(building_block, cwd, urls_resolved=True),
+                                          transforms_register_path, {**hook_context, 'light': False}, fail_on_error)
 
     if filter_id is None:
         cleanup_sandbox(sandbox_dir, child_bblocks)
 
+    _hook_phase = 'doc'
     if not steps or 'doc' in steps:
         logger.info("Generating documentation")
+        doc_register_path = (write_register_snapshot(sandbox_dir, Stage.DOC, hook_register_skeleton)
+                             if build_plugins else None)
+        doc_context = {**hook_context, 'light': None}
         with log_indent():
             for building_block in child_bblocks:
                 light = filter_id is not None and building_block.identifier != filter_id
+                if build_plugins:
+                    doc_context['light'] = light
+                    dispatch_before_bblock(build_plugins, sandbox_dir, Stage.DOC,
+                                           _bblock_hook_payload(building_block, cwd, urls_resolved=True),
+                                           doc_register_path, doc_context, fail_on_error)
                 if not light:
                     logger.info("%s", building_block.identifier)
                     with log_indent():
@@ -563,6 +681,10 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                         'mediatype': 'text/html',
                         'url': urljoin(base_url, f"{viewer_path}/bblock/{building_block.identifier}"),
                     }
+                if build_plugins:
+                    dispatch_after_bblock(build_plugins, sandbox_dir, Stage.DOC,
+                                          _bblock_hook_payload(building_block, cwd, urls_resolved=True),
+                                          doc_register_path, doc_context, fail_on_error)
     elif base_url and viewer_path:
         for building_block in child_bblocks:
             building_block.metadata.setdefault('documentation', {})['bblocks-viewer'] = {
@@ -585,6 +707,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                      json_report_fn=test_outputs_path / 'report.json',
                      base_url=base_url)
 
+    _hook_phase = 'register'
     if output_file and (not steps or 'register' in steps):
 
         output_register_json = {}
@@ -624,6 +747,9 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         if validator_plugins:
             output_register_json['validatorPlugins'] = validator_plugins
 
+        if build_plugin_entries:
+            output_register_json['buildPlugins'] = build_plugin_entries
+
         remote_cache_dir_url = f"{base_url}{os.path.relpath(Path(remote_cache_dir).resolve(), cwd)}"
         output_register_json['remoteCacheDir'] = remote_cache_dir_url
 
@@ -643,6 +769,12 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                     **link,
                     'href': PathOrUrl(link['href']).with_base_url(base_url),
                 })
+
+        if build_plugins:
+            _hook_phase = 'after_register'
+            output_register_json = dispatch_after_register(
+                build_plugins, sandbox_dir, output_register_json, hook_context)
+            _hook_phase = 'register'
 
         if output_file == '-':
             print(json.dumps(output_register_json, indent=2, cls=CustomJSONEncoder))
