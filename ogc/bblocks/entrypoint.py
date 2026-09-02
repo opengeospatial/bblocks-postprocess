@@ -13,7 +13,9 @@ from pathlib import Path
 
 from ogc.bblocks.log import setup_logging, log_indent
 
+from ogc.bblocks.meta_register import DEFAULT_META_REGISTRY_URL, resolve_imports
 from ogc.bblocks.postprocess import postprocess
+from ogc.bblocks.sandbox import SANDBOX_DIR_NAME
 from ogc.bblocks.template_sync import check_template_files, ensure_build_script_interactive
 from ogc.na import ingest_json, update_vocabs
 
@@ -242,11 +244,13 @@ if __name__ == '__main__':
         if id_prefix and id_prefix[-1] != '.':
             id_prefix += '.'
         subdirs = id_prefix.split('.')[1:]
-        imported_registers = bb_config.get('imports')
-        if imported_registers is None:
-            imported_registers = [MAIN_BBR]
-        else:
-            imported_registers = [ir if ir != DEFAULT_IMPORT_MARKER else MAIN_BBR for ir in imported_registers if ir]
+        meta_registry_url = bb_config.get('meta-registry', DEFAULT_META_REGISTRY_URL)
+        # Cached under .bblocks-sandbox (not annotated_path/_cache) because it must
+        # survive --clean true, unlike the rest of that build output.
+        meta_registry_cache_dir = Path(SANDBOX_DIR_NAME) / 'meta-register'
+        imported_registers = resolve_imports(bb_config.get('imports'), meta_registry_url,
+                                             DEFAULT_IMPORT_MARKER, MAIN_BBR,
+                                             cache_dir=meta_registry_cache_dir)
 
         for p in ('name', 'abstract', 'description'):
             v = bb_config.get(p)

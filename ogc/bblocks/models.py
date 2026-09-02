@@ -25,6 +25,7 @@ from ogc.bblocks.util import is_url, load_yaml
 from rdflib import Graph
 import rdflib.util
 
+from ogc.bblocks import meta_register
 from ogc.bblocks import mimetypes
 from ogc.bblocks.util import get_schema, PathOrUrl, load_file, find_references_yaml, \
     find_references_xml, strip_bblocks_uri, add_bblocks_uri
@@ -605,7 +606,7 @@ class ImportedBuildingBlocks:
                     local_url = metadata_url_trailing + 'build-local/register.json'
                     tested_locations[local_url] = True
                     try:
-                        r = requests.get(local_url)
+                        r = meta_register.get_response(local_url)
                         r.raise_for_status()
                         local_imported = r.json()
                         if not isinstance(local_imported, dict) or 'bblocks' not in local_imported:
@@ -617,7 +618,7 @@ class ImportedBuildingBlocks:
                     except:
                         pass
                 tested_locations[url] = True
-                r = requests.get(url)
+                r = meta_register.get_response(url)
                 if r.ok:
                     if self.remote_cache_dir:
                         cache_fn = self.remote_cache_dir.joinpath(sha256(url.encode('utf-8')).hexdigest())

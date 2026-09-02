@@ -12,13 +12,25 @@ properties:
 
   imports:
     description: >
-      List of external building block register URLs to import. Use the special value
-      "default" to include the main OGC Building Blocks register. Omitting this key
-      also defaults to the main register.
+      List of external building block registers to import. Each entry is either a full
+      register.json URL, or an "@org/register" alias resolved against the meta-registry
+      configured in "meta-registry" below. Use the special value "default" to include the
+      main OGC Building Blocks register. Omitting this key also defaults to the main
+      register.
     oneOf:
       - type: array
         items:
           type: string
+      - type: 'null'
+
+  meta-registry:
+    description: >
+      URL of a Building Blocks meta-registry index.json, used to resolve "@org/register"
+      alias entries in "imports" to register.json URLs. Set to null to disable alias
+      resolution (any "@org/register" import entry will then raise an error). Omitting
+      this key uses the tool's built-in default meta-registry, if any.
+    oneOf:
+      - type: string
       - type: 'null'
 
   name:
