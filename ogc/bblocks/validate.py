@@ -255,6 +255,19 @@ def write_report(json_reports: list[dict],
         return result
 
 
+def _mime_type_for_extension(suffix: str) -> str | None:
+    """Resolve a file suffix (e.g. '.ttl') to its mime-type string, or None if
+    unknown. mimetypes.from_extension() returns the full known-mimetype dict
+    entry (not a string), so this unwraps its 'mimeType' key -- callers must not
+    pass the raw entry on to code that expects a mime-type string/dict key
+    (e.g. NATIVE_RDF_LANGS.get(...), which requires a hashable string).
+    """
+    if not suffix:
+        return None
+    entry = mimetypes.from_extension(suffix.lstrip('.'))
+    return entry['mimeType'] if entry else None
+
+
 def _validate_resource(bblock: BuildingBlock,
                        filename: Path,
                        output_filename: Path,
@@ -368,7 +381,7 @@ def validate_transform_output(
         *plugin_validators,
     ]
 
-    mime_type = mimetypes.from_extension(output_file.suffix[1:]) if output_file.suffix else None
+    mime_type = _mime_type_for_extension(output_file.suffix)
 
     source = ValidationItemSource(
         type=ValidationItemSourceType.TRANSFORM_OUTPUT,
@@ -454,7 +467,7 @@ def validate_test_resources(bblock: BuildingBlock,
         output_base_filenames.add(fn.stem)
 
         declared_media_type = extra_test_resource.get('media-type')
-        file_format = declared_media_type or (mimetypes.from_extension(fn.suffix[1:]) if fn.suffix else None)
+        file_format = declared_media_type or _mime_type_for_extension(fn.suffix)
 
         test_result = _validate_resource(
             bblock=bblock,
