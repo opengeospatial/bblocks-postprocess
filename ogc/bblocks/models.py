@@ -416,19 +416,20 @@ class BuildingBlock:
 
     @property
     def published_semantic_uplift(self) -> dict:
-        """The subset of this bblock's own semantic-uplift.yaml that gets published for other
-        bblocks (in this register or, via register.json, another one) to inherit: only
-        "post"-stage additionalSteps marked "inheritable", with any "ref" resolved and inlined
-        into "code" - a snapshot at publish time, not a live reference, so a wrapping bblock in
-        another register can consume it without needing filesystem access to this repo.
-        Non-inheritable steps are never published; there is nothing else for another bblock to
-        consume them for.
+        """The published, portable form of this bblock's own semantic-uplift.yaml: the *complete*
+        set of additionalSteps (both "pre"-stage jq and "post"-stage shacl/sparql-*, inheritable
+        or not), with any "ref" resolved and inlined into "code" - a snapshot at publish time, not
+        a live reference, so a consumer (json-full, register.json, or a wrapping bblock in another
+        register reading this one's register.json) can use it without needing filesystem access to
+        this repo. This is deliberately NOT filtered to "inheritable" steps only: register.json and
+        json-full must describe this bblock's own full semantic uplift, not just the fragment other
+        bblocks may inherit from it - that filtering happens separately, in
+        BuildingBlockRegister.get_inherited_post_uplift_steps, when a *dependent* bblock collects
+        what it inherits.
         """
         if 'published_semantic_uplift' not in self._lazy_properties:
             published_steps = []
             for step in self.semantic_uplift.get('additionalSteps', ()):
-                if not step.get('inheritable'):
-                    continue
                 published_step = {k: v for k, v in step.items() if k not in ('ref', 'stage')}
                 if 'code' not in published_step:
                     ref = step['ref']
@@ -580,9 +581,10 @@ class ImportedBBlockProxy:
     @property
     def semantic_uplift(self) -> dict:
         # Imported bblocks have no local semantic-uplift.yaml on disk, but their own
-        # register.json entry may publish a (filtered-to-inheritable, ref-inlined)
-        # "semanticUplift" - see BuildingBlock.published_semantic_uplift and
-        # BuildingBlockRegister.get_inherited_post_uplift_steps.
+        # register.json entry may publish a full, ref-inlined "semanticUplift" (all steps,
+        # not just inheritable ones) - see BuildingBlock.published_semantic_uplift and
+        # BuildingBlockRegister.get_inherited_post_uplift_steps (which does the
+        # inheritable-only filtering itself).
         return self.metadata.get('semanticUplift', {})
 
     def resolve_file(self, fn_or_url):
@@ -1009,6 +1011,11 @@ class BuildingBlockRegister:
                 return
 
             for step in dep_steps:
+                # dep_steps is the dependency's *full* published step set (see
+                # published_semantic_uplift) - only take the ones it actually marked
+                # inheritable, same as the schema restricts to "post"-stage steps.
+                if not step.get('inheritable'):
+                    continue
                 step = dict(step, _source_bblock=dep_id)
                 result.append(step)
 
