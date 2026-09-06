@@ -135,15 +135,7 @@ class JsonValidator(Validator):
                 ))
             # json_doc = jsonref.replace_refs(json_doc, base_uri=filename.as_uri(), merge_props=True, proxies=False)
 
-            if isinstance(json_doc, dict) and '@graph' in json_doc:
-                json_doc = json_doc['@graph']
-                report.add_entry(ValidationReportEntry(
-                    section=ValidationReportSection.FILES,
-                    message='"@graph" found, unwrapping',
-                    payload={
-                        'op': '@graph-unwrap'
-                    }
-                ))
+            graph_doc = json_doc['@graph'] if isinstance(json_doc, dict) and '@graph' in json_doc else None
 
             schema_validator = self.schema_validator
 
@@ -196,17 +188,7 @@ class JsonValidator(Validator):
                 return
 
             if schema_validator:
-                try:
-                    validate_json(json_doc, schema_validator)
-                    report.add_entry(ValidationReportEntry(
-                        section=ValidationReportSection.JSON_SCHEMA,
-                        message='Validation passed',
-                        payload={
-                            'op': 'validation',
-                            'result': True,
-                        }
-                    ))
-                except Exception as e:
+                def report_validation_error(e: Exception) -> None:
                     if not isinstance(e, jsonschema.exceptions.ValidationError):
                         logger.error("Unexpected error encountered when validating resource %s for %s",
                                      os.path.relpath(filename), self.bblock.identifier, exc_info=e)
@@ -218,9 +200,74 @@ class JsonValidator(Validator):
                             'op': 'validation',
                             'result': False,
                             'exception': e.__class__.__qualname__,
-                            'errorMessage': e.message,
+                            'errorMessage': getattr(e, 'message', str(e)),
                         }
                     ))
+
+                if graph_doc is not None:
+                    # The document has a top-level "@graph": try validating with it unwrapped first
+                    # (the common case, where "@graph" is just a convenience wrapper for a batch of
+                    # instances), and only fall back to the full, wrapped document -- e.g. for schemas
+                    # where "@context"/"@graph" are themselves part of the required shape -- if that fails.
+                    report.add_entry(ValidationReportEntry(
+                        section=ValidationReportSection.FILES,
+                        message='"@graph" found, trying validation with contents unwrapped',
+                        payload={
+                            'op': '@graph-unwrap'
+                        }
+                    ))
+                    try:
+                        validate_json(graph_doc, schema_validator)
+                        json_doc = graph_doc
+                        report.add_entry(ValidationReportEntry(
+                            section=ValidationReportSection.JSON_SCHEMA,
+                            message='Validation passed',
+                            payload={
+                                'op': 'validation',
+                                'result': True,
+                            }
+                        ))
+                    except Exception as graph_error:
+                        try:
+                            validate_json(json_doc, schema_validator)
+                        except Exception:
+                            # Both the unwrapped and the full document failed validation: report the
+                            # original (unwrapped) error, since that's the assumption we validate against
+                            # by default.
+                            report_validation_error(graph_error)
+                        else:
+                            # The full, wrapped document validates on its own -- e.g. a schema where
+                            # "@graph" is a required envelope field rather than a batch-of-instances
+                            # wrapper. Keep json_doc as-is (wrapped) and report a pass.
+                            report.add_entry(ValidationReportEntry(
+                                section=ValidationReportSection.FILES,
+                                message='Validation of unwrapped "@graph" contents failed; '
+                                        'validated successfully as a full object instead',
+                                payload={
+                                    'op': '@graph-unwrap-fallback'
+                                }
+                            ))
+                            report.add_entry(ValidationReportEntry(
+                                section=ValidationReportSection.JSON_SCHEMA,
+                                message='Validation passed',
+                                payload={
+                                    'op': 'validation',
+                                    'result': True,
+                                }
+                            ))
+                else:
+                    try:
+                        validate_json(json_doc, schema_validator)
+                        report.add_entry(ValidationReportEntry(
+                            section=ValidationReportSection.JSON_SCHEMA,
+                            message='Validation passed',
+                            payload={
+                                'op': 'validation',
+                                'result': True,
+                            }
+                        ))
+                    except Exception as e:
+                        report_validation_error(e)
 
             if contents is not None:
                 # This is an example or a ref, write it to disk
