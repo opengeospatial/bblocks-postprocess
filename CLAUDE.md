@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A GitHub Action and standalone Python tool that postprocesses OGC Building Blocks — reusable data models combining JSON Schema, JSON-LD, SHACL, test cases, examples, and profile declarations. It generates documentation, validates outputs, performs semantic uplifting to RDF, and optionally deploys results.
 
+Note: the local directory/checkout is named `bblocks-postprocess-action`, but the actual GitHub repo is `opengeospatial/bblocks-postprocess` (no `-action` suffix) — don't assume they match. When running `gh` from within this checkout, omit `--repo` entirely; it infers the repo from the git remote. Only pass `--repo opengeospatial/bblocks-postprocess` explicitly when running `gh` from outside this checkout.
+
 ## Running the Postprocessor
 
 ```bash
