@@ -561,6 +561,29 @@ class ImportedBBlockProxy:
         """For imported bblocks all SHACL shapes are absolute URLs; pass through unchanged."""
         return fn_or_url
 
+    @property
+    def validation_resources(self) -> list[dict]:
+        """Resources with role 'validation'.
+
+        Mirrors BuildingBlock.validation_resources, but refs in an imported bblock's
+        published metadata are already absolute URLs, so no path resolution is needed.
+        """
+        result = []
+        for r in self.metadata.get('resources') or []:
+            if r.get('role') != 'validation':
+                continue
+            ref = r.get('ref')
+            if not ref:
+                continue
+            entry = {
+                'ref': ref,
+                'format': r.get('format'),
+            }
+            if r.get('conformsTo'):
+                entry['conformsTo'] = r['conformsTo']
+            result.append(entry)
+        return result
+
 
 class ImportedBuildingBlocks:
 
