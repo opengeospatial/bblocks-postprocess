@@ -133,18 +133,21 @@ properties:
 
 $defs:
   license:
-    type: object
-    properties:
-      name:
-        type: string
-        description: Name of the license (e.g. "CC BY 4.0").
-      url:
-        type: string
-        format: uri
-        description: Link to the license text.
-    anyOf:
-      - required: [name]
-      - required: [url]
+    oneOf:
+      - type: string
+        description: 'Shorthand for {name: <string>} (e.g. an SPDX identifier like "Apache-2.0").'
+      - type: object
+        properties:
+          name:
+            type: string
+            description: Name of the license (e.g. "CC BY 4.0").
+          url:
+            type: string
+            format: uri
+            description: Link to the license text.
+        anyOf:
+          - required: [name]
+          - required: [url]
 
   plugin-entry:
     type: object
