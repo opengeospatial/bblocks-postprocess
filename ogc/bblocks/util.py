@@ -36,6 +36,17 @@ def strip_bblocks_uri(v: str) -> str:
 def add_bblocks_uri(v: str) -> str:
     return v if v.startswith(BBLOCKS_URI_PREFIX) else f'{BBLOCKS_URI_PREFIX}{v}'
 
+
+def normalize_license(license_value: dict | str | None) -> dict | None:
+    """
+    A plain string "license" (in bblock.json or bblocks-config.yaml) is shorthand for
+    {name: <string>} (e.g. an SPDX identifier like "Apache-2.0"). Leaves an already-object
+    value (or None) untouched.
+    """
+    if isinstance(license_value, str):
+        return {'name': license_value}
+    return license_value
+
 loaded_schemas: dict[str, dict] = {}
 
 

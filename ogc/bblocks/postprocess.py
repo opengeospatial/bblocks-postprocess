@@ -27,7 +27,7 @@ from ogc.bblocks.extension import Extender
 from ogc.bblocks.generate_docs import DocGenerator
 from ogc.bblocks.oas30 import oas31_to_oas30
 from ogc.bblocks.util import write_jsonld_context, CustomJSONEncoder, \
-    PathOrUrl, get_git_repo_url, load_yaml, add_bblocks_uri
+    PathOrUrl, get_git_repo_url, load_yaml, add_bblocks_uri, normalize_license
 from ogc.bblocks.schema import annotate_schema, resolve_all_schema_references, write_annotated_schema
 from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister, ImportedBuildingBlocks
 from ogc.bblocks.validate import validate_test_resources, write_report, load_validation_plugins
@@ -127,7 +127,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 local_url_mappings: dict | None = None,
                 links: list[dict] = None,
                 viewer_config: dict | None = None,
-                default_license: dict | None = None) -> list[dict]:
+                default_license: dict | str | None = None) -> list[dict]:
 
     cwd = Path().resolve()
 
@@ -168,6 +168,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
     # Register-wide license, inherited by building blocks that do not declare their own.
     # If no license URL is given, a LICENSE file in the root of the repository is looked up;
     # the whole repository is deployed, so it is published under the register's base URL.
+    default_license = normalize_license(default_license)
     register_license = dict(default_license) if default_license else {}
     if not register_license.get('url') and base_url:
         license_file = next((fn for fn in ('LICENSE', 'LICENSE.md', 'LICENSE.txt')

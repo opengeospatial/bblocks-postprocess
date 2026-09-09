@@ -28,7 +28,7 @@ import rdflib.util
 from ogc.bblocks import meta_register
 from ogc.bblocks import mimetypes
 from ogc.bblocks.util import get_schema, PathOrUrl, load_file, find_references_yaml, \
-    find_references_xml, strip_bblocks_uri, add_bblocks_uri
+    find_references_xml, strip_bblocks_uri, add_bblocks_uri, normalize_license
 from ogc.bblocks.schema import RegisterSchemaResolver
 
 BBLOCK_METADATA_FILE = 'bblock.json'
@@ -131,6 +131,9 @@ class BuildingBlock:
                 jsonschema.validate(self.metadata, get_schema('bblock'))
             except Exception as e:
                 raise BuildingBlockError(f'Error validating building block metadata for {identifier}') from e
+
+            if 'license' in self.metadata:
+                self.metadata['license'] = normalize_license(self.metadata['license'])
 
             self.metadata.pop('itemIdentifier', None)
             self.metadata: dict[str, Any] = {
