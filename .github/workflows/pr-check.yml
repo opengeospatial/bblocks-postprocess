@@ -119,8 +119,11 @@ jobs:
       - name: Before postprocess
         if: ${{ inputs.before_postprocess }}
         run: ${{ inputs.before_postprocess }}
+      # DEVELOP-ONLY: pinned to @develop (not @v1) so this resolves against develop's own
+      # full/action.yml instead of the last v1.*.* release. Do not carry this pin into master —
+      # flip it back to @v1 before/at merge time.
       - name: OGC BB postprocess
-        uses: opengeospatial/bblocks-postprocess/full@v1
+        uses: opengeospatial/bblocks-postprocess/full@develop
         with:
           register_file: ${{ inputs.register_file }}
           items_dir: ${{ inputs.items_dir }}
