@@ -114,6 +114,17 @@ properties:
           snippets or transform outputs.
         items:
           $ref: '#/$defs/view-plugin-entry'
+      dependency-graph-height:
+        description: >
+          Default height, in pixels, of the per-building-block dependency graph shown on
+          each Building Block's page. Optional: if omitted, the viewer keeps using its own
+          built-in default (currently 400). The viewer additionally never renders the graph
+          shorter than 200px regardless of this setting, so values below that have no visible
+          effect - the minimum here is only meant to reject clearly-invalid values (e.g. 0 or
+          negative), not to document the viewer's actual effective floor.
+        type: integer
+        minimum: 100
+        default: 400
 
   plugins:
     type: object
