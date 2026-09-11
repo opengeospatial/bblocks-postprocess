@@ -233,6 +233,9 @@ class BuildingBlock:
         if 'dependsOn' in self.metadata:
             self.metadata['dependsOn'] = [strip_bblocks_uri(d) for d in self.metadata['dependsOn']]
 
+        if 'hasFormat' in self.metadata:
+            self.metadata['hasFormat'] = [strip_bblocks_uri(d) for d in self.metadata['hasFormat']]
+
         ep = self.metadata.get('extensionPoints')
         if ep:
             if 'baseBuildingBlock' in ep:
@@ -692,6 +695,8 @@ class ImportedBuildingBlocks:
             bblock['register'] = self
             if 'dependsOn' in bblock:
                 bblock['dependsOn'] = [strip_bblocks_uri(d) for d in bblock['dependsOn']]
+            if 'hasFormat' in bblock:
+                bblock['hasFormat'] = [strip_bblocks_uri(d) for d in bblock['hasFormat']]
             if 'isProfileOf' in bblock:
                 v = bblock['isProfileOf']
                 bblock['isProfileOf'] = ([strip_bblocks_uri(i) for i in v]

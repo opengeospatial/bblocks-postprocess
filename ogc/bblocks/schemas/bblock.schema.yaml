@@ -195,6 +195,16 @@ properties:
     type: array
     items:
       type: string
+  hasFormat:
+    description: >-
+      Identifiers of other Building Blocks that represent the same content as this one, but in
+      an alternate format (equivalent to Dublin Core's dcterms:hasFormat/isFormatOf). Unlike
+      isProfileOf, this does not imply one is a specialization of the other - they are siblings.
+      Symmetric: list the relation on every sibling that should be linked, since it is not
+      inferred automatically from the other side.
+    type: array
+    items:
+      type: string
   requirementClasses:
     description: URI(s) of requirement classes that can be used to validate this Building Block
     type: array
