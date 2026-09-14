@@ -418,6 +418,33 @@ class BuildingBlock:
         return self._lazy_properties['semantic_uplift']
 
     @property
+    def published_semantic_uplift(self) -> dict:
+        """The published, portable form of this bblock's own semantic-uplift.yaml: the *complete*
+        set of additionalSteps (both "pre"-stage jq and "post"-stage shacl/sparql-*, inheritable
+        or not), with any "ref" resolved and inlined into "code" - a snapshot at publish time, not
+        a live reference, so a consumer (json-full, register.json, or a wrapping bblock in another
+        register reading this one's register.json) can use it without needing filesystem access to
+        this repo. This is deliberately NOT filtered to "inheritable" steps only: register.json and
+        json-full must describe this bblock's own full semantic uplift, not just the fragment other
+        bblocks may inherit from it - that filtering happens separately, in
+        BuildingBlockRegister.get_inherited_post_uplift_steps, when a *dependent* bblock collects
+        what it inherits.
+        """
+        if 'published_semantic_uplift' not in self._lazy_properties:
+            published_steps = []
+            for step in self.semantic_uplift.get('additionalSteps', ()):
+                published_step = {k: v for k, v in step.items() if k not in ('ref', 'stage')}
+                if 'code' not in published_step:
+                    ref = step['ref']
+                    resolved_ref = ref if is_url(ref) else self.files_path / ref
+                    published_step['code'] = load_file(resolved_ref, self.remote_cache_dir)
+                published_steps.append(published_step)
+            self._lazy_properties['published_semantic_uplift'] = (
+                {'additionalSteps': published_steps} if published_steps else {}
+            )
+        return self._lazy_properties['published_semantic_uplift']
+
+    @property
     def transforms(self) -> list:
         if 'transforms' not in self._lazy_properties:
             transforms = {}
@@ -556,9 +583,12 @@ class ImportedBBlockProxy:
 
     @property
     def semantic_uplift(self) -> dict:
-        # Imported bblocks have no local semantic-uplift.yaml; return empty so
-        # Uplifter skips additionalSteps without needing a None check.
-        return {}
+        # Imported bblocks have no local semantic-uplift.yaml on disk, but their own
+        # register.json entry may publish a full, ref-inlined "semanticUplift" (all steps,
+        # not just inheritable ones) - see BuildingBlock.published_semantic_uplift and
+        # BuildingBlockRegister.get_inherited_post_uplift_steps (which does the
+        # inheritable-only filtering itself).
+        return self.metadata.get('semanticUplift', {})
 
     def resolve_file(self, fn_or_url):
         """For imported bblocks all SHACL shapes are absolute URLs; pass through unchanged."""
@@ -794,8 +824,9 @@ class BuildingBlockRegister:
                     found_deps.update(deps)
                 if bblock.extensionPoints:
                     found_deps.add(bblock.extensionPoints['baseBuildingBlock'])
-                    found_deps.update(bblock.extensionPoints['extensions'].keys())
-                    found_deps.update(bblock.extensionPoints['extensions'].values())
+                    ep_extensions = bblock.extensionPoints.get('extensions') or {}
+                    found_deps.update(ep_extensions.keys())
+                    found_deps.update(ep_extensions.values())
                 found_deps.discard(bblock.identifier)
                 if found_deps:
                     bblock.metadata['dependsOn'] = list(found_deps)
@@ -949,6 +980,83 @@ class BuildingBlockRegister:
                                    first_level_id, dep_id)
 
         return shapes
+
+    def get_inherited_post_uplift_steps(self, identifier: str) -> list[dict]:
+        """Postorder-resolves the "post"-stage semantic uplift steps this bblock inherits from its
+        transitive dependencies (dependsOn + isProfileOf, same edges as find_dependencies), subject
+        to this bblock's own "inheritedPostSteps" setting and each dependency's own "inheritable"
+        flag on the individual step. Unlike find_dependencies's preorder list (fine for
+        get_inherited_shacl_shapes, where results are deduped by identifier in a dict anyway), the
+        order here is significant - steps must run children-before-parents, so this is a genuine
+        postorder traversal with "already emitted" (not "already visited in this path") dedup: a
+        diamond-shared dependency's steps are collected exactly once, at the earliest point its own
+        subtree is fully resolved. See docs/inheritable-post-uplift-steps.md.
+        """
+        if identifier in self.bblocks:
+            root_semantic_uplift = self.bblocks[identifier].semantic_uplift
+        elif identifier in self.imported_bblocks:
+            root_semantic_uplift = self.imported_bblocks[identifier].get('semanticUplift', {})
+        else:
+            return []
+
+        inherited_setting = root_semantic_uplift.get('inheritedPostSteps', False)
+        if inherited_setting is False:
+            return []
+        allow_all = inherited_setting is True
+        allow_list = set(inherited_setting) if not allow_all else None
+
+        result: list[dict] = []
+        emitted: set[str] = set()
+
+        def visit(dep_id: str, seen: tuple[str, ...]):
+            if dep_id in emitted or dep_id in seen:
+                return
+            if dep_id in self.bblocks:
+                dep_bblock = self.bblocks[dep_id]
+                dep_metadata = dep_bblock.metadata
+                dep_steps = dep_bblock.published_semantic_uplift.get('additionalSteps', ())
+            elif dep_id in self.imported_bblocks:
+                dep_metadata = self.imported_bblocks[dep_id]
+                dep_steps = dep_metadata.get('semanticUplift', {}).get('additionalSteps', ())
+            else:
+                return
+
+            seen = seen + (dep_id,)
+            for d in dep_metadata.get('dependsOn', ()):
+                visit(d, seen)
+            dep_is_profile_of = dep_metadata.get('isProfileOf', dep_metadata.get('profileOf'))
+            if dep_is_profile_of:
+                for d in dep_is_profile_of if isinstance(dep_is_profile_of, list) else [dep_is_profile_of]:
+                    visit(d, seen)
+
+            emitted.add(dep_id)
+
+            if dep_id == identifier:
+                return
+            if not (allow_all or dep_id in allow_list):
+                return
+
+            for step in dep_steps:
+                # dep_steps is the dependency's *full* published step set (see
+                # published_semantic_uplift) - only take the ones it actually marked
+                # inheritable, same as the schema restricts to "post"-stage steps.
+                if not step.get('inheritable'):
+                    continue
+                step = dict(step, _source_bblock=dep_id)
+                result.append(step)
+
+        if identifier in self.bblocks:
+            root_metadata = self.bblocks[identifier].metadata
+        else:
+            root_metadata = self.imported_bblocks[identifier]
+        for d in root_metadata.get('dependsOn', ()):
+            visit(d, (identifier,))
+        root_is_profile_of = root_metadata.get('isProfileOf', root_metadata.get('profileOf'))
+        if root_is_profile_of:
+            for d in root_is_profile_of if isinstance(root_is_profile_of, list) else [root_is_profile_of]:
+                visit(d, (identifier,))
+
+        return result
 
     def get_inherited_closure_sources(self, identifier: str) -> set[str | Path]:
         # Mirrors get_inherited_shacl_shapes, but everything here folds into a single flat

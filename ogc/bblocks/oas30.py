@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import logging
 import os
 import re
@@ -15,6 +16,8 @@ from jsonpointer import resolve_pointer
 from ogc.na.util import is_url, dump_yaml
 
 from ogc.bblocks.util import load_file_cached, load_yaml, PathOrUrl
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from typing import Any, Callable, Unpack
@@ -249,6 +252,172 @@ def apply_oas30_schema_fixes(schema: dict[str, Any]):
 
     walk_schema(schema, fn)
     return schema
+
+
+# == OpenAPI 3.0 -> 3.1 upconversion (see docs/openapi-30-upconvert.md) ==
+#
+# Inverse direction of apply_oas30_subschema_fixes/apply_oas30_schema_fixes above. Only
+# Schema Object content needs rewriting - nullable, exclusiveMinimum/Maximum, and $ref
+# sibling keywords - everything else in an OAS document (Parameter/Response/
+# RequestBody/Header/Example/Link shapes, paths/webhooks/components structure) is
+# already identical between 3.0 and 3.1.
+
+def apply_oas31_subschema_fixes(parent: dict[str, Any], context: str = ''):
+    """
+    In-place inverse of apply_oas30_subschema_fixes: rewrites a single OAS 3.0 Schema
+    Object node so its content is valid JSON Schema 2020-12 (OAS 3.1+) content.
+
+    - exclusiveMinimum/exclusiveMaximum: boolean-sibling-of-minimum/maximum -> numeric
+      value, with the sibling minimum/maximum removed (Draft-04/OAS-3.0-style ->
+      2020-12-style).
+    - nullable: folded into `type` (added to an existing type/type-array), or - if
+      there's no `type` to fold into (nullable next to $ref/enum/allOf/etc.) - the rest
+      of the node is wrapped in `anyOf: [<original>, {type: null}]`. This deliberately
+      runs *before* the $ref-sibling check below: `nullable` next to `$ref` is a real,
+      common OAS 3.0 idiom for "nullable ref" (unlike arbitrary other siblings) and gets
+      consumed here, not treated as dead weight.
+    - Any *other* keyword still found alongside `$ref` after the above is stripped, with
+      a warning: OAS 3.0's Reference Object ignores everything but `$ref`, so a 3.0
+      author who put something else there almost certainly didn't intend for it to take
+      effect - and OAS 3.1 does *not* ignore $ref siblings, so left alone it would
+      silently start applying. See docs/openapi-30-upconvert.md.
+    """
+    for bound_kw, excl_kw in (('minimum', 'exclusiveMinimum'), ('maximum', 'exclusiveMaximum')):
+        excl_val = parent.get(excl_kw)
+        if excl_val is True:
+            if bound_kw in parent:
+                parent[excl_kw] = parent.pop(bound_kw)
+            else:
+                # malformed input (exclusiveMinimum/Maximum: true with no minimum/maximum
+                # sibling to take the value from) - nothing meaningful to convert
+                del parent[excl_kw]
+        elif excl_val is False:
+            del parent[excl_kw]
+
+    if parent.pop('nullable', None):
+        t = parent.get('type')
+        if isinstance(t, list):
+            if 'null' not in t:
+                t.append('null')
+        elif t is not None:
+            parent['type'] = [t, 'null']
+        else:
+            original = dict(parent)
+            parent.clear()
+            parent['anyOf'] = [original, {'type': 'null'}]
+
+    if '$ref' in parent and len(parent) > 1:
+        siblings = {k: parent.pop(k) for k in list(parent.keys()) if k != '$ref'}
+        logger.warning("%sstripping sibling keyword(s) %s next to $ref %r while upconverting "
+                       "from OpenAPI 3.0 to 3.1 - ignored by the OAS 3.0 Reference Object, so "
+                       "almost certainly stray/unintentional content rather than something "
+                       "meant to take effect now that OAS 3.1 honors $ref siblings",
+                       f'{context}: ' if context else '', ', '.join(sorted(siblings)),
+                       parent['$ref'])
+
+
+def apply_oas31_schema_fixes(schema: dict[str, Any], context: str = '') -> dict[str, Any]:
+    """
+    Walks a Schema Object subtree in place (as found inline in an OAS document - does
+    not chase $ref targets, which are separate, independently-versioned resources) and
+    applies apply_oas31_subschema_fixes at every node, mirroring apply_oas30_schema_fixes's
+    is_properties bookkeeping so the "properties" mapping object itself (name -> schema)
+    is never mistaken for a schema node.
+    """
+    def fn(subschema: dict[str, Any], parent_is_properties=False, property=None, **kwargs):
+        if isinstance(subschema, dict) and (parent_is_properties or property != 'properties'):
+            apply_oas31_subschema_fixes(subschema, context)
+        return {
+            'parent_is_properties': not parent_is_properties and property == 'properties'
+        }
+
+    walk_schema(schema, fn)
+    return schema
+
+
+def _fix_oas31_content_object_schemas(obj: dict | None, context: str):
+    if not isinstance(obj, dict):
+        return
+    for media_type_obj in (obj.get('content') or {}).values():
+        if isinstance(media_type_obj, dict) and isinstance(media_type_obj.get('schema'), dict):
+            apply_oas31_schema_fixes(media_type_obj['schema'], context)
+
+
+def _fix_oas31_parameter_or_header_schemas(obj: dict | None, context: str):
+    if not isinstance(obj, dict):
+        return
+    if isinstance(obj.get('schema'), dict):
+        apply_oas31_schema_fixes(obj['schema'], context)
+    _fix_oas31_content_object_schemas(obj, context)
+
+
+def _fix_oas31_path_item_schemas(path_item: dict | None, context: str):
+    if not isinstance(path_item, dict):
+        return
+    for parameter in path_item.get('parameters') or []:
+        _fix_oas31_parameter_or_header_schemas(parameter, context)
+    for method in OAS_OPERATION_KEYS:
+        operation = path_item.get(method)
+        if not isinstance(operation, dict):
+            continue
+        for parameter in operation.get('parameters') or []:
+            _fix_oas31_parameter_or_header_schemas(parameter, context)
+        if 'requestBody' in operation:
+            _fix_oas31_content_object_schemas(operation['requestBody'], context)
+        for response in (operation.get('responses') or {}).values():
+            if not isinstance(response, dict):
+                continue
+            _fix_oas31_content_object_schemas(response, context)
+            for header in (response.get('headers') or {}).values():
+                _fix_oas31_parameter_or_header_schemas(header, context)
+        for callback in (operation.get('callbacks') or {}).values():
+            if isinstance(callback, dict):
+                for cb_path_item in callback.values():
+                    _fix_oas31_path_item_schemas(cb_path_item, context)
+
+
+def oas30_to_oas31(document: dict, context: str = '') -> dict:
+    """
+    Convert an OpenAPI 3.0 document to an equivalent OpenAPI 3.1 document. Operates on,
+    and returns, a deep copy - does not mutate its argument. `context` is used only for
+    warning messages (e.g. the bblock identifier this document is being upconverted
+    for).
+
+    Only Schema Object content needs rewriting (see apply_oas31_subschema_fixes); every
+    other part of the document is already identical in shape between 3.0 and 3.1 and is
+    copied through untouched. Does not chase $ref targets outside the document's own
+    inline content - those are separate, independently-versioned resources (e.g.
+    another bblock's own schema.yaml), not part of what "this document's OAS version"
+    describes.
+    """
+    document = copy.deepcopy(document)
+    components = document.get('components') or {}
+
+    for schema in (components.get('schemas') or {}).values():
+        if isinstance(schema, dict):
+            apply_oas31_schema_fixes(schema, context)
+    for parameter in (components.get('parameters') or {}).values():
+        _fix_oas31_parameter_or_header_schemas(parameter, context)
+    for header in (components.get('headers') or {}).values():
+        _fix_oas31_parameter_or_header_schemas(header, context)
+    for request_body in (components.get('requestBodies') or {}).values():
+        _fix_oas31_content_object_schemas(request_body, context)
+    for response in (components.get('responses') or {}).values():
+        _fix_oas31_content_object_schemas(response, context)
+        for header in (response.get('headers') or {}).values():
+            _fix_oas31_parameter_or_header_schemas(header, context)
+    for callback in (components.get('callbacks') or {}).values():
+        if isinstance(callback, dict):
+            for cb_path_item in callback.values():
+                _fix_oas31_path_item_schemas(cb_path_item, context)
+
+    for path_item in (document.get('paths') or {}).values():
+        _fix_oas31_path_item_schemas(path_item, context)
+    for path_item in (document.get('webhooks') or {}).values():
+        _fix_oas31_path_item_schemas(path_item, context)
+
+    document['openapi'] = '3.1.0'
+    return document
 
 
 def schema_to_oas30(schema_fn: Path, schema_url: str, bbr: BuildingBlockRegister | None,

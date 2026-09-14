@@ -100,38 +100,44 @@ def _check_plugin_permissions(
     cache_key: str,
     cache: dict,
     label: str,
+    key: str = 'modules',
 ) -> tuple[set[str], bool]:
     """Prompt for permissions for a list of plugin entries.
 
-    Returns (allowed_modules, cache_was_modified).
+    *key* names the entry field listing what needs approval - 'modules' for
+    transform/validator plugins (approval keyed on a module path), 'classes' for
+    build plugins (approval keyed on a fully-qualified class path, which is
+    stricter: approving one class does not approve others in the same module).
+
+    Returns (allowed_modules_or_classes, cache_was_modified).
     """
     cached: dict[str, str] = dict(cache.get(cache_key, {}))
     allowed: set[str] = set()
     dirty = False
 
     for plugin in plugin_entries:
-        modules = plugin.get('modules', [])
-        if isinstance(modules, str):
-            modules = [modules]
+        entries = plugin.get(key, [])
+        if isinstance(entries, str):
+            entries = [entries]
         version_key = _plugin_version_key(plugin)
         pip_deps = plugin.get('pip', [])
         if isinstance(pip_deps, str):
             pip_deps = [pip_deps]
 
-        for module in modules:
-            if cached.get(module) == version_key:
-                allowed.add(module)
+        for entry in entries:
+            if cached.get(entry) == version_key:
+                allowed.add(entry)
                 continue
 
             print()
             print(f"╔══ {label} plugin permission required")
-            print(f"║ Plugin: {module}")
+            print(f"║ Plugin: {entry}")
             if pip_deps:
                 print(f"║ Dependencies: {', '.join(pip_deps)}")
             print()
-            if ask_yes_no(f"Allow {label.lower()} plugin '{module}' to be installed and run?"):
-                cached[module] = version_key
-                allowed.add(module)
+            if ask_yes_no(f"Allow {label.lower()} plugin '{entry}' to be installed and run?"):
+                cached[entry] = version_key
+                allowed.add(entry)
                 cache[cache_key] = cached
                 dirty = True
 
@@ -196,3 +202,29 @@ def check_permissions(
         _save_cache(sandbox_dir, cache)
 
     return allowed_transform_types, allowed_plugin_modules, allowed_validator_modules
+
+
+def check_build_plugin_permissions(sandbox_dir: Path) -> set[str]:
+    """Check and prompt for permissions for build (lifecycle hook) plugins.
+
+    Narrow counterpart to check_permissions() for the one plugin kind that outlives
+    postprocess(): entrypoint.py calls this a second time, after postprocess() has
+    already returned, to cover the after_uplift/after_run/on_error events. Unlike
+    check_permissions() it does not re-run _scan_risky_transforms() - that scan is
+    unrelated to build plugins and would be pointless duplicated work here.
+
+    Approval is keyed on the fully-qualified *class* path (via key='classes'),
+    stricter than the module-level approval transform/validator plugins get.
+
+    Returns allowed_classes: set of approved 'module.ClassName' strings.
+    """
+    cache = _load_cache(sandbox_dir)
+
+    allowed_classes, dirty = _check_plugin_permissions(
+        read_plugin_entries('build'), 'build-plugins', cache, 'Build', key='classes',
+    )
+
+    if dirty:
+        _save_cache(sandbox_dir, cache)
+
+    return allowed_classes

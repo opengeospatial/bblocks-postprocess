@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import subprocess
 import sys
 
@@ -11,7 +10,7 @@ from base64 import b64decode
 from pathlib import Path
 
 from ogc.bblocks.log import run_logged, log_indent
-from ogc.bblocks.sandbox import ensure_venv, pip_slug
+from ogc.bblocks.sandbox import ensure_venv, pip_slug, pip_install_cached
 from ogc.bblocks.models import TransformMetadata, TransformResult
 
 _HARNESS = Path(__file__).parent / '_plugin_harness.py'
@@ -37,16 +36,7 @@ class PluginTransformer:
             logger.info("Setting up plugin venv for '%s'", self.module_path)
         with log_indent():
             ensure_venv(venv_dir)
-            if self.pip_deps:
-                pip_bin = venv_dir / 'bin' / 'pip'
-                env = os.environ.copy()
-                env['GIT_TERMINAL_PROMPT'] = '0'
-                env['GIT_ASKPASS'] = 'echo'
-                run_logged(
-                    [str(pip_bin), 'install', '--disable-pip-version-check', *self.pip_deps],
-                    label='pip',
-                    env=env,
-                )
+            pip_install_cached(venv_dir, self.pip_deps)
         return venv_dir
 
     @staticmethod

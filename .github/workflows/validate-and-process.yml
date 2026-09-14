@@ -99,6 +99,13 @@ on:
         description: |
           Shell code to run before pushing to GH pages (e.g., for cleanup)
         default: ''
+      image_tag:
+        type: string
+        description: >-
+          Docker tag of ghcr.io/opengeospatial/bblocks-postprocess to run. Leave empty (the
+          default) to auto-resolve based on the ref this workflow is called at (see
+          postprocess/action.yml). Set explicitly to override.
+        default: ''
     secrets:
       sparql_username:
         description: SPARQL Graph Store Protocol user name for push authentication
@@ -241,6 +248,7 @@ jobs:
           enable_sparql: ${{ inputs.enable_sparql }}
           sparql_username: ${{ secrets.sparql_username }}
           sparql_password: ${{ secrets.sparql_password }}
+          image_tag: ${{ inputs.image_tag }}
       - name: Fix permissions, compress large _visited_properties.tsv, git pull
         run: |
           sudo chown -R $UID:$(id -g) . || true

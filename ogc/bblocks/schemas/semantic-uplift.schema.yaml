@@ -27,6 +27,15 @@ properties:
             providing them inline through the "code" property).
           type: string
           pattern: '[^\s]+'
+        inheritable:
+          description: |
+            Whether this "post"-stage step (shacl, sparql-construct, sparql-update) should also be run
+            automatically as part of the semantic uplift of a wrapping/profiling bblock (one that depends
+            on or profiles this one), provided that bblock opts in via its own "inheritedPostSteps"
+            property. Not valid on "pre"-stage steps (jq), since those operate on this bblock's own JSON
+            document shape and would not meaningfully apply to a wrapping bblock's document.
+          type: boolean
+          default: false
       required:
         - type
       oneOf:
@@ -34,3 +43,27 @@ properties:
           - code
         - required:
           - ref
+      if:
+        properties:
+          type:
+            const: jq
+        required:
+          - type
+      then:
+        not:
+          required:
+            - inheritable
+  inheritedPostSteps:
+    description: |
+      Controls which "post"-stage semantic uplift steps marked "inheritable" by this bblock's own
+      dependencies (transitively, via dependsOn/isProfileOf) are automatically run as part of this
+      bblock's own semantic uplift, after those dependencies' steps have themselves run and before
+      this bblock's own "post"-stage additionalSteps. Accepts true (inherit from every dependency that
+      marks steps inheritable), false (inherit nothing - the default), or a list of bblock identifiers
+      to inherit from (any others are ignored even if they mark steps inheritable).
+    oneOf:
+      - type: boolean
+      - type: array
+        items:
+          type: string
+    default: false
