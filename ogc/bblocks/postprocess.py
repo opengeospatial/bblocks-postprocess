@@ -105,6 +105,33 @@ def _bblock_hook_payload(bblock: BuildingBlock, cwd: Path, urls_resolved: bool) 
     }
 
 
+# OpenAPI extensionPoints went from purely declarative (no-op) to actually merging/
+# substituting the OpenAPI document, as of this release - see CLAUDE.md's "OpenAPI
+# extension points" note. A bblock whose own files predate this date were authored
+# against the old no-op behavior, so its newly-generated OpenAPI document is worth a
+# second look. Bump this only if a future change to extension-point processing itself
+# warrants re-flagging existing declarations - not on every release.
+OAS_EXTENSION_PROCESSING_SINCE = datetime.date(2026, 9, 14)
+
+
+def _git_last_modified(path: Path) -> datetime.date | None:
+    """Date of the last git commit that touched `path`, or None if it can't be
+    determined (not a git checkout, path untracked, git not installed, shallow
+    clone with no matching history, etc.) - best-effort, same as do_postprocess's
+    own dateOfLastChange fallback below.
+    """
+    try:
+        return datetime.datetime.fromisoformat(subprocess.run([
+            'git',
+            'log',
+            '-1',
+            '--pretty=format:%cI',
+            str(path),
+        ], capture_output=True).stdout.decode()).astimezone(datetime.timezone.utc).date()
+    except (ValueError, OSError):
+        return None
+
+
 def postprocess(registered_items_path: str | Path = 'registereditems',
                 output_file: str | Path | None = 'register.json',
                 base_url: str | None = None,
@@ -422,6 +449,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         logger.info("No transformers found")
 
     extender = Extender(bbr)
+    stale_oas_extension_bblocks: list[str] = []
     annotate_register_path = (write_register_snapshot(sandbox_dir, Stage.ANNOTATE, hook_register_skeleton)
                               if build_plugins else None)
     for building_block in bbr.bblocks.values():
@@ -441,6 +469,17 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
                     if is_openapi:
                         openapi_contents = extended_schema
+                        last_modified = _git_last_modified(building_block.files_path)
+                        if last_modified and last_modified < OAS_EXTENSION_PROCESSING_SINCE:
+                            logger.warning(
+                                "%s declares extensionPoints against an OpenAPI document, and its "
+                                "files were last committed on %s - before extensionPoints started "
+                                "being actively processed against OpenAPI documents (previously "
+                                "declarative-only). Please review %s's newly-generated OpenAPI "
+                                "document, then commit any change under its directory (e.g. bump "
+                                "bblock.json's dateOfLastChange) to clear this warning.",
+                                building_block.identifier, last_modified, building_block.identifier)
+                            stale_oas_extension_bblocks.append(building_block.identifier)
                     else:
                         with log_indent():
                             for annotated in write_annotated_schema(bblock=building_block, bblocks_register=bbr,
@@ -817,6 +856,21 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                         f.write(f"{bb_abstract}\n\n")
 
     logger.info("Finished processing %d building blocks", len(output_bblocks))
+
+    if stale_oas_extension_bblocks:
+        banner_width = 78
+        logger.warning('\n'.join([
+            '=' * banner_width,
+            'OpenAPI extensionPoints are now actively processed (previously declarative-only,'
+            ' a no-op). The following building blocks declare extensionPoints against an'
+            ' OpenAPI document and were last committed before that change - please review'
+            ' their newly-generated OpenAPI documents, then commit any change under each'
+            ' bblock\'s directory (e.g. bump its bblock.json dateOfLastChange) to clear its'
+            ' warning:',
+            *(f'  - {bb_id}' for bb_id in stale_oas_extension_bblocks),
+            '=' * banner_width,
+        ]))
+
     return output_bblocks
 
 
