@@ -274,6 +274,8 @@ if __name__ == '__main__':
             viewer_config['showImported'] = raw_viewer['show-imported-depth']
         if raw_viewer.get('view-plugins'):
             viewer_config['viewPlugins'] = raw_viewer['view-plugins']
+        if raw_viewer.get('dependency-graph-height'):
+            viewer_config['dependencyGraphHeight'] = raw_viewer['dependency-graph-height']
 
     bb_local_config_file = Path('bblocks-config-local.yml')
     local_url_mappings = None
