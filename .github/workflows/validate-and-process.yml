@@ -294,7 +294,7 @@ jobs:
           # meta tags, so link preview cards (which don't execute the SPA's JS) show
           # something more specific than a generic hardcoded title.
           REG_NAME="$(jq -r '.name // "OGC Building Blocks"' < "$REGISTER_FILE")"
-          REG_DESCRIPTION="$(jq -r '.description // .abstract // ""' < "$REGISTER_FILE")"
+          REG_DESCRIPTION="$(jq -r '.abstract // .description // ""' < "$REGISTER_FILE")"
           html_escape() {
             sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g'
           }
