@@ -250,6 +250,8 @@ if __name__ == '__main__':
             id_prefix += '.'
         subdirs = id_prefix.split('.')[1:]
         meta_registry_url = bb_config.get('meta-registry', DEFAULT_META_REGISTRY_URL)
+        if meta_registry_url:
+            register_additional_metadata['metaRegistry'] = meta_registry_url
         # Cached under .bblocks-sandbox (not annotated_path/_cache) because it must
         # survive --clean true, unlike the rest of that build output.
         meta_registry_cache_dir = Path(SANDBOX_DIR_NAME) / 'meta-register'
