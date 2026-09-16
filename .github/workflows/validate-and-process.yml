@@ -297,7 +297,19 @@ jobs:
           if [[ "${BASE_URL}" =~ [^/]$ ]]; then
             BASE_URL="${BASE_URL}/"
           fi
-          
+
+          # Pull register name/description for the viewer shell's <title> and Open Graph
+          # meta tags, so link preview cards (which don't execute the SPA's JS) show
+          # something more specific than a generic hardcoded title.
+          REG_NAME="$(jq -r '.name // "OGC Building Blocks"' < "$REGISTER_FILE")"
+          REG_DESCRIPTION="$(jq -r '.abstract // .description // ""' < "$REGISTER_FILE")"
+          html_escape() {
+            sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g'
+          }
+          REG_NAME_HTML="$(printf '%s' "$REG_NAME" | html_escape)"
+          REG_DESCRIPTION_HTML="$(printf '%s' "$REG_DESCRIPTION" | html_escape)"
+          PAGE_URL="${{ steps.get-pages-url.outputs.result }}/${BASE_URL}"
+
           cat << EOF > index.html
           <!DOCTYPE html>
           <html lang="en">
@@ -305,7 +317,15 @@ jobs:
             <meta charset="UTF-8" />
             <link rel="icon" href="https://ogcincubator.github.io/bblocks-viewer/favicon.ico" />
             <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-            <title>OGC Location Building Blocks</title>
+            <title>${REG_NAME_HTML}</title>
+            <meta name="description" content="${REG_DESCRIPTION_HTML}" />
+            <meta property="og:type" content="website" />
+            <meta property="og:title" content="${REG_NAME_HTML}" />
+            <meta property="og:description" content="${REG_DESCRIPTION_HTML}" />
+            <meta property="og:url" content="${PAGE_URL}" />
+            <meta name="twitter:card" content="summary" />
+            <meta name="twitter:title" content="${REG_NAME_HTML}" />
+            <meta name="twitter:description" content="${REG_DESCRIPTION_HTML}" />
             <script src="${{ steps.get-pages-url.outputs.result }}/${BASE_URL}config.js"></script>
             <script type="module" crossorigin src="https://ogcincubator.github.io/bblocks-viewer/assets/index.js"></script>
             <link rel="stylesheet" href="https://ogcincubator.github.io/bblocks-viewer/assets/index.css">
