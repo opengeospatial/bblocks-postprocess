@@ -53,6 +53,12 @@ inputs:
   sparql_password:
     description: SPARQL GSP push password
     default: ''
+  image_tag:
+    description: >-
+      Docker tag of ghcr.io/opengeospatial/bblocks-postprocess to run. Leave empty (the default)
+      to auto-resolve based on the ref this is invoked at (see postprocess/action.yml). Set
+      explicitly to override.
+    default: ''
 
 runs:
   using: composite
@@ -76,3 +82,4 @@ runs:
         enable_sparql: ${{ inputs.enable_sparql }}
         sparql_username: ${{ inputs.sparql_username }}
         sparql_password: ${{ inputs.sparql_password }}
+        image_tag: ${{ inputs.image_tag }}

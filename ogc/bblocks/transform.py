@@ -19,7 +19,7 @@ from urllib.parse import urljoin
 import yaml
 
 from ogc.bblocks.log import run_logged, log_indent
-from ogc.bblocks.sandbox import ensure_venv, venv_needs_recreate, pip_slug
+from ogc.bblocks.sandbox import ensure_venv, venv_needs_recreate, pip_slug, pip_install_cached
 
 from ogc.bblocks import mimetypes
 from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister, ImportedBBlockProxy, TransformContext, TransformMetadata, TransformResult, BuildingBlockError
@@ -29,6 +29,11 @@ from ogc.bblocks.validate import validate_transform_output, report_to_dict
 
 _SUBPROCESS_TRANSFORM_TYPES = ('python', 'node')
 _PERMISSION_CHECKED_TYPES = frozenset({'python', 'node', 'xslt'})
+
+# The plugin kinds declared under the `plugins.<section>` key in bblocks-config.yaml.
+# Shared between cleanup_sandbox() and check_permissions() so that adding a new plugin
+# kind can't be done in one and forgotten in the other.
+_PLUGIN_SECTIONS = ('transforms', 'validators', 'build')
 
 
 def _rel(path: Path | str | None, cwd: Path) -> str | None:
@@ -68,7 +73,7 @@ _BBLOCKS_CONFIG_NAMES = ('bblocks-config.yaml', 'bblocks-config.yml')
 
 
 def read_plugin_entries(section: str) -> list[dict]:
-    """Return plugin config entries for *section* ('transforms' or 'validators').
+    """Return plugin config entries for *section* ('transforms', 'validators' or 'build').
 
     Reads from the ``plugins.<section>`` key in bblocks-config.yaml first.
     For 'transforms', falls back to transform-plugins.yml with a deprecation warning.
@@ -176,11 +181,9 @@ def _ensure_transform_sandboxes(sandbox_dir: Path, bblock: BuildingBlock,
                 venv_dir = transform_sandbox / 'venv'
                 with log_indent():
                     ensure_venv(venv_dir)
-                    pip_bin = venv_dir / 'bin' / 'pip'
                     logger.info("Ensuring pip dependencies for transform '%s' in '%s': %s",
                                 t_id, bblock.identifier, pip_deps)
-                    run_logged([str(pip_bin), 'install', '--disable-pip-version-check', *pip_deps],
-                               label='pip')
+                    pip_install_cached(venv_dir, pip_deps)
 
         elif t_type == 'node':
             npm_deps = deps.get('npm', [])
@@ -291,7 +294,7 @@ def cleanup_sandbox(sandbox_dir: Path, bblocks: list[BuildingBlock]) -> None:
     plugins_dir = sandbox_dir / 'plugins'
     if plugins_dir.exists():
         expected_slugs: set[str] = set()
-        for section in ('transforms', 'validators'):
+        for section in _PLUGIN_SECTIONS:
             for plugin in read_plugin_entries(section):
                 pip_deps = plugin.get('pip', [])
                 if isinstance(pip_deps, str):

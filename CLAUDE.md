@@ -76,7 +76,7 @@ entrypoint.py         Parses CLI args, loads bblocks-config.yaml, calls postproc
 
 - **`transform.py` + `transformers/`** — Applies pluggable transformers to examples. Built-in transformers: RDF (SHACL-AF, SPARQL), jq, XSLT, JSON-LD Frame, semantic uplift. External transform/validator plugins load from the `plugins.transforms` / `plugins.validators` keys in `bblocks-config.yaml` (see below).
 
-- **`generate_docs.py`** — Mako-based documentation generation from templates in `templates/*/`.
+- **`generate_docs.py`** — Mako-based documentation generation from templates in `templates/*/`. `templates/json-full/index.json` renders each block's full per-block JSON dump; it must stay a superset of that block's `register.json` entry (all fields `register.json` has for that block, plus `json-full`'s own extra detail like inlined `annotatedSchema`/example contents) — when a field is added to what gets published into `register.json`'s `bblocks` array (in `postprocess.py`), update `json-full`'s template to publish the same (already-resolved) value too, rather than letting it independently reimplement or drift from that value.
 
 - **`oas30.py`** — Converts JSON Schema to OpenAPI 3.0.
 
@@ -131,6 +131,8 @@ More generally, changes here often need companion changes in sibling repos — c
   - `bblocks/consuming` (skill name `bblocks-consuming`) — how agents consume a published register (register.json fields, schemas, JSON-LD, SHACL, examples, transforms). Update for changes visible from the consumer's side (e.g. new/changed `register.json` fields, new canonical values agents should dispatch on).
   - `bblocks/authoring` (skill name `bblocks-authoring`) — how agents author bblocks (bblock.json, schema.yaml, examples.yaml, transforms.yaml, etc.). Update for changes to authoring-time behavior (new/changed config keys, accepted field values/formats, validation rules, CLI flags).
 
+This cross-repo propagation is for changes that have actually shipped (merged to `master`, released) — not for work still sitting on `develop` or a feature branch. Don't touch sibling repos for user-facing surface that isn't live yet; revisit the propagation once the change lands on `master`.
+
 ## Dependencies
 
 - **Python**: ogc-na-tools (semantic annotation + RDF), pyshacl, rdflib (custom fork `avillar/rdflib@6.x`), jsonschema, mako, requests
@@ -151,6 +153,8 @@ More generally, changes here often need companion changes in sibling repos — c
 `full@v1` / `postprocess@v1` (as used by `validate-and-process.yml`, `pr-check.yml`, and downstream repos) resolve against a `v1` git tag, which `build-docker.yml` only force-moves — atomically alongside the `:latest`/`:master`/`:v1` Docker image tags — when a `v1.*.*` tag is pushed. So changes to `full/action.yml`, `postprocess/action.yml`, or the Docker image (`entrypoint.py` etc.) sit inert for existing `@v1`-pinned consumers until a new release tag ships; a push to `master`/`develop` alone doesn't reach them. (`validate-and-process.yml` itself is the exception — downstream `process-bblocks.yml` callers pin it via `@master`, so changes there go live immediately on merge.)
 
 Cut a release with `scripts/tag-release.sh [major|minor|patch] [--push]` (defaults to `patch`), which tags the next `v1.<minor>.<patch>` off the highest existing tag and optionally pushes it.
+
+**`image_tag` input (testing pre-release Docker images via CI):** `postprocess/action.yml`, `full/action.yml`, and `validate-and-process.yml` all expose an `image_tag` input (default `''`) that selects which `ghcr.io/opengeospatial/bblocks-postprocess` tag to run — e.g. `develop`, built on every push to that branch by `build-docker.yml`. `full/action.yml` and `validate-and-process.yml` just thread the input straight through unchanged; the actual default resolution happens once, in `postprocess/action.yml`, which — when the input is left empty — resolves it dynamically from `github.action_ref` (the ref *that action itself* was invoked at): `develop` if it's `develop`, else `latest`. This means a caller only needs to point its `uses:`/`@ref` at `develop` to get the develop image too, with no separate `image_tag: develop` to remember, and no per-branch literal to flip at merge time for this piece. This threading is safe to merge anywhere. But **on `develop` only**, `full/action.yml`'s and `validate-and-process.yml`'s nested `uses:` refs are hardcoded to `@develop` instead of `@v1` (marked with `DEVELOP-ONLY` comments), because nested `uses:` refs can't be parameterized by an input — pinning just the outer call to `@develop` wouldn't be enough on its own, and this part *does* still need a manual flip. This is a deliberate, permanent divergence from what those lines read on `master`: a straight `develop`→`master` merge will carry `@develop` into `master` verbatim unless someone flips the two pins back to `@v1` by hand at merge time — there's no way to make this automatic. (The dynamic `image_tag` resolution in `postprocess/action.yml` reads whichever ref this chain of hardcoded pins ultimately lands on, so it naturally follows those pins without needing its own flip.)
 
 ### Adding new CLI flags
 
