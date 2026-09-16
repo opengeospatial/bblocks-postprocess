@@ -123,6 +123,12 @@ context:
     isProfileOf:
       '@id': prof:isProfileOf
       '@type': '@id'
+    hasFormat:
+      '@id': dct:hasFormat
+      '@type': '@id'
+    seeAlso:
+      '@id': rdfs:seeAlso
+      '@type': '@id'
     tags: dcat:keyword
     shaclShapes:
       '@id': prof:hasResource
