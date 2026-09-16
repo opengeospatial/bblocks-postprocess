@@ -271,12 +271,13 @@ class Extender:
           a mistake as declaring one that already does. False is an unambiguous "delete"
           sentinel because no real OAS value at this granularity (a Path/Response/
           Schema/etc. object) is ever a bare boolean.
-        - any other entry_value: add entry_key to target_map. entry_key already existing
-          there is an authoring error (raises), rather than a silent override - remove it
-          first (with False) if the intent is to replace it; note a single YAML/JSON map
-          can't repeat the same key twice, so "remove then reintroduce under the same
-          key" isn't expressible in one additions document - only in a further extending
-          bblock's own additions, layered on top of this one's output.
+        - any other entry_value: add entry_key to target_map, or, if entry_key already
+          exists there, overwrite it in place - logging a warning, since redeclaring an
+          entry that already exists in the base building block's document is more often
+          an authoring mistake (an unintended name collision) than a deliberate override,
+          but least-surprise says it shouldn't fail the build: an author who does mean to
+          replace an inherited entry can just write its new content directly, without
+          first removing it with `false`.
         """
         for entry_key, entry_value in additions_map.items():
             if entry_value is False:
@@ -287,24 +288,24 @@ class Extender:
                 del target_map[entry_key]
                 continue
             if entry_key in target_map:
-                raise ValueError(f"{bblock_id}'s openapi.yaml redeclares {label} entry {entry_key!r}, "
-                                 f"which already exists in its base building block's document - "
-                                 f"extensionPoints only supports adding new {label} entries (or "
-                                 f"removing an existing one first with `false`), not silently "
-                                 f"overriding one in place")
+                logger.warning("%s's openapi.yaml overrides %s entry %r, which already exists in its "
+                               "base building block's document",
+                               bblock_id, label, entry_key)
             target_map[entry_key] = entry_value
 
     def _merge_openapi_additions(self, document: dict, additions: dict, bblock_id: str):
         """
         Merge an extending bblock's own openapi.yaml into the (already-copied) base
         document as an additions document. Two different behaviors, by key:
-        - paths/webhooks/components.*: additive/subtractive - each entry is either added
-          (authoring error if it already exists in the base) or, if declared as `false`,
-          removed (authoring error if it doesn't exist) - see _merge_additive_map. This is
-          how a downstream bblock replaces, say, the base's templated `/processes/{id}`
-          path with its own fixed set of concrete paths: `/processes/{id}: false` plus
-          whatever new concrete paths it wants. Removing something still referenced
-          elsewhere in the document (by a $ref) is on the author to avoid - not checked.
+        - paths/webhooks/components.*: additive/subtractive/overriding - each entry is
+          either added, overridden in place (logged warning if it already exists in the
+          base), or, if declared as `false`, removed (authoring error if it doesn't
+          exist) - see _merge_additive_map. This is how a downstream bblock replaces, say,
+          the base's templated `/processes/{id}` path with its own fixed set of concrete
+          paths: `/processes/{id}: false` plus whatever new concrete paths it wants, or
+          how it replaces a single inherited entry in place by just redeclaring it under
+          the same key. Removing or overriding something still referenced elsewhere in
+          the document (by a $ref) is on the author to avoid - not checked.
         - info/servers/security/tags/externalDocs: whole-value overrides - if present in
           the additions document, wholesale replace the base's value (there's nothing to
           "add" to a single title/description/server list; declaring one means taking

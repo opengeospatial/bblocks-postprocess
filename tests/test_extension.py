@@ -314,3 +314,49 @@ class TestOpenApiExtension:
 
         assert is_openapi is True
         assert set(document['paths'].keys()) == {'/items', '/local'}
+
+    def test_additive_path_redeclaring_existing_key_overrides_with_warning(self, tmp_path, monkeypatch, caplog):
+        """
+        Redeclaring a path/webhooks/components.* key that already exists in the base
+        document overrides it in place (least surprise: this is the common "replace an
+        inherited entry" case), rather than failing the build - but a warning is logged,
+        since a same-key collision is also plausibly an authoring mistake.
+        """
+        sources_dir, annotated_path, base_url = _build_register(tmp_path, base_url=None, monkeypatch=monkeypatch)
+
+        base_openapi = {
+            'openapi': '3.1.0',
+            'info': {'title': 'Base API', 'version': '1.0.0'},
+            'paths': {
+                '/items': {
+                    'get': {'responses': {'200': {'description': 'OK'}}},
+                },
+            },
+        }
+        _write_bblock(sources_dir, 'base', name='Base API', item_class='api', openapi=base_openapi)
+        _write_annotated(annotated_path, 'base', openapi=base_openapi)
+
+        child_openapi_additions = {
+            'paths': {
+                '/items': {
+                    'get': {'responses': {'200': {'description': 'Overridden'}}},
+                },
+            },
+        }
+        _write_bblock(
+            sources_dir, 'child', name='Child API', item_class='api', openapi=child_openapi_additions,
+            extension_points={'baseBuildingBlock': 'test.base'},
+        )
+
+        register = BuildingBlockRegister(sources_dir, annotated_path=annotated_path,
+                                         prefix='test.', base_url=base_url)
+        extender = Extender(register)
+        child = register.bblocks['test.child']
+
+        with caplog.at_level('WARNING'):
+            document, is_openapi = extender.process_extensions(child)
+
+        assert is_openapi is True
+        assert document['paths']['/items']['get']['responses']['200']['description'] == 'Overridden'
+        assert any('test.child' in record.message and '/items' in record.message
+                  for record in caplog.records)
