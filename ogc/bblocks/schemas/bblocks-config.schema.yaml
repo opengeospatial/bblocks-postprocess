@@ -113,7 +113,15 @@ properties:
           (via dynamic import) to render custom visualizations for example
           snippets or transform outputs.
         items:
-          $ref: '#/$defs/view-plugin-entry'
+          $ref: '#/$defs/viewer-plugin-entry'
+      tab-plugins:
+        type: array
+        description: >
+          Client-side tab plugins for the viewer: ESM modules loaded at runtime
+          (via dynamic import) to render a whole new top-level tab on a building
+          block's detail page.
+        items:
+          $ref: '#/$defs/viewer-plugin-entry'
       dependency-graph-height:
         description: >
           Default height, in pixels, of the per-building-block dependency graph shown on
@@ -238,7 +246,7 @@ $defs:
           URL for this plugin (e.g. its repository or PyPI page). If omitted, the
           postprocessor attempts to derive one automatically from the pip specifier.
 
-  view-plugin-entry:
+  viewer-plugin-entry:
     type: object
     required:
       - url
@@ -251,7 +259,7 @@ $defs:
         description: >
           Name of the named export(s) to use from the module. If omitted, the module's
           default export is used. Multiple exports can be listed to render several
-          views from the same module.
+          views/tabs from the same module.
         oneOf:
           - type: string
           - type: array
@@ -261,5 +269,6 @@ $defs:
       weight:
         type: number
         description: >
-          Controls this plugin's tab ordering relative to other view plugins
-          (lower values sort first). If omitted, plugins are ordered as declared.
+          Controls this plugin's tab ordering relative to other plugins of the same
+          type (view-plugins or tab-plugins) (lower values sort first). If omitted,
+          plugins are ordered as declared.
