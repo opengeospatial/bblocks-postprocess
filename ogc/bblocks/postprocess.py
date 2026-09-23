@@ -401,6 +401,13 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         if bblock.examples:
             for example in bblock.examples:
                 for snippet in example.get('snippets', ()):
+                    if load_error := snippet.pop('load_error', None):
+                        # 'code' is already None (the ref failed to load; the failure is
+                        # recorded in the validation report too) - keep the snippet, with
+                        # an explicit 'error', rather than dropping it. An empty 'snippets'
+                        # list must only ever mean "no snippets were authored" - not "some
+                        # failed to load" - so consumers can tell the two apart.
+                        snippet['error'] = load_error
                     path = snippet.pop('path', None)
                     if base_url:
                         if path:

@@ -7,7 +7,7 @@ import shutil
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence
 from urllib.parse import urljoin
 
 from mako import exceptions as mako_exceptions, template as mako_template
@@ -255,6 +255,19 @@ def write_report(json_reports: list[dict],
         return result
 
 
+def _resource_not_accessible_item(source: ValidationItemSource, ref: Any, load_error: str) -> ValidationReportItem:
+    """Build a ValidationReportItem flagging a resource ref that could not be loaded
+    (broken link, missing local file, etc.), instead of raising and aborting the run."""
+    report = ValidationReportItem(source)
+    report.add_entry(ValidationReportEntry(
+        section=ValidationReportSection.FILES,
+        message=f"Resource not accessible: {ref} ({load_error})",
+        is_error=True,
+        is_global=False,
+    ))
+    return report
+
+
 def _mime_type_for_extension(suffix: str) -> str | None:
     """Resolve a file suffix (e.g. '.ttl') to its mime-type string, or None if
     unknown. mimetypes.from_extension() returns the full known-mimetype dict
@@ -469,6 +482,23 @@ def validate_test_resources(bblock: BuildingBlock,
         declared_media_type = extra_test_resource.get('media-type')
         file_format = declared_media_type or _mime_type_for_extension(fn.suffix)
 
+        if extra_test_resource.get('load_error'):
+            test_result = _resource_not_accessible_item(
+                source=ValidationItemSource(
+                    type=ValidationItemSourceType.TEST_RESOURCE,
+                    filename=fn,
+                    language=fn.suffix[1:],
+                    require_fail=extra_test_resource.get('require-fail', False),
+                    source_url=extra_test_resource['ref'] if isinstance(extra_test_resource['ref'], str) else None,
+                ),
+                ref=extra_test_resource['ref'],
+                load_error=extra_test_resource['load_error'],
+            )
+            all_results.append(test_result)
+            final_result = False
+            test_count += 1
+            continue
+
         test_result = _validate_resource(
             bblock=bblock,
             filename=fn,
@@ -513,6 +543,24 @@ def validate_test_resources(bblock: BuildingBlock,
                 while output_fn.stem in output_base_filenames:
                     i += 1
                     output_fn = output_fn.with_stem(f"{output_fn.stem}-{i}")
+
+                if snippet.get('load_error'):
+                    example_result = _resource_not_accessible_item(
+                        source=ValidationItemSource(
+                            type=ValidationItemSourceType.EXAMPLE,
+                            filename=output_fn,
+                            example_index=example_id + 1,
+                            snippet_index=snippet_id + 1,
+                            language=lang,
+                            source_url=snippet.get('ref'),
+                        ),
+                        ref=snippet.get('ref'),
+                        load_error=snippet['load_error'],
+                    )
+                    all_results.append(example_result)
+                    final_result = False
+                    test_count += 1
+                    continue
 
                 with open(output_fn, 'wb' if isinstance(code, bytes) else 'w') as f:
                     f.write(code)

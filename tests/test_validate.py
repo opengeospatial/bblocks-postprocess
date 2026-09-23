@@ -8,7 +8,8 @@ ogc.bblocks.validation.rdf.RdfValidator._load_graph, which raised
 "TypeError: unhashable type: 'dict'" for any RDF-suffixed transform output
 (.ttl/.jsonld/.rdf) -- see the reported traceback in validate_transform_output.
 """
-from ogc.bblocks.validate import _mime_type_for_extension
+from ogc.bblocks.validate import _mime_type_for_extension, _resource_not_accessible_item
+from ogc.bblocks.validation import ValidationItemSource, ValidationItemSourceType, ValidationReportSection
 
 
 def test_mime_type_for_extension_returns_string_not_dict():
@@ -27,3 +28,22 @@ def test_mime_type_for_extension_unknown_suffix():
 
 def test_mime_type_for_extension_empty_suffix():
     assert _mime_type_for_extension('') is None
+
+
+def test_resource_not_accessible_item_is_a_failed_report_with_message():
+    """Regression test for issue #48: a broken example/test ref should surface as a
+    scoped validation failure (not an unhandled exception that kills the whole run)."""
+    source = ValidationItemSource(
+        type=ValidationItemSourceType.EXAMPLE,
+        example_index=1,
+        snippet_index=1,
+    )
+
+    item = _resource_not_accessible_item(source, ref='missing.json', load_error='404 Not Found')
+
+    assert item.failed
+    entries = item.sections[ValidationReportSection.FILES]
+    assert len(entries) == 1
+    assert entries[0].is_error
+    assert 'missing.json' in entries[0].message
+    assert '404 Not Found' in entries[0].message

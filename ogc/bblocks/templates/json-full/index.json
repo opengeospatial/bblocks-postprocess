@@ -12,6 +12,11 @@ if bblock.description:
 def _serialize_snippet(s):
     result = {k: v for k, v in s.items() if k not in ('full-code', 'code')}
     code = s.get('code')
+    if code is None:
+        # ref failed to load ('error' carries why) - keep 'code' explicitly null
+        # rather than omitting it, so the snippet shape stays predictable
+        result['code'] = None
+        return result
     size_bytes = len(code) if isinstance(code, bytes) else len(code.encode('utf-8'))
     result['sizeBytes'] = size_bytes
     if isinstance(code, bytes):

@@ -312,7 +312,14 @@ class BuildingBlock:
                 if 'ref' in snippet:
                     # Load snippet code from "ref"
                     ref = snippet['ref'] if is_url(snippet['ref']) else self.files_path / snippet['ref']
-                    snippet['code'] = load_file(ref, binary=True)
+                    try:
+                        snippet['code'] = load_file(ref, binary=True)
+                    except (requests.exceptions.RequestException, OSError) as e:
+                        logger.warning('Could not load snippet ref %s for %s: %s', ref, self.identifier, e)
+                        snippet['code'] = None
+                        snippet['load_error'] = str(e)
+                        filtered_snippets.append(snippet)
+                        continue
                     if 'json-path' in snippet and not isinstance(snippet['code'], bytes):
                         code = snippet['code']
                         try:
@@ -519,7 +526,12 @@ class BuildingBlock:
         for test in extra_tests:
             ref = self.resolve_file(test['ref'])
             test['ref'] = ref
-            test['contents'] = load_file(ref)
+            try:
+                test['contents'] = load_file(ref)
+            except (requests.exceptions.RequestException, OSError) as e:
+                logger.warning('Could not load test resource ref %s for %s: %s', ref, self.identifier, e)
+                test['contents'] = None
+                test['load_error'] = str(e)
             if not test.get('output-filename'):
                 if isinstance(ref, Path):
                     test['output-filename'] = ref.name

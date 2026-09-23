@@ -22,7 +22,9 @@ ${example['content'].replace('@@assets@@', assets_rel or '')}
     %endif
     % for snippet in example.get('snippets', []):
 ${'####'} ${snippet['language']}
-      % if not isinstance(snippet.get('code'), bytes):
+      % if snippet.get('error'):
+*Snippet unavailable: ${snippet['error']}*
+      % elif not isinstance(snippet.get('code'), bytes):
 ```${snippet['language']}
 ${snippet['code']}
 ```
