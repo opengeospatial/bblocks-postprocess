@@ -214,6 +214,40 @@ def resolve_file(path: Path, seen: set, bblock_index: dict = None, keep_defs: bo
     return resolved
 
 
+# $comment values that mean "the content that belongs here is missing".
+# Cycle markers (circular-ref, cycle:, self-referential:) are deliberately
+# absent -- those are legitimate outcomes for a recursive schema, not failures.
+UNRESOLVED_PREFIXES = (
+    "failed to fetch URL:",
+    "file not found:",
+    "could not resolve fragment",
+    "unresolved fragment ref:",
+)
+
+
+def find_unresolved(node: Any, path: str = "") -> list:
+    """Collect surviving failure placeholders from a *resolved* schema.
+
+    Checking the finished output rather than instrumenting each failure site is
+    deliberate: "unresolved fragment ref:" is also an internal sentinel that
+    _inline_unresolved_defs replaces later, so recording at the call site would
+    report failures that get fixed moments later. Whatever is still present at
+    the end is genuinely missing, whichever code path produced it.
+    """
+    found = []
+    if isinstance(node, dict):
+        c = node.get("$comment")
+        if isinstance(c, str) and c.startswith(UNRESOLVED_PREFIXES):
+            found.append((path or "(root)", c))
+        for k, v in node.items():
+            if k != "$comment":
+                found.extend(find_unresolved(v, f"{path}/{k}"))
+    elif isinstance(node, list):
+        for i, item in enumerate(node):
+            found.extend(find_unresolved(item, f"{path}/{i}"))
+    return found
+
+
 def resolve_node(node: Any, base_dir: Path, defs: dict, seen: set, bblock_index: dict = None) -> Any:
     """Recursively resolve $ref in a schema node."""
     if isinstance(node, dict):
@@ -543,6 +577,13 @@ def main():
         help="Keep $id, x-jsonld-*, and other metadata keys (stripped by default)",
     )
     parser.add_argument(
+        "--allow-unresolved",
+        action="store_true",
+        help="Emit the schema even if some $ref could not be resolved, leaving "
+             "$comment placeholders where the content should be. Without this, "
+             "unresolved refs are a fatal error and nothing is written.",
+    )
+    parser.add_argument(
         "--strip-keys",
         nargs="*",
         default=None,
@@ -589,12 +630,34 @@ def main():
     if args.flatten_allof:
         resolved = flatten_allof(resolved)
 
+    # Refuse to emit a degraded artifact. A schema with unresolved refs looks
+    # complete and validates nothing at the missing branches, so a consumer gets
+    # silent false confidence -- and, when writing to a path, a good file on disk
+    # is replaced by a worse one.
+    unresolved = find_unresolved(resolved)
+    if unresolved and not args.allow_unresolved:
+        print(f"ERROR: {len(unresolved)} unresolved $ref; nothing written.",
+              file=sys.stderr)
+        for loc, comment in unresolved[:20]:
+            print(f"  {loc}: {comment}", file=sys.stderr)
+        if len(unresolved) > 20:
+            print(f"  ... and {len(unresolved) - 20} more", file=sys.stderr)
+        print("Re-run with --allow-unresolved to emit it anyway.", file=sys.stderr)
+        sys.exit(1)
+    if unresolved:
+        print(f"WARNING: emitting with {len(unresolved)} unresolved $ref "
+              f"(--allow-unresolved)", file=sys.stderr)
+
     # Output
     output_json = json.dumps(resolved, indent=2, ensure_ascii=False) + "\n"
 
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
-        with open(args.output, "w", encoding="utf-8") as f:
+        # newline="" so the trailing newline is written verbatim. In text mode
+        # Python translates it to os.linesep, so the same input produced CRLF on
+        # Windows and LF elsewhere -- a committed artifact that differs by
+        # platform, and a diff in which every line has changed.
+        with open(args.output, "w", encoding="utf-8", newline="") as f:
             f.write(output_json)
         print(f"Wrote: {args.output}", file=sys.stderr)
     else:
