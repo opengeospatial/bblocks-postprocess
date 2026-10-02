@@ -103,7 +103,26 @@ class TestPublishedSemanticUplift:
 
         published = base.published_semantic_uplift['additionalSteps']
         assert published[0]['code'] == '.foo'
-        assert 'ref' not in published[0]
+        assert published[0]['ref'] == 'transform.jq'
+
+    def test_publishes_stage_per_step_type(self, tmp_path, monkeypatch):
+        sources_dir, annotated_path = _build_register(tmp_path, monkeypatch)
+
+        _write_bblock(
+            sources_dir, 'base', name='Base',
+            semantic_uplift={
+                'additionalSteps': [
+                    {'type': 'jq', 'code': '.'},
+                    {'type': 'shacl', 'code': 'x'},
+                    {'type': 'sparql-construct', 'code': 'x'},
+                    {'type': 'sparql-update', 'code': 'x'},
+                ],
+            },
+        )
+
+        register = BuildingBlockRegister(sources_dir, annotated_path=annotated_path, prefix='test.')
+        published = register.bblocks['test.base'].published_semantic_uplift['additionalSteps']
+        assert [s['stage'] for s in published] == ['pre', 'post', 'post', 'post']
 
 
 class TestInheritedPostUpliftSteps:
