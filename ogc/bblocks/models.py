@@ -33,6 +33,14 @@ from ogc.bblocks.schema import RegisterSchemaResolver
 
 BBLOCK_METADATA_FILE = 'bblock.json'
 
+# Whether each semantic-uplift additionalSteps type runs before or after the actual uplift
+UPLIFT_STEP_STAGES = {
+    'jq': 'pre',
+    'shacl': 'post',
+    'sparql-construct': 'post',
+    'sparql-update': 'post',
+}
+
 EPOCH_STR = '1970-01-01T00:00:00'
 
 # Ontology links must resolve to machine-readable RDF (not e.g. a human-readable
@@ -431,7 +439,9 @@ class BuildingBlock:
     def published_semantic_uplift(self) -> dict:
         """The published, portable form of this bblock's own semantic-uplift.yaml: the *complete*
         set of additionalSteps (both "pre"-stage jq and "post"-stage shacl/sparql-*, inheritable
-        or not), with any "ref" resolved and inlined into "code" - a snapshot at publish time, not
+        or not), each tagged with its "stage" ("pre"/"post"), with any "ref" resolved and inlined
+        into "code" (the authored "ref" is kept alongside as provenance, relative to this bblock's
+        published "sourceFiles") - a snapshot at publish time, not
         a live reference, so a consumer (json-full, register.json, or a wrapping bblock in another
         register reading this one's register.json) can use it without needing filesystem access to
         this repo. This is deliberately NOT filtered to "inheritable" steps only: register.json and
@@ -443,7 +453,8 @@ class BuildingBlock:
         if 'published_semantic_uplift' not in self._lazy_properties:
             published_steps = []
             for step in self.semantic_uplift.get('additionalSteps', ()):
-                published_step = {k: v for k, v in step.items() if k not in ('ref', 'stage')}
+                published_step = {k: v for k, v in step.items() if k != 'stage'}
+                published_step['stage'] = UPLIFT_STEP_STAGES[step['type']]
                 if 'code' not in published_step:
                     ref = step['ref']
                     resolved_ref = ref if is_url(ref) else self.files_path / ref
