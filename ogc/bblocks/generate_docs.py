@@ -70,6 +70,10 @@ class DocGenerator:
 
         try:
             git_repo = git.Repo()
+            if not git_repo.remotes:
+                logger.info("Git repository has no remotes; source links will not be generated")
+                self.git_repos = None
+                return
             self.git_repos = {None: util.get_git_repo_url(git_repo.remotes[0].url)}
             for submodule_path, submodule_url in util.get_git_submodules():
                 self.git_repos[Path(submodule_path).resolve()] = util.get_git_repo_url(submodule_url)
