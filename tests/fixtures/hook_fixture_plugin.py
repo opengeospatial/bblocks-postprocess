@@ -23,3 +23,28 @@ class FixtureBuildPlugin:
             raise ValueError(f"deliberate failure for {bblock['identifier']}")
         print(f"before_bblock {stage} {bblock.get('identifier')}")
         return None
+
+
+class ConfigurableBuildPlugin:
+    """Takes its config as a positional constructor argument and echoes it back,
+    plus the context it saw, from after_register."""
+
+    def __init__(self, config):
+        self.config = config
+
+    def after_register(self, register, context):
+        return {'config': self.config, 'context': context}
+
+
+class BuggyConfigurableBuildPlugin:
+    """Accepts config but raises a TypeError from inside the constructor body."""
+
+    def __init__(self, config):
+        raise TypeError("deliberate TypeError from constructor body")
+
+
+class EchoContextBuildPlugin:
+    """No-arg constructor; echoes the context it saw."""
+
+    def after_register(self, register, context):
+        return {'context': context}

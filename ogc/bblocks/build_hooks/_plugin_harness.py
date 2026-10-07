@@ -4,8 +4,14 @@ Persistent harness for build (lifecycle-hook) plugins.
 
     python _plugin_harness.py <module_path> <class_name>
 
-Imports `module_path`, instantiates `class_name` once (no-arg constructor),
-then services one JSON request per line on stdin for the rest of the process
+Reads one handshake line from stdin first -
+
+    {"config": {...}, "id": "<plugin id>" | null}
+
+then imports `module_path` and instantiates `class_name` once: `Cls()` if the
+config is empty, else `Cls(config)` (aborting with a clear error if the
+constructor cannot take a positional argument). The `id` is injected into every
+request's `context` as `pluginId`. Then services one JSON request per line on stdin for the rest of the process
 lifetime:
 
     {"event": "before_run", "args": {"register": {...}, "context": {...}}}
@@ -39,6 +45,7 @@ straight to the fd, which swapping sys.stdout alone would not catch). The real
 stdout fd is duplicated *before* that swap and used to write responses.
 """
 import importlib
+import inspect
 import io
 import json
 import os
@@ -58,9 +65,26 @@ def main():
     os.dup2(devnull_fd, 1)
     os.close(devnull_fd)
 
+    handshake = json.loads(sys.stdin.readline() or '{}')
+    config = handshake.get('config') or {}
+    plugin_id = handshake.get('id')
+
     try:
         module = importlib.import_module(module_path)
-        instance = getattr(module, class_name)()
+        cls = getattr(module, class_name)
+        if config:
+            # Decide up front instead of catching TypeError from the call, so a
+            # TypeError raised inside the constructor body isn't misreported.
+            try:
+                inspect.signature(cls).bind(config)
+            except TypeError:
+                raise TypeError(f"'{module_path}.{class_name}' was given a non-empty 'config' "
+                                f"but its constructor does not accept a positional argument")
+            except ValueError:
+                pass  # signature unavailable (e.g. some builtins): just try it
+            instance = cls(config)
+        else:
+            instance = cls()
         load_error = None
     except Exception:
         instance = None
@@ -73,6 +97,8 @@ def main():
         req = json.loads(line)
         event = req['event']
         args = dict(req.get('args') or {})
+        if isinstance(args.get('context'), dict):
+            args['context'] = {**args['context'], 'pluginId': plugin_id}
 
         if event in _BBLOCK_EVENTS:
             register_path = args.pop('registerPath', None)

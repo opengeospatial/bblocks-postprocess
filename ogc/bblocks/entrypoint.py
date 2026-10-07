@@ -17,7 +17,7 @@ from ogc.bblocks.log import setup_logging, log_indent
 from ogc.bblocks import postprocess as postprocess_module
 from ogc.bblocks.postprocess import postprocess
 from ogc.bblocks.permissions import check_build_plugin_permissions
-from ogc.bblocks.build_hooks.plugin import load_build_plugins, dispatch_after_uplift, dispatch_after_run, \
+from ogc.bblocks.build_hooks.plugin import build_hook_context, load_build_plugins, dispatch_after_uplift, dispatch_after_run, \
     dispatch_on_error
 from ogc.bblocks.meta_register import DEFAULT_META_REGISTRY_URL, resolve_imports
 from ogc.bblocks.sandbox import SANDBOX_DIR_NAME
@@ -353,14 +353,14 @@ if __name__ == '__main__':
     steps = args.steps.split(',') if args.steps else None
 
     sandbox_dir = Path(SANDBOX_DIR_NAME)
-    hook_context = {
-        'itemsDir': str(items_dir),
-        'baseUrl': base_url,
-        'registerFile': str(register_file),
-        'steps': steps,
-        'filter': args.filter,
-        'failOnError': fail_on_error,
-    }
+    hook_context = build_hook_context(
+        items_dir=items_dir,
+        base_url=base_url,
+        register_file=register_file,
+        steps=steps,
+        filter=args.filter,
+        fail_on_error=fail_on_error,
+    )
     build_plugins = []
     postprocess_done = False
 

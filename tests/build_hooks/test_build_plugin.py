@@ -31,6 +31,7 @@ class FakePlugin:
 
     def __init__(self, class_path, responses=None, fail=False):
         self.class_path = class_path
+        self.label = class_path
         self._responses = list(responses or [])
         self._fail = fail
         self.calls = []

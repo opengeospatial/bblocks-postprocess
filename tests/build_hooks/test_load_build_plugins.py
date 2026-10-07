@@ -98,3 +98,124 @@ def test_load_build_plugins_does_not_memoize_across_different_sandbox_dirs(tmp_p
     result_a = load_build_plugins(sandbox_a)
     result_b = load_build_plugins(sandbox_b)
     assert result_a is not result_b
+
+
+# --- config / id ---------------------------------------------------------
+
+import logging
+
+import pytest
+
+
+def _load(tmp_path, monkeypatch, entries, **kwargs):
+    monkeypatch.setattr(plugin_module, 'read_plugin_entries', lambda section: entries)
+    return load_build_plugins(tmp_path, **kwargs)
+
+
+def test_config_and_id_are_carried_on_plugin_but_not_published(tmp_path, monkeypatch):
+    plugins, entries = _load(tmp_path, monkeypatch, [
+        {'id': 'strict', 'classes': ['pkg.mod.A'], 'config': {'foo': 'bar'}}])
+    assert plugins[0].config == {'foo': 'bar'}
+    assert plugins[0].plugin_id == 'strict'
+    assert entries == [{'classes': ['pkg.mod.A']}]
+
+
+def test_config_defaults_to_empty(tmp_path, monkeypatch):
+    plugins, _ = _load(tmp_path, monkeypatch, [{'classes': ['pkg.mod.A']}])
+    assert plugins[0].config == {}
+    assert plugins[0].plugin_id is None
+
+
+def test_config_applies_to_every_class_in_entry(tmp_path, monkeypatch):
+    plugins, _ = _load(tmp_path, monkeypatch, [
+        {'classes': ['pkg.mod.A', 'pkg.mod.B'], 'config': {'k': 1}}])
+    assert [p.config for p in plugins] == [{'k': 1}, {'k': 1}]
+
+
+def test_non_serializable_config_fails_early_without_venv_work(tmp_path, monkeypatch):
+    import datetime
+    monkeypatch.setattr(plugin_module.BuildPlugin, 'ensure_venv',
+                        lambda *a, **k: pytest.fail('venv work before config validation'))
+    with pytest.raises(ValueError, match='JSON-serializable'):
+        _load(tmp_path, monkeypatch, [
+            {'classes': ['pkg.mod.A'], 'config': {'when': datetime.date(2026, 1, 1)}}])
+
+
+def test_non_string_config_keys_are_rejected(tmp_path, monkeypatch):
+    with pytest.raises(ValueError, match='non-string key'):
+        _load(tmp_path, monkeypatch, [{'classes': ['pkg.mod.A'], 'config': {'a': {1: 'x'}}}])
+
+
+def test_nan_in_config_is_rejected(tmp_path, monkeypatch):
+    with pytest.raises(ValueError, match='JSON-serializable'):
+        _load(tmp_path, monkeypatch, [{'classes': ['pkg.mod.A'], 'config': {'a': float('nan')}}])
+
+
+def test_non_mapping_config_is_rejected(tmp_path, monkeypatch):
+    with pytest.raises(ValueError, match='must be a mapping'):
+        _load(tmp_path, monkeypatch, [{'classes': ['pkg.mod.A'], 'config': ['x']}])
+
+
+@pytest.mark.parametrize('bad_id', ['has space', 'a/b', '', 5])
+def test_invalid_id_is_rejected(tmp_path, monkeypatch, bad_id):
+    with pytest.raises(ValueError, match="invalid 'id'"):
+        _load(tmp_path, monkeypatch, [{'id': bad_id, 'classes': ['pkg.mod.A']}])
+
+
+def test_same_class_with_distinct_ids_is_allowed(tmp_path, monkeypatch):
+    plugins, _ = _load(tmp_path, monkeypatch, [
+        {'id': 'a', 'classes': ['pkg.mod.A'], 'config': {'n': 1}},
+        {'id': 'b', 'classes': ['pkg.mod.A'], 'config': {'n': 2}}])
+    assert [(p.plugin_id, p.config) for p in plugins] == [('a', {'n': 1}), ('b', {'n': 2})]
+
+
+def test_duplicate_class_and_id_aborts(tmp_path, monkeypatch):
+    with pytest.raises(ValueError, match='distinct'):
+        _load(tmp_path, monkeypatch, [
+            {'id': 'a', 'classes': ['pkg.mod.A']}, {'id': 'a', 'classes': ['pkg.mod.A']}])
+
+
+def test_collision_detected_even_if_permissions_filter_it_out(tmp_path, monkeypatch):
+    with pytest.raises(ValueError, match='distinct'):
+        _load(tmp_path, monkeypatch, [
+            {'id': 'a', 'classes': ['pkg.mod.A']}, {'id': 'a', 'classes': ['pkg.mod.A']}],
+            allowed_classes=set())
+
+
+def test_duplicate_idless_entries_warn_but_still_load(tmp_path, monkeypatch, caplog):
+    with caplog.at_level(logging.WARNING):
+        plugins, _ = _load(tmp_path, monkeypatch, [
+            {'classes': ['pkg.mod.A']}, {'classes': ['pkg.mod.A']}])
+    assert len(plugins) == 2
+    assert any('without an' in r.message and r.levelno == logging.WARNING for r in caplog.records)
+
+
+def test_same_class_different_ids_get_separate_processes_sharing_a_venv(tmp_path, monkeypatch):
+    spawned = []
+
+    class FakeProc:
+        def __init__(self, python_bin, module_path, class_name, **kwargs):
+            spawned.append(kwargs)
+
+        def close(self):
+            pass
+
+    venvs = []
+    monkeypatch.setattr(plugin_module, '_BuildHookProcess', FakeProc)
+    monkeypatch.setattr(plugin_module, 'ensure_venv', lambda d: venvs.append(d))
+    monkeypatch.setattr(plugin_module, '_process_cache', {})
+    plugins, _ = _load(tmp_path, monkeypatch, [
+        {'id': 'a', 'classes': ['pkg.mod.A'], 'config': {'n': 1}},
+        {'id': 'b', 'classes': ['pkg.mod.A'], 'config': {'n': 2}}])
+    procs = [p._process(tmp_path) for p in plugins]
+    assert procs[0] is not procs[1]
+    assert [k['plugin_id'] for k in spawned] == ['a', 'b']
+    assert venvs[0] == venvs[1]
+
+
+def test_build_hook_context_has_root_dir_and_every_field(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    ctx = plugin_module.build_hook_context(items_dir='items', base_url=None, register_file=None,
+                                           steps=None, filter=None, fail_on_error=False)
+    assert ctx['rootDir'] == str(tmp_path.resolve())
+    assert set(ctx) == {'rootDir', 'itemsDir', 'baseUrl', 'registerFile', 'steps', 'filter', 'failOnError'}

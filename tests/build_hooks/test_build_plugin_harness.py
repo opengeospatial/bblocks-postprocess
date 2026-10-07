@@ -90,3 +90,89 @@ def test_before_bblock_loads_register_from_registerpath(tmp_path, harness):
         'context': {},
     })
     assert resp['success'] is True
+
+
+def _spawn(monkeypatch, class_name, **kwargs):
+    monkeypatch.setenv('PYTHONPATH', str(FIXTURES_DIR))
+    return _BuildHookProcess(Path(sys.executable), 'hook_fixture_plugin', class_name, **kwargs)
+
+
+def _after_register(proc):
+    return proc.send('after_register', {'register': {}, 'context': {'baseUrl': None}})
+
+
+def test_non_empty_config_reaches_constructor(monkeypatch):
+    proc = _spawn(monkeypatch, 'ConfigurableBuildPlugin', config={'foo': 'bar'}, plugin_id='strict')
+    try:
+        resp = _after_register(proc)
+        assert resp['success'] is True
+        assert resp['output']['config'] == {'foo': 'bar'}
+    finally:
+        proc.close()
+
+
+def test_plugin_id_is_injected_into_context(monkeypatch):
+    proc = _spawn(monkeypatch, 'EchoContextBuildPlugin', plugin_id='strict')
+    try:
+        assert _after_register(proc)['output']['context']['pluginId'] == 'strict'
+    finally:
+        proc.close()
+
+
+def test_plugin_id_is_null_when_absent(monkeypatch):
+    proc = _spawn(monkeypatch, 'EchoContextBuildPlugin')
+    try:
+        ctx = _after_register(proc)['output']['context']
+        assert 'pluginId' in ctx and ctx['pluginId'] is None
+    finally:
+        proc.close()
+
+
+def test_no_config_uses_no_arg_constructor(monkeypatch):
+    proc = _spawn(monkeypatch, 'EchoContextBuildPlugin')
+    try:
+        assert _after_register(proc)['success'] is True
+    finally:
+        proc.close()
+
+
+def test_empty_config_uses_no_arg_constructor(monkeypatch):
+    proc = _spawn(monkeypatch, 'EchoContextBuildPlugin', config={})
+    try:
+        assert _after_register(proc)['success'] is True
+    finally:
+        proc.close()
+
+
+def test_non_empty_config_with_no_arg_constructor_aborts(monkeypatch):
+    proc = _spawn(monkeypatch, 'EchoContextBuildPlugin', config={'foo': 'bar'})
+    try:
+        resp = _after_register(proc)
+        assert resp['success'] is False
+        assert 'does not accept a positional argument' in resp['error']
+    finally:
+        proc.close()
+
+
+def test_type_error_inside_constructor_is_not_misreported(monkeypatch):
+    proc = _spawn(monkeypatch, 'BuggyConfigurableBuildPlugin', config={'foo': 'bar'})
+    try:
+        resp = _after_register(proc)
+        assert resp['success'] is False
+        assert 'deliberate TypeError from constructor body' in resp['error']
+        assert 'does not accept a positional argument' not in resp['error']
+    finally:
+        proc.close()
+
+
+def test_respawn_resends_config(monkeypatch):
+    proc = _spawn(monkeypatch, 'ConfigurableBuildPlugin', config={'foo': 'bar'}, plugin_id='x')
+    try:
+        proc._proc.kill()
+        proc._proc.wait()
+        resp = _after_register(proc)
+        assert resp['success'] is True
+        assert resp['output']['config'] == {'foo': 'bar'}
+        assert resp['output']['context']['pluginId'] == 'x'
+    finally:
+        proc.close()

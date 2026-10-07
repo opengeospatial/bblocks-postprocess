@@ -216,6 +216,23 @@ $defs:
     required:
       - classes
     properties:
+      id:
+        type: string
+        pattern: '^[A-Za-z0-9_-]+$'
+        description: >
+          Optional identifier for this entry. Lets the same plugin class be declared
+          more than once (e.g. with different `config`): each (class, id) pair gets
+          its own instance and process, and must be unique. Passed to the plugin as
+          `context['pluginId']` on every event.
+      config:
+        type: object
+        description: >
+          Optional configuration passed to the constructor of every class in this
+          entry, as a single positional dict (classes without `config` are
+          constructed with no arguments). Must be JSON-serializable (quote values
+          such as dates). To configure classes differently, use separate entries.
+          Never published in register.json. This file is git-tracked: do not put
+          secrets here, use environment variables or files outside the repository.
       pip:
         description: >
           One or more pip install specifiers for packages that provide the plugin

@@ -4,6 +4,7 @@ import atexit
 import json
 import logging
 import os
+import re
 import subprocess
 import traceback
 from enum import Enum
@@ -33,21 +34,84 @@ class Stage(Enum):
 
 _HARNESS = Path(__file__).parent / '_plugin_harness.py'
 
+_PLUGIN_ID_RE = re.compile(r'^[A-Za-z0-9_-]+$')
+
+
+def root_dir() -> Path:
+    """The directory every other path in the run (itemsDir, registerFile, the
+    sandbox, ...) is computed relative to: the process cwd."""
+    return Path.cwd().resolve()
+
+
+def build_hook_context(*, items_dir, base_url, register_file, steps, filter, fail_on_error) -> dict:
+    """The run-level context handed to every build-plugin event.
+
+    Single source of truth for entrypoint.py (after_uplift/after_run/on_error) and
+    postprocess.py (everything else), so the two can't drift apart.
+    """
+    return {
+        'rootDir': str(root_dir()),
+        'itemsDir': str(items_dir),
+        'baseUrl': base_url,
+        'registerFile': str(register_file) if register_file else None,
+        'steps': list(steps) if steps else None,
+        'filter': filter,
+        'failOnError': fail_on_error,
+    }
+
+
+def _check_json_keys(value, path: str) -> None:
+    if isinstance(value, dict):
+        for k, v in value.items():
+            if not isinstance(k, str):
+                raise ValueError(f"non-string key {k!r} at {path or '<root>'}")
+            _check_json_keys(v, f'{path}.{k}' if path else k)
+    elif isinstance(value, (list, tuple)):
+        for i, v in enumerate(value):
+            _check_json_keys(v, f'{path}[{i}]')
+
+
+def _validate_config(config, label: str) -> dict:
+    """Return the strict-JSON round trip of *config* (exactly what the plugin
+    will receive), or raise ValueError naming the entry *label*."""
+    if config is None:
+        return {}
+    if not isinstance(config, dict):
+        raise ValueError(f"Build plugin {label}: 'config' must be a mapping, "
+                         f"got {type(config).__name__}")
+    try:
+        _check_json_keys(config, '')
+        return json.loads(json.dumps(config, allow_nan=False))
+    except (TypeError, ValueError) as e:
+        raise ValueError(
+            f"Build plugin {label}: 'config' must be JSON-serializable ({e}). "
+            f"Quote values such as dates, which YAML otherwise parses into non-JSON types.") from e
+
+
+def _label(class_path: str, plugin_id: str | None) -> str:
+    return f'{class_path}#{plugin_id}' if plugin_id else class_path
+
 
 class _BuildHookProcess:
     """One persistent subprocess running a single declared build-plugin class.
 
     Mirrors transformers/python.py's _PersistentProcess: one process per
-    (python_bin, class_path), spawned lazily, kept alive for the run, and
+    (class_path, id), spawned lazily, kept alive for the run, and
     respawned + retried exactly once on a dead pipe (docs/build-lifecycle-hooks.md's
     "Persistent harness: framing and crash recovery" - no hang timeout, no
     circuit breaker, same as that precedent).
     """
 
-    def __init__(self, python_bin: Path, module_path: str, class_name: str):
+    def __init__(self, python_bin: Path, module_path: str, class_name: str,
+                 config: dict | None = None, plugin_id: str | None = None,
+                 cwd: Path | None = None):
         self.module_path = module_path
         self.class_name = class_name
         self.class_path = f'{module_path}.{class_name}'
+        self.plugin_id = plugin_id
+        self.label = _label(self.class_path, plugin_id)
+        self._config = config or {}
+        self._cwd = cwd
         self._python_bin = python_bin
         self._proc: subprocess.Popen | None = None
         self._lock = Lock()
@@ -58,7 +122,16 @@ class _BuildHookProcess:
             [str(self._python_bin), str(_HARNESS), self.module_path, self.class_name],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
+            cwd=self._cwd,
         )
+        # Handshake: always the first line, so the harness can build the instance
+        # before servicing requests. Re-sent on every (re)spawn.
+        handshake = json.dumps({'config': self._config, 'id': self.plugin_id}) + '\n'
+        try:
+            self._proc.stdin.write(handshake.encode('utf-8'))
+            self._proc.stdin.flush()
+        except (BrokenPipeError, OSError):
+            pass  # surfaces as a dead pipe on the first request
 
     def _send_raw(self, req_line: bytes) -> dict | None:
         try:
@@ -92,12 +165,12 @@ class _BuildHookProcess:
         with self._lock:
             resp = self._send_raw(req_line)
             if resp is None:
-                logger.warning("Build plugin process for '%s' died, respawning", self.class_path)
+                logger.warning("Build plugin process for '%s' died, respawning", self.label)
                 self._start()
                 resp = self._send_raw(req_line)
             return resp or {
                 'success': False,
-                'error': f"Build plugin process for '{self.class_path}' died",
+                'error': f"Build plugin process for '{self.label}' died",
                 'output': None,
             }
 
@@ -111,11 +184,11 @@ class _BuildHookProcess:
                     self._proc.kill()
 
 
-# Keyed by class_path. Module-level so it survives postprocess() returning -
+# Keyed by (class_path, id). Module-level so it survives postprocess() returning -
 # build plugins are the first plugin kind whose lifetime spans that boundary
 # (after_uplift/after_run/on_error fire from entrypoint.py after postprocess()
 # has already returned; see docs/build-lifecycle-hooks.md's "Execution model").
-_process_cache: dict[str, _BuildHookProcess] = {}
+_process_cache: dict[tuple[str, str | None], _BuildHookProcess] = {}
 _cache_lock = Lock()
 
 
@@ -131,13 +204,21 @@ atexit.register(_close_all_processes)
 
 class BuildPlugin:
     """A single declared build-plugin class (one `classes:` entry): one venv,
-    one pooled persistent process, dispatched to by event name."""
+    one pooled persistent process, dispatched to by event name.
 
-    def __init__(self, module_path: str, class_name: str, pip_deps: list[str]):
+    `config` (strict-JSON mapping, may be empty) and `plugin_id` come from the
+    declaring entry; entries with the same pip deps share a venv, but each
+    (class, id) gets its own process."""
+
+    def __init__(self, module_path: str, class_name: str, pip_deps: list[str],
+                 config: dict | None = None, plugin_id: str | None = None):
         self.module_path = module_path
         self.class_name = class_name
         self.class_path = f'{module_path}.{class_name}'
         self.pip_deps = pip_deps
+        self.config = config or {}
+        self.plugin_id = plugin_id
+        self.label = _label(self.class_path, plugin_id)
 
     def _venv_dir(self, sandbox_dir: Path) -> Path:
         return sandbox_dir / 'plugins' / pip_slug(self.pip_deps) / 'venv'
@@ -165,12 +246,17 @@ class BuildPlugin:
 
     def _process(self, sandbox_dir: Path) -> _BuildHookProcess:
         with _cache_lock:
-            proc = _process_cache.get(self.class_path)
+            key = (self.class_path, self.plugin_id)
+            proc = _process_cache.get(key)
             if proc is None:
                 venv_dir = self.ensure_venv(sandbox_dir)
                 python_bin = venv_dir / 'bin' / 'python'
-                proc = _BuildHookProcess(python_bin, self.module_path, self.class_name)
-                _process_cache[self.class_path] = proc
+                if self.config:
+                    logger.debug("Build plugin '%s' config: %s", self.label, self.config)
+                proc = _BuildHookProcess(python_bin, self.module_path, self.class_name,
+                                         config=self.config, plugin_id=self.plugin_id,
+                                         cwd=root_dir())
+                _process_cache[key] = proc
             return proc
 
     def dispatch(self, sandbox_dir: Path, event: str, args: dict) -> dict:
@@ -186,7 +272,7 @@ class BuildPlugin:
         log = resp.get('log')
         if log:
             for line in log.splitlines():
-                logger.info('[%s] %s', self.class_path, line)
+                logger.info('[%s] %s', self.label, line)
         return resp
 
 
@@ -196,6 +282,48 @@ class BuildPlugin:
 # (plugins, register_entries), backed by the same pooled processes in
 # _process_cache.
 _load_cache: dict[str, tuple[list[BuildPlugin], list[dict]]] = {}
+
+
+def _entry_classes(plugin: dict) -> list[str]:
+    classes = plugin.get('classes', [])
+    return [classes] if isinstance(classes, str) else list(classes)
+
+
+def _validate_entries(entries: list[dict]) -> list[tuple[str | None, dict]]:
+    """Validate every declared entry's `id`/`config` and the (class, id) uniqueness
+    rule, before any venv/pip work and before the permission filter (so a declined
+    permission can't hide a collision). Returns (id, config) per entry.
+
+    A collision involving an explicit id aborts; duplicate id-less entries for the
+    same class only warn for now (legacy behavior: they silently share a process).
+    """
+    parsed: list[tuple[str | None, dict]] = []
+    seen: dict[tuple[str, str | None], int] = {}
+    for i, plugin in enumerate(entries):
+        plugin_id = plugin.get('id')
+        if plugin_id is not None and (not isinstance(plugin_id, str)
+                                      or not _PLUGIN_ID_RE.match(plugin_id)):
+            raise ValueError(f"Build plugin entry #{i + 1}: invalid 'id' {plugin_id!r} "
+                             f"(allowed characters: A-Z a-z 0-9 _ -)")
+        classes = _entry_classes(plugin)
+        label = f"entry #{i + 1} ({', '.join(classes)})"
+        config = _validate_config(plugin.get('config'), label)
+        for class_path in classes:
+            seen[(class_path, plugin_id)] = seen.get((class_path, plugin_id), 0) + 1
+        parsed.append((plugin_id, config))
+
+    for (class_path, plugin_id), count in seen.items():
+        if count < 2:
+            continue
+        if plugin_id is not None:
+            raise ValueError(
+                f"Build plugin '{class_path}' is declared {count} times with id '{plugin_id}': "
+                f"each (class, id) pair must be unique. Give each entry a distinct 'id'.")
+        logger.warning(
+            "!!! Build plugin '%s' is declared %d times without an 'id'. These entries will "
+            "share ONE instance (only the first one's config applies). Add a distinct 'id' to "
+            "each entry: this will become an error in a future release. !!!", class_path, count)
+    return parsed
 
 
 def load_build_plugins(sandbox_dir: Path,
@@ -223,14 +351,15 @@ def load_build_plugins(sandbox_dir: Path,
     plugins: list[BuildPlugin] = []
     register_entries: list[dict] = []
 
-    for plugin in read_plugin_entries('build'):
+    entries = read_plugin_entries('build')
+    parsed = _validate_entries(entries)
+
+    for plugin, (plugin_id, config) in zip(entries, parsed):
         pip_deps = plugin.get('pip', [])
         if isinstance(pip_deps, str):
             pip_deps = [pip_deps]
 
-        classes = plugin.get('classes', [])
-        if isinstance(classes, str):
-            classes = [classes]
+        classes = _entry_classes(plugin)
 
         output_classes = []
 
@@ -243,7 +372,7 @@ def load_build_plugins(sandbox_dir: Path,
                 logger.warning(
                     "Invalid build plugin class path (expected 'module.ClassName'): %s", class_path)
                 continue
-            plugins.append(BuildPlugin(module_path, class_name, pip_deps))
+            plugins.append(BuildPlugin(module_path, class_name, pip_deps, config, plugin_id))
             output_classes.append(class_path)
 
         if output_classes:
@@ -277,7 +406,7 @@ def _dispatch_checkpoint(plugins: list[BuildPlugin], sandbox_dir: Path, event: s
         resp = plugin.dispatch(sandbox_dir, event, args)
         if not resp.get('success'):
             raise RuntimeError(
-                f"{event} failed in build plugin '{plugin.class_path}': {resp.get('error')}")
+                f"{event} failed in build plugin '{plugin.label}': {resp.get('error')}")
 
 
 def dispatch_before_run(plugins: list[BuildPlugin], sandbox_dir: Path,
@@ -309,7 +438,7 @@ def dispatch_after_register(plugins: list[BuildPlugin], sandbox_dir: Path,
                                {'register': current, 'context': context})
         if not resp.get('success'):
             raise RuntimeError(
-                f"after_register failed in build plugin '{plugin.class_path}': {resp.get('error')}")
+                f"after_register failed in build plugin '{plugin.label}': {resp.get('error')}")
         output = resp.get('output')
         if isinstance(output, dict):
             current = output
@@ -371,7 +500,7 @@ def _dispatch_bblock_event(plugins: list[BuildPlugin], sandbox_dir: Path, event:
         resp = plugin.dispatch(sandbox_dir, event, args)
         if not resp.get('success'):
             message = (f"{event}({stage.name}) failed for {bblock.get('identifier')} in "
-                      f"build plugin '{plugin.class_path}': {resp.get('error')}")
+                      f"build plugin '{plugin.label}': {resp.get('error')}")
             if fail_on_error:
                 raise RuntimeError(message)
             logger.error(message)
@@ -416,6 +545,6 @@ def dispatch_on_error(plugins: list[BuildPlugin], sandbox_dir: Path,
                                    {'error': error_payload, 'register': register, 'context': context})
             if not resp.get('success'):
                 logger.error("on_error failed in build plugin '%s': %s",
-                            plugin.class_path, resp.get('error'))
+                            plugin.label, resp.get('error'))
         except Exception:
-            logger.exception("Error dispatching on_error to build plugin '%s'", plugin.class_path)
+            logger.exception("Error dispatching on_error to build plugin '%s'", plugin.label)

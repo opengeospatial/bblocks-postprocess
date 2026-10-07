@@ -33,7 +33,7 @@ from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister, ImportedBui
 from ogc.bblocks.validate import validate_test_resources, write_report, load_validation_plugins
 from ogc.bblocks.transform import _rel, apply_transforms, load_transform_plugins, transformers, cleanup_sandbox
 from ogc.bblocks.permissions import check_permissions, check_build_plugin_permissions
-from ogc.bblocks.build_hooks.plugin import load_build_plugins, dispatch_before_run, dispatch_after_register, \
+from ogc.bblocks.build_hooks.plugin import build_hook_context, load_build_plugins, dispatch_before_run, dispatch_after_register, \
     Stage, write_register_snapshot, dispatch_before_bblock, dispatch_after_bblock
 
 # Best-effort breadcrumb of which pipeline stage postprocess() is currently in,
@@ -233,14 +233,14 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
     # Run-level config for build plugins, present on every event regardless of
     # whether any are configured - also reused at after_register below.
-    hook_context = {
-        'itemsDir': str(registered_items_path),
-        'baseUrl': base_url,
-        'registerFile': str(output_file) if output_file else None,
-        'steps': list(steps) if steps else None,
-        'filter': bb_filter,
-        'failOnError': fail_on_error,
-    }
+    hook_context = build_hook_context(
+        items_dir=registered_items_path,
+        base_url=base_url,
+        register_file=output_file,
+        steps=steps,
+        filter=bb_filter,
+        fail_on_error=fail_on_error,
+    )
 
     # Register skeleton (no per-bblock processing done yet) - reused as the
     # before_bblock/after_bblock register payload for every stage (ANNOTATE through
