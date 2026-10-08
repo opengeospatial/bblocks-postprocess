@@ -129,7 +129,7 @@ concurrency:
 
 jobs:
   validate-and-process:
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-latest
 
     environment:
       name: github-pages
