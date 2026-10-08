@@ -106,6 +106,19 @@ def _parse_rdf_best_effort(contents: str, content_type: str | None, source: str)
                      f"(tried: {', '.join(formats_to_try)}){hint}") from last_error
 
 
+def _canonical_cycles(graph: nx.DiGraph) -> list[list[str]]:
+    """
+    Lists the simple cycles of a graph in a reproducible form: `nx.simple_cycles` iterates over sets
+    internally, so both the cycle order and each cycle's starting node depend on PYTHONHASHSEED. Each
+    cycle is rotated to start at its smallest node (which preserves its edges) and the list is sorted.
+    """
+    cycles = []
+    for cycle in nx.simple_cycles(graph):
+        start = cycle.index(min(cycle))
+        cycles.append(cycle[start:] + cycle[:start])
+    return sorted(cycles)
+
+
 def get_bblock_subdirs(identifier: str) -> Path:
     return Path(*(identifier.split('.')[1:]))
 
@@ -857,7 +870,7 @@ class BuildingBlockRegister:
                     found_deps.update(ep_extensions.values())
                 found_deps.discard(bblock.identifier)
                 if found_deps:
-                    bblock.metadata['dependsOn'] = list(found_deps)
+                    bblock.metadata['dependsOn'] = sorted(found_deps)
                 dep_graph.add_node(bblock.identifier)
                 dep_graph.add_edges_from([(d, bblock.identifier)
                                           for d in bblock.metadata.get('dependsOn', ())
@@ -871,7 +884,7 @@ class BuildingBlockRegister:
                                      f' from {b} - the bblock does not exist'
                                      f' - perhaps an import is missing?')
 
-        cycles = list(nx.simple_cycles(dep_graph))
+        cycles = _canonical_cycles(dep_graph)
         if cycles:
             cycles_str = ' - ' + '\n - '.join(' -> '.join(reversed(c)) + ' -> ' + c[-1] for c in cycles)
             logger.warning("Circular dependencies found:\n%s\nCircular dependency support is experimental",
@@ -880,7 +893,7 @@ class BuildingBlockRegister:
             #for cycle in cycles:
             #    dep_graph.remove_edge(cycle[0], cycle[1])
             dep_graph.remove_edges_from((cycle[0], cycle[min(1, len(cycle) - 1)]) for cycle in cycles)
-            cycles = list(nx.simple_cycles(dep_graph))
+            cycles = _canonical_cycles(dep_graph)
         self.bblocks: dict[str, BuildingBlock] = {b: self.bblocks[b]
                                                   for b in nx.topological_sort(dep_graph)
                                                   if b in self.bblocks}
