@@ -21,6 +21,9 @@ on:
       - 'pytest.ini'
       - '.github/workflows/pytest.yml'
   workflow_dispatch:
+  # Called by build-docker.yml to gate image builds. Runs against the caller's
+  # commit (don't add a `ref:` to the checkout step).
+  workflow_call:
 
 jobs:
   pytest:
