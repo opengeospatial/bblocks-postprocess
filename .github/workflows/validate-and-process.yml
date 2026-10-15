@@ -315,6 +315,16 @@ jobs:
           <html lang="en">
           <head>
             <meta charset="UTF-8" />
+            <script>
+              // Upgrade http:// subresources only when served over https; plain-http
+              // viewers (e.g. local testing against http://localhost registers) are left alone.
+              if (location.protocol === 'https:') {
+                var csp = document.createElement('meta');
+                csp.httpEquiv = 'Content-Security-Policy';
+                csp.content = 'upgrade-insecure-requests';
+                document.head.appendChild(csp);
+              }
+            </script>
             <link rel="icon" href="https://ogcincubator.github.io/bblocks-viewer/favicon.ico" />
             <meta name="viewport" content="width=device-width, initial-scale=1.0" />
             <title>${REG_NAME_HTML}</title>
