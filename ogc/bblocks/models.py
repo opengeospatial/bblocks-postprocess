@@ -781,6 +781,22 @@ class ImportedBuildingBlocks:
 
 class BuildingBlockRegister:
 
+    @staticmethod
+    def _published_files(imported_bblock: dict) -> list[str]:
+        """URLs of the published documents (schemas, OpenAPI documents) of an imported bblock."""
+        result = list((imported_bblock.get('schema') or {}).values())
+        source_schema = imported_bblock.get('sourceSchema')
+        if source_schema:
+            result.append(source_schema)
+        openapi_doc = imported_bblock.get('openAPIDocument')
+        if isinstance(openapi_doc, str):
+            result.append(openapi_doc)
+        elif isinstance(openapi_doc, list):
+            result.extend(openapi_doc)
+        elif isinstance(openapi_doc, dict):
+            result.extend(openapi_doc.values())
+        return result
+
     def __init__(self,
                  registered_items_path: Path,
                  annotated_path: Path = Path(),
@@ -834,26 +850,20 @@ class BuildingBlockRegister:
                         self.local_bblock_files[f"{base_url}{rel}"] = bblock_id
 
         for identifier, imported_bblock in self.imported_bblocks.items():
+            published_files = self._published_files(imported_bblock)
             if identifier in self.bblocks:
+                # An older, published version of a local bblock (e.g. pulled in through the imports of another
+                # register that depends on this one): anything referencing its published URLs while we build
+                # must get our working copy instead, so those URLs are mapped as local files
+                for url in published_files:
+                    self.local_bblock_files.setdefault(url, identifier)
                 continue
             dep_graph.add_node(identifier)
             dep_graph.add_edges_from([(d, identifier)
                                       for d in imported_bblock.get('dependsOn', ())
                                       if d != identifier])
-            for schema_url in imported_bblock.get('schema', {}).values():
-                self.imported_bblock_files[schema_url] = identifier
-            source_schema = imported_bblock.get('sourceSchema')
-            if source_schema:
-                self.imported_bblock_files[source_schema] = identifier
-            openapi_doc = imported_bblock.get('openAPIDocument')
-            if isinstance(openapi_doc, str):
-                self.imported_bblock_files[openapi_doc] = identifier
-            elif isinstance(openapi_doc, list):
-                for d in openapi_doc:
-                    self.imported_bblock_files[d] = identifier
-            elif isinstance(openapi_doc, dict):
-                for d in openapi_doc.values():
-                    self.imported_bblock_files[d] = identifier
+            for url in published_files:
+                self.imported_bblock_files[url] = identifier
 
         for bblock in self.bblocks.values():
             try:
