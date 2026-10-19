@@ -47,3 +47,27 @@ def test_resource_not_accessible_item_is_a_failed_report_with_message():
     assert entries[0].is_error
     assert 'missing.json' in entries[0].message
     assert '404 Not Found' in entries[0].message
+
+
+def test_validate_transform_output_passes_snippet_closures_to_validators(mocker, tmp_path):
+    from ogc.bblocks.validate import validate_transform_output
+
+    calls = []
+
+    class FakeValidator:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def validate(self, *args, **kwargs):
+            calls.append(kwargs.get('additional_shacl_closures'))
+
+    mocker.patch('ogc.bblocks.validate.JsonValidator', FakeValidator)
+    mocker.patch('ogc.bblocks.validate.RdfValidator', FakeValidator)
+    profile = mocker.MagicMock()
+    output_file = tmp_path / 'out.json'
+    output_file.write_text('{}')
+
+    validate_transform_output(profile, mocker.MagicMock(), 't', output_file, tmp_path / 'report.json',
+                              additional_shacl_closures=['https://example.com/closure.ttl'])
+
+    assert calls == [['https://example.com/closure.ttl']] * 2
