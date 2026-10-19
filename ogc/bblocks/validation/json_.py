@@ -1,14 +1,12 @@
 import json
 import logging
 import os
-import random
 import sys
 import traceback
 
 logger = logging.getLogger(__name__)
 from json import JSONDecodeError
 from pathlib import Path
-from time import time
 from typing import Any
 from urllib.parse import urlsplit, urljoin
 from urllib.request import urlopen
@@ -16,7 +14,10 @@ from urllib.request import urlopen
 import jsonref
 import jsonschema
 import requests
+from jsonschema.protocols import Validator
 from jsonschema.validators import validator_for
+from referencing import Registry, Resource
+from referencing.jsonschema import DRAFT3, DRAFT4, DRAFT202012, specification_with
 from ogc.bblocks.util import load_yaml, is_url, PathOrUrl
 from yaml import MarkedYAMLError
 
@@ -25,53 +26,53 @@ from ogc.bblocks.validation import Validator, ValidationItemSourceType, Validati
     ValidationReportItem
 
 
-def get_json_validator(contents, base_uri, bblocks_register: BuildingBlockRegister) -> jsonschema.Validator:
+def get_json_validator(contents, base_uri, bblocks_register: BuildingBlockRegister | None) -> Validator:
     if isinstance(contents, dict):
         schema = contents
     else:
         schema = load_yaml(content=contents)
-    resolver = RefResolver(
-        base_uri=base_uri,
-        referrer=schema,
-        bblocks_register=bblocks_register,
-    )
     validator_cls = validator_for(schema)
     validator_cls.check_schema(schema)
-    return validator_cls(schema, resolver=resolver)
+
+    dialect = schema.get('$schema') if isinstance(schema, dict) else None
+    spec = specification_with(dialect, default=DRAFT202012) if isinstance(dialect, str) else DRAFT202012
+    if base_uri and isinstance(schema, dict) and spec.id_of(schema) is None:
+        # The validator resolves relative references against the root schema's own id, so give it
+        # one if it doesn't declare any (shallow copy: the original is left untouched)
+        id_key = 'id' if spec in (DRAFT3, DRAFT4) else '$id'
+        schema = {**schema, id_key: base_uri}
+
+    registry = Registry(retrieve=_make_retriever(bblocks_register, spec))
+    return validator_cls(schema, registry=registry)
 
 
-def validate_json(instance: Any, validator: jsonschema.Validator):
+def validate_json(instance: Any, validator: Validator):
     error = jsonschema.exceptions.best_match(validator.iter_errors(instance))
     if error is not None:
         raise error
 
 
-class RefResolver(jsonschema.validators.RefResolver):
+def _make_retriever(bblocks_register: BuildingBlockRegister | None, default_spec):
+    """
+    Creates a ``retrieve`` callback for a ``referencing.Registry``. Schemas belonging to building blocks
+    of the register being processed are served directly from their annotated contents (they might not
+    have been committed or published yet); anything else is fetched, and parsed as YAML or JSON.
+    """
 
-    def __init__(self, bblocks_register: BuildingBlockRegister, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.bblocks_register = bblocks_register
-
-    def resolve_remote(self, uri):
-        if uri in self.bblocks_register.local_bblock_files:
-            bblock_id = self.bblocks_register.local_bblock_files[uri]
-            bblock = self.bblocks_register.bblocks[bblock_id]
-            return load_yaml(content=bblock.annotated_schema_contents)
-
-        scheme = urlsplit(uri).scheme
-
-        if scheme in self.handlers:
-            result = self.handlers[scheme](uri)
-        elif scheme in ["http", "https"]:
-            result = load_yaml(content=requests.get(uri).content)
+    def retrieve(uri: str) -> Resource:
+        if bblocks_register and uri in bblocks_register.local_bblock_files:
+            bblock_id = bblocks_register.local_bblock_files[uri]
+            bblock = bblocks_register.bblocks[bblock_id]
+            contents = load_yaml(content=bblock.annotated_schema_contents)
+        elif urlsplit(uri).scheme in ('http', 'https'):
+            contents = load_yaml(content=requests.get(uri).content)
         else:
             # Otherwise, pass off to urllib and assume utf-8
             with urlopen(uri) as url:
-                result = load_yaml(content=url.read().decode("utf-8"))
+                contents = load_yaml(content=url.read().decode('utf-8'))
+        return Resource.from_contents(contents, default_specification=default_spec)
 
-        if self.cache_remote:
-            self.store[uri] = result
-        return result
+    return retrieve
 
 
 class JsonValidator(Validator):
@@ -148,27 +149,13 @@ class JsonValidator(Validator):
                     }
                 ))
                 try:
-                    random_fn = f"example.{time()}.{random.randint(0, 1000)}.yaml"
-                    if self.bblock.schema.is_path:
-                        schema_uri = self.bblock.schema.value.with_name(random_fn).as_uri()
-                    else:
-                        schema_uri = urljoin(self.bblock.schema.value, random_fn)
-                    if schema_ref.startswith('#'):
-                        # $ref
-                        schema_ref = f"{self.bblock.annotated_schema.resolve()}{schema_ref}"
-                    elif not is_url(schema_ref):
-                        if '#' in schema_ref:
-                            path, fragment = schema_ref.split('#', 1)
-                            schema_ref = f"{self.bblock.annotated_schema.parent.resolve().joinpath(path)}#{fragment}"
-                            ppath = path.rsplit('/', 1)
-                            newpath = f"{ppath}/{random_fn}" if ppath else random_fn
-                            schema_uri = f"{self.bblock.schema.resolve_ref(newpath)}#{fragment}"
-                        else:
-                            schema_uri = self.bblock.schema.resolve_ref(schema_ref).with_name(random_fn).as_uri()
-                    snippet_schema = {'$ref': schema_ref}
-                    schema_validator = get_json_validator(snippet_schema,
-                                                          schema_uri,
-                                                          self.register)
+                    annotated_schema = self.bblock.annotated_schema
+                    annotated_uri = (annotated_schema.as_uri() if isinstance(annotated_schema, PathOrUrl)
+                                     else annotated_schema.resolve().as_uri())
+                    # Relative references (including bare "#fragment"s) are resolved against the
+                    # annotated schema, so the snippet's $ref is always absolute and needs no base URI
+                    schema_ref = urljoin(annotated_uri, schema_ref)
+                    schema_validator = get_json_validator({'$ref': schema_ref}, None, self.register)
                 except Exception as e:
                     report.add_entry(ValidationReportEntry(
                         section=ValidationReportSection.JSON_SCHEMA,
