@@ -21,7 +21,7 @@ on:
 
 jobs:
   upload:
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/setup-python@v6
         with:
