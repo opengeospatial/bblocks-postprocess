@@ -12,7 +12,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  test:
+    uses: ./.github/workflows/pytest.yml
+
   docker:
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: write
