@@ -251,10 +251,14 @@ class RdfValidator(Validator):
             if isinstance(json_doc, dict):
                 if '@context' in json_doc:
                     existing_context = json_doc['@context']
-                    if isinstance(existing_context, list):
-                        new_context.extend(existing_context)
-                    else:
-                        new_context.append(existing_context)
+                    if not isinstance(existing_context, list):
+                        existing_context = [existing_context]
+                    # A reference to this bblock's own published context is already inlined
+                    # above; fetching it would load the previously published (or, for a local
+                    # build, unreachable) version over the one being built.
+                    new_context.extend(c for c in existing_context
+                                       if not (self.jsonld_context and self.jsonld_url
+                                               and c == self.jsonld_url))
                 jsonld_uplifted = json_doc.copy()
                 jsonld_uplifted.pop('@context', None)
                 jsonld_uplifted = {
