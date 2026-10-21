@@ -787,7 +787,8 @@ class BuildingBlockRegister:
                  fail_on_error: bool = False,
                  prefix: str = 'ogc.',
                  imported_bblocks: ImportedBuildingBlocks | None = None,
-                 base_url: str | None = None):
+                 base_url: str | None = None,
+                 register_url: str | None = None):
 
         self.registered_items_path = registered_items_path
         self.annotated_path = annotated_path
@@ -795,6 +796,8 @@ class BuildingBlockRegister:
         self.bblocks: dict[str, BuildingBlock] = {}
         self.imported_bblocks = imported_bblocks.bblocks if imported_bblocks else {}
         self.base_url = base_url
+        # Published URL of this register's register.json (only known when base_url is set)
+        self.register_url = register_url
         self._cwd = Path().resolve()
 
         # Map of file paths and URLs for local bblocks (source and annotated schemas, OpenAPI documents, etc.)

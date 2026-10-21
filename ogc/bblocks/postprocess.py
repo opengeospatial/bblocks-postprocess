@@ -132,6 +132,36 @@ def _git_last_modified(path: Path) -> datetime.date | None:
         return None
 
 
+def resolve_date_of_last_change(bblock: BuildingBlock) -> None:
+    """Sets bblock.metadata['dateOfLastChange'] from the bblock.json value (if any),
+    the last git commit touching its directory (whichever is later), or its
+    dateTimeAddition as a last resort. Safe to call more than once.
+    """
+    last_git_modified = _git_last_modified(bblock.files_path)
+
+    last_update = bblock.metadata.get('dateOfLastChange')
+    if last_update:
+        try:
+            last_update = datetime.date.fromisoformat(last_update)
+            if last_git_modified and last_git_modified > last_update:
+                last_update = last_git_modified
+        except ValueError:
+            last_update = last_git_modified
+
+    if not last_update:
+        date_time_addition = bblock.metadata.get('dateTimeAddition')
+        if date_time_addition:
+            try:
+                last_update = datetime.date.fromisoformat(date_time_addition[:10])
+            except ValueError:
+                pass
+
+    if last_update:
+        bblock.metadata['dateOfLastChange'] = last_update.isoformat()
+    else:
+        bblock.metadata.pop('dateOfLastChange', None)
+
+
 def postprocess(registered_items_path: str | Path = 'registereditems',
                 output_file: str | Path | None = 'register.json',
                 base_url: str | None = None,
@@ -225,7 +255,9 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                                 prefix=id_prefix,
                                 annotated_path=annotated_path,
                                 imported_bblocks=imported_bblocks,
-                                base_url=base_url)
+                                base_url=base_url,
+                                register_url=(PathOrUrl(output_file).with_base_url(base_url)
+                                              if base_url and output_file and output_file != '-' else None))
 
     if register_license:
         for bblock in bbr.bblocks.values():
@@ -266,38 +298,7 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
 
     def do_postprocess(bblock: BuildingBlock, light: bool = False) -> bool:
 
-        try:
-            last_git_modified = datetime.datetime.fromisoformat(subprocess.run([
-                'git',
-                'log',
-                '-1',
-                '--pretty=format:%cI',
-                str(bblock.files_path),
-            ], capture_output=True).stdout.decode()).astimezone(datetime.timezone.utc).date()
-        except (ValueError, OSError):
-            last_git_modified = None
-
-        last_update = bblock.metadata.get('dateOfLastChange')
-        if last_update:
-            try:
-                last_update = datetime.date.fromisoformat(last_update)
-                if last_git_modified and last_git_modified > last_update:
-                    last_update = last_git_modified
-            except ValueError:
-                last_update = last_git_modified
-
-        if not last_update:
-            date_time_addition = bblock.metadata.get('dateTimeAddition')
-            if date_time_addition:
-                try:
-                    last_update = datetime.date.fromisoformat(date_time_addition[:10])
-                except ValueError:
-                    pass
-
-        if last_update:
-            bblock.metadata['dateOfLastChange'] = last_update.isoformat()
-        else:
-            bblock.metadata.pop('dateOfLastChange', None)
+        resolve_date_of_last_change(bblock)
 
         output_file_root = Path(output_file).resolve().parent
 
@@ -462,6 +463,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
     for building_block in bbr.bblocks.values():
         if filter_id is None or building_block.identifier == filter_id:
             if not steps or 'annotate' in steps:
+                # Needed by x-bblocks-metadata in the annotated schema, before do_postprocess() runs
+                resolve_date_of_last_change(building_block)
                 if build_plugins:
                     dispatch_before_bblock(build_plugins, sandbox_dir, Stage.ANNOTATE,
                                            _bblock_hook_payload(building_block, cwd, urls_resolved=False),
