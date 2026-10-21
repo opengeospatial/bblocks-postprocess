@@ -357,7 +357,9 @@ class RdfValidator(Validator):
                             section=ValidationReportSection.TURTLE,
                             message=f"Prefixes are defined for {', '.join(prefixes.keys())}"
                         ))
-                    graph = Graph().parse(data=contents, format=rdf_format)
+                    # Relative IRIs in a document fetched from a URL resolve against that URL
+                    graph = Graph().parse(data=contents, format=rdf_format,
+                                          publicID=resource_url if resource_url and is_url(resource_url) else None)
                     report.add_entry(ValidationReportEntry(
                         section=ValidationReportSection.FILES,
                         message=f'Using {resource_url or filename.name} from {file_from}',
