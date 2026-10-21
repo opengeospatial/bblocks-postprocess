@@ -147,11 +147,40 @@ def annotate_schema(bblock: BuildingBlock,
                                   annotated_schema=annotated_schema, oas30_downcompile=oas30_downcompile)
 
 
+BBLOCKS_METADATA_KEY = 'x-bblocks-metadata'
+
+
+def add_bblocks_metadata(schema: Any, bblock: BuildingBlock, bblocks_register: BuildingBlockRegister) -> None:
+    """
+    Records in the root of an annotated schema which bblock (and register) it came from,
+    so that bblocks-aware tooling can identify it even when its URL is aliased or
+    redirected. Keys already present are kept, except for the ones generated here.
+    """
+    if not isinstance(schema, dict):
+        return
+    generated = {
+        'itemIdentifier': bblock.identifier,
+        'register': bblocks_register.register_url,
+        'version': bblock.metadata.get('version'),
+        'dateOfLastChange': bblock.metadata.get('dateOfLastChange'),
+    }
+    existing = schema.get(BBLOCKS_METADATA_KEY)
+    schema[BBLOCKS_METADATA_KEY] = {
+        **(existing if isinstance(existing, dict) else {}),
+        **{k: v for k, v in generated.items() if v},
+    }
+    for k, v in generated.items():
+        if not v:
+            schema[BBLOCKS_METADATA_KEY].pop(k, None)
+
+
 def write_annotated_schema(bblock: BuildingBlock,
                            bblocks_register: BuildingBlockRegister,
                            annotated_schema,
                            oas30_downcompile: bool = False):
     result = []
+
+    add_bblocks_metadata(annotated_schema, bblock, bblocks_register)
 
     # YAML
     annotated_schema_fn = bblock.annotated_path / 'schema.yaml'

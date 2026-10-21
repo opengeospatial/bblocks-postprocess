@@ -71,3 +71,32 @@ def test_validate_transform_output_passes_snippet_closures_to_validators(mocker,
                               additional_shacl_closures=['https://example.com/closure.ttl'])
 
     assert calls == [['https://example.com/closure.ttl']] * 2
+
+    
+def test_uplift_does_not_fetch_a_reference_to_the_bblocks_own_context(mocker, tmp_path):
+    import json
+    from ogc.bblocks.validation import ValidationReportItem
+    from ogc.bblocks.validation.rdf import RdfValidator
+
+    own_url = 'https://example.com/register/annotated/thing/context.jsonld'
+    validator = RdfValidator.__new__(RdfValidator)
+    validator.bblock = mocker.MagicMock()
+    validator.bblock.metadata = {'ldContext': own_url}
+    validator.jsonld_error = None
+    validator.jsonld_url = own_url
+    validator.jsonld_context = {'@context': {'name': 'https://schema.org/name'}}
+    validator.uplifter = mocker.MagicMock()
+    validator.uplifter.pre_uplift.side_effect = lambda report, doc: doc
+    validator.uplifter.post_uplift.side_effect = lambda report, graph: graph
+
+    doc = tmp_path / 'doc.json'
+    doc.write_text(json.dumps({'@context': [own_url, {'ex': 'https://example.com/ns/'}],
+                               '@id': 'ex:a', 'name': 'A', 'ex:p': 'B'}))
+    report = ValidationReportItem(ValidationItemSource(type=ValidationItemSourceType.EXAMPLE, filename=doc))
+
+    graph = validator._load_graph(doc, tmp_path / 'out.json', report)
+
+    # own_url is not resolvable: it must not have been fetched
+    assert len(graph) == 2
+    uplifted = json.loads((tmp_path / 'out.jsonld').read_text())
+    assert uplifted['@context'] == [own_url, {'ex': 'https://example.com/ns/'}]

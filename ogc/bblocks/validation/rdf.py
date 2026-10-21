@@ -251,10 +251,14 @@ class RdfValidator(Validator):
             if isinstance(json_doc, dict):
                 if '@context' in json_doc:
                     existing_context = json_doc['@context']
-                    if isinstance(existing_context, list):
-                        new_context.extend(existing_context)
-                    else:
-                        new_context.append(existing_context)
+                    if not isinstance(existing_context, list):
+                        existing_context = [existing_context]
+                    # A reference to this bblock's own published context is already inlined
+                    # above; fetching it would load the previously published (or, for a local
+                    # build, unreachable) version over the one being built.
+                    new_context.extend(c for c in existing_context
+                                       if not (self.jsonld_context and self.jsonld_url
+                                               and c == self.jsonld_url))
                 jsonld_uplifted = json_doc.copy()
                 jsonld_uplifted.pop('@context', None)
                 jsonld_uplifted = {
@@ -357,7 +361,9 @@ class RdfValidator(Validator):
                             section=ValidationReportSection.TURTLE,
                             message=f"Prefixes are defined for {', '.join(prefixes.keys())}"
                         ))
-                    graph = Graph().parse(data=contents, format=rdf_format)
+                    # Relative IRIs in a document fetched from a URL resolve against that URL
+                    graph = Graph().parse(data=contents, format=rdf_format,
+                                          publicID=resource_url if resource_url and is_url(resource_url) else None)
                     report.add_entry(ValidationReportEntry(
                         section=ValidationReportSection.FILES,
                         message=f'Using {resource_url or filename.name} from {file_from}',
