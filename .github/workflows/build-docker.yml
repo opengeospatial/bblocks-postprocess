@@ -80,7 +80,16 @@ jobs:
             git tag -l --format='%(contents)' "${GITHUB_REF_NAME}" > "${RUNNER_TEMP}/release-notes.md"
           fi
           if [[ -s "${RUNNER_TEMP}/release-notes.md" ]]; then
-            gh release create "${GITHUB_REF_NAME}" --generate-notes --notes-file "${RUNNER_TEMP}/release-notes.md"
+            # Hand-written notes replace GitHub's auto-generated ones (which would add
+            # "What's Changed"/"New Contributors" sections); only the compare link is kept
+            git fetch --force --tags origin
+            prev_tag=$(git tag --list 'v1.*.*' --sort=-v:refname | grep -x -A1 "${GITHUB_REF_NAME}" | tail -n +2 || true)
+            if [[ -n "$prev_tag" ]]; then
+              printf '\n**Full Changelog**: %s/%s/compare/%s...%s\n' \
+                "${GITHUB_SERVER_URL}" "${GITHUB_REPOSITORY}" "$prev_tag" "${GITHUB_REF_NAME}" \
+                >> "${RUNNER_TEMP}/release-notes.md"
+            fi
+            gh release create "${GITHUB_REF_NAME}" --notes-file "${RUNNER_TEMP}/release-notes.md"
           else
             gh release create "${GITHUB_REF_NAME}" --generate-notes
           fi
