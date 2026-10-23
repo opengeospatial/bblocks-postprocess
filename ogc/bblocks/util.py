@@ -319,7 +319,8 @@ def update_refs(schema: Any, updater: Callable[[str], str]):
 def get_github_repo(url: str) -> tuple[str, str] | None:
     if not url:
         return None
-    m = re.match(r'^(?:git@|https?://(?:www)?)github.com[:/](.+)/(.+).git$', url)
+    # the .git suffix is optional: `git clone https://github.com/org/repo` leaves it off the remote
+    m = re.match(r'^(?:git@|https?://(?:www\.)?)github\.com[:/]([^/]+)/([^/]+?)(?:\.git)?/?$', url)
     if m:
         groups = m.groups()
         return groups[0], groups[1]
