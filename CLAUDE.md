@@ -55,7 +55,7 @@ url-mappings:
   https://example.com/path: /local/path
 ```
 
-The HTTP interceptor (`http_interceptor.py`) monkey-patches urllib/requests to redirect these.
+The HTTP interceptor (`http_interceptor.py`) monkey-patches urllib/requests to redirect these. When a mapping points at a checkout, files served from its `build-local/` have that build's `baseURL` (from its `build-local/register.json`, usually `http://localhost:9090/register/`) rewritten to the mapped URL, so a plain local `build.sh` build of an upstream can be imported.
 
 ## Architecture
 
@@ -80,7 +80,7 @@ entrypoint.py         Parses CLI args, loads bblocks-config.yaml, calls postproc
 
 - **`oas30.py`** — Converts JSON Schema to OpenAPI 3.0.
 
-- **`http_interceptor.py`** — URL mapping for local testing.
+- **`http_interceptor.py`** — URL mapping for local testing; rebases mapped `build-local/` content onto the mapped URL.
 
 - **`template_sync.py`** — keeps a consumer repo's scaffolding files (the list in `ogc/bblocks/tracked_template_files.txt` is the source of truth for which files) in sync with their canonical versions in **bblocks-template**. Runs from `entrypoint.py` after repo autodetection, gated by `--update-template-files` (default `true`) and always skipped when `--skip-permissions` is set — so it only ever runs on local/interactive invocations, never in CI. The Dockerfile bakes a clone of bblocks-template (full history is needed for the manifest) into the image at `BBP_TEMPLATE_DIR` (`/opt/bblocks-template`) and generates `.known-template-hashes.json` (via `scripts/generate_template_hash_manifest.py`), recording every git-blob hash each tracked file has ever had across bblocks-template's history, before discarding the `.git` dir. `check_template_files()` then, per tracked file: creates it (making parent dirs as needed) if missing on disk *unless* the consumer repo's own git history shows the path was previously committed and deliberately removed (best-effort — degrades to "create" on a shallow CI-style clone); updates it in place only if its current content hash matches some known past template version (i.e. it's still an unmodified, if outdated, stock copy) — a file that's been customized is never touched. The executable bit is only set/preserved for tracked files that are executable in bblocks-template itself (the shell scripts, not the workflow YAML). Separately, `ensure_build_script_interactive()` patches `build.sh` to add `-it` to its `docker run` for the postprocess image if missing, since without a tty the interactive permission prompts (`permissions.py`) can never be answered. bblocks-template's `docker run $([ -t 0 ] && [ -t 1 ] && echo -it ) ...` (only requests a tty when one is attached) passes as a literal `-it` token; a shell variable in the command that the script assigns `-it` to (`TTY=$(...)` / `docker run ${TTY}`) also counts as present.
 

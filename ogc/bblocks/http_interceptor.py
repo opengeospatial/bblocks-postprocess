@@ -1,3 +1,4 @@
+import json
 import logging
 import mimetypes
 import urllib.request
@@ -14,7 +15,10 @@ _original_urlopen = urllib.request.urlopen
 _original_requests_session_request = requests.Session.request
 
 _url_mappings: dict[str, Path] = {}
+_local_build_base_urls: dict[Path, str | None] = {}
 _mocked = False
+
+LOCAL_BUILD_DIR = 'build-local'
 
 
 class MockHTTPResponse:
@@ -79,11 +83,44 @@ def load_content(url: str):
         raise IOError(f'Local file {local_file} for URL {url} from mapping {url_mapping} does not exist')
     logger.debug("Intercepted URL %s -> %s", url, local_file)
     with open(local_file, 'rb') as f:
-        return f.read()
+        content = f.read()
+    if rel_path.startswith(LOCAL_BUILD_DIR + '/'):
+        content = rebase_local_build(content, url_mapping, local_path)
+    return content
+
+
+def _local_build_base_url(local_path: Path) -> str | None:
+    if local_path not in _local_build_base_urls:
+        base_url = None
+        register_file = local_path / LOCAL_BUILD_DIR / 'register.json'
+        if register_file.is_file():
+            try:
+                with open(register_file, encoding='utf-8') as f:
+                    base_url = json.load(f).get('baseURL')
+            except Exception as e:
+                logger.warning("Could not read baseURL from %s: %s", register_file, e)
+        _local_build_base_urls[local_path] = base_url
+    return _local_build_base_urls[local_path]
+
+
+def rebase_local_build(content: bytes, url_mapping: str, local_path: Path) -> bytes:
+    """Rewrites a local build's own base URL in content served from <local_path>/build-local/ onto
+    the URL it is mapped from.
+
+    A local build (build.sh) uses the viewer base URL (e.g. http://localhost:9090/register/), which
+    every local build shares and nothing serves during a build. Rebasing each upstream's files onto
+    its own mapped URL lets the same url-mapping resolve the links between them.
+    """
+    base_url = _local_build_base_url(local_path)
+    new_base_url = url_mapping if url_mapping.endswith('/') else url_mapping + '/'
+    if not base_url or base_url == new_base_url:
+        return content
+    return content.replace(base_url.encode('utf-8'), new_base_url.encode('utf-8'))
 
 
 def enable(url_mappings: dict[str, str | Path] | None = None):
     global _url_mappings, _mocked
+    _local_build_base_urls.clear()
     if url_mappings is None:
         _url_mappings.clear()
     else:
