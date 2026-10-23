@@ -1,5 +1,6 @@
 build.sh
 build-devel.sh
+build-local.sh
 view.sh
 create-clean-pr.sh
 .github/workflows/pr-check.yml

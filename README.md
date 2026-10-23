@@ -68,6 +68,38 @@ url-mappings:
 
 `http_interceptor.py` monkey-patches `urllib`/`requests` to honor these mappings.
 
+#### Developing against a local build of an imported register
+
+To test a change to a register *before* publishing it, build it into its `build-local/` with its
+**public** base URL, then map that URL to the checkout in the importing register:
+
+```bash
+# in the upstream checkout (pass --base-url https://<canonical>/ when working on a fork)
+./build-local.sh
+```
+
+```yaml
+# downstream bblocks-config-local.yml
+url-mappings:
+  'https://example.github.io/upstream-register/': '/imports/upstream-register'
+```
+
+```
+# downstream .volumes (read by build.sh)
+../upstream-register:/imports/upstream-register
+```
+
+Whenever url-mappings are active, the import loader also probes `<import URL>/build-local/register.json`
+and prefers it over the published register if it is newer, so this one mapping covers the register,
+its annotated schemas and contexts (all stamped `<base URL>build-local/...`) and its `_sources/`
+SHACL shapes. Registers in between (A imports B imports the changed C) must be rebuilt the same
+way and mapped too: their published outputs were built against the old upstream.
+
+`build.sh` (from [bblocks-template](https://github.com/opengeospatial/bblocks-template)) only passes
+`-it` to `docker run` when attached to a terminal, so it also works from agents and scripts (add
+`--skip-permissions true` there, since permission prompts can't be answered); `build-local.sh` and
+`build-devel.sh` (`BBP_IMAGE_TAG=develop`) are thin wrappers around it.
+
 ## Repository layout
 
 | Path | Purpose |
