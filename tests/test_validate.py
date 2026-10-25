@@ -8,6 +8,8 @@ ogc.bblocks.validation.rdf.RdfValidator._load_graph, which raised
 "TypeError: unhashable type: 'dict'" for any RDF-suffixed transform output
 (.ttl/.jsonld/.rdf) -- see the reported traceback in validate_transform_output.
 """
+import pytest
+
 from ogc.bblocks.validate import _mime_type_for_extension, _resource_not_accessible_item
 from ogc.bblocks.validation import ValidationItemSource, ValidationItemSourceType, ValidationReportSection
 
@@ -100,3 +102,51 @@ def test_uplift_does_not_fetch_a_reference_to_the_bblocks_own_context(mocker, tm
     assert len(graph) == 2
     uplifted = json.loads((tmp_path / 'out.jsonld').read_text())
     assert uplifted['@context'] == [own_url, {'ex': 'https://example.com/ns/'}]
+
+
+def test_validate_transform_output_does_not_publish_profile_shacl_shapes(mocker, tmp_path):
+    # opengeospatial/bblocks-postprocess#100: the profile bblock may already have been processed,
+    # with absolute shaclShapes in its published metadata; validating a transform output against it
+    # must not overwrite them with working-directory-relative paths.
+    from ogc.bblocks.validate import validate_transform_output
+
+    rdf_kwargs = []
+
+    class FakeValidator:
+        def __init__(self, *args, **kwargs):
+            rdf_kwargs.append(kwargs)
+
+        def validate(self, *args, **kwargs):
+            pass
+
+    mocker.patch('ogc.bblocks.validate.JsonValidator', FakeValidator)
+    mocker.patch('ogc.bblocks.validate.RdfValidator', FakeValidator)
+    output_file = tmp_path / 'out.json'
+    output_file.write_text('{}')
+
+    validate_transform_output(mocker.MagicMock(), mocker.MagicMock(), 't', output_file, tmp_path / 'report.json')
+
+    assert rdf_kwargs[1] == {'publish_shacl_shapes': False}
+
+
+@pytest.mark.parametrize('publish', [True, False])
+def test_rdf_validator_publishes_shacl_shapes_only_when_asked(mocker, tmp_path, publish):
+    from ogc.bblocks.validation.rdf import RdfValidator
+
+    mocker.patch('ogc.bblocks.validation.rdf.Uplifter')
+    published = {'ogc.example.profile': ['https://example.com/register/_sources/profile/shapes.shacl']}
+    bblock = mocker.MagicMock()
+    bblock.identifier = 'ogc.example.profile'
+    bblock.metadata = {'shaclShapes': published}
+    bblock.jsonld_context = None
+    bblock.files_path = tmp_path
+    (tmp_path / 'shapes.shacl').write_text('')
+    register = mocker.MagicMock()
+    register.get_inherited_shacl_shapes.return_value = {'ogc.example.profile': ['shapes.shacl']}
+
+    RdfValidator(bblock, register, publish_shacl_shapes=publish)
+
+    if publish:
+        assert bblock.metadata['shaclShapes'] != published
+    else:
+        assert bblock.metadata['shaclShapes'] is published

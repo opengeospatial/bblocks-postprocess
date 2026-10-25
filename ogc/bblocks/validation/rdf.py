@@ -135,7 +135,12 @@ rdflib_logger = logging.getLogger('rdflib')
 
 class RdfValidator(Validator):
 
-    def __init__(self, bblock: BuildingBlock, register: BuildingBlockRegister):
+    def __init__(self, bblock: BuildingBlock, register: BuildingBlockRegister,
+                 publish_shacl_shapes: bool = True):
+        """publish_shacl_shapes: write the resolved inherited SHACL shapes (paths relative to the
+        working directory, made absolute by postprocess) back into bblock.metadata for publishing.
+        Disable when validating against a bblock whose metadata may already have been published,
+        e.g. a transform output profile, so its published (absolute) shapes aren't overwritten."""
         super().__init__(bblock, register)
 
         self.jsonld_error = None
@@ -176,7 +181,8 @@ class RdfValidator(Validator):
         self.closure_errors: list[str] = []
         self._shacl_closures_loaded = False
 
-        bblock.metadata['shaclShapes'] = inherited_shacl_shapes
+        if publish_shacl_shapes:
+            bblock.metadata['shaclShapes'] = inherited_shacl_shapes
 
         inherited_post_steps = register.get_inherited_post_uplift_steps(bblock.identifier)
         self.uplifter = Uplifter(self.bblock, inherited_post_steps=inherited_post_steps)
