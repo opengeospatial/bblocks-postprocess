@@ -114,23 +114,29 @@ def test_validate_transform_output_does_not_publish_profile_shacl_shapes(mocker,
 
     class FakeValidator:
         def __init__(self, *args, **kwargs):
-            rdf_kwargs.append(kwargs)
+            pass
 
         def validate(self, *args, **kwargs):
             pass
 
+    class FakeRdfValidator(FakeValidator):
+        def __init__(self, *args, **kwargs):
+            rdf_kwargs.append(kwargs)
+
     mocker.patch('ogc.bblocks.validate.JsonValidator', FakeValidator)
-    mocker.patch('ogc.bblocks.validate.RdfValidator', FakeValidator)
+    mocker.patch('ogc.bblocks.validate.RdfValidator', FakeRdfValidator)
     output_file = tmp_path / 'out.json'
     output_file.write_text('{}')
 
     validate_transform_output(mocker.MagicMock(), mocker.MagicMock(), 't', output_file, tmp_path / 'report.json')
 
-    assert rdf_kwargs[1] == {'publish_shacl_shapes': False}
+    assert rdf_kwargs == [{'publish_shacl_shapes': False}]
 
 
 @pytest.mark.parametrize('publish', [True, False])
 def test_rdf_validator_publishes_shacl_shapes_only_when_asked(mocker, tmp_path, publish):
+    import os
+
     from ogc.bblocks.validation.rdf import RdfValidator
 
     mocker.patch('ogc.bblocks.validation.rdf.Uplifter')
@@ -147,6 +153,8 @@ def test_rdf_validator_publishes_shacl_shapes_only_when_asked(mocker, tmp_path, 
     RdfValidator(bblock, register, publish_shacl_shapes=publish)
 
     if publish:
-        assert bblock.metadata['shaclShapes'] != published
+        assert bblock.metadata['shaclShapes'] == {
+            'ogc.example.profile': {os.path.relpath(tmp_path / 'shapes.shacl')}
+        }
     else:
         assert bblock.metadata['shaclShapes'] is published
