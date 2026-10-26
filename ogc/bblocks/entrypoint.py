@@ -224,6 +224,24 @@ if __name__ == '__main__':
     except Exception as e:
         logger.warning("Error configuring git safe.directory: %s", e)
 
+    bb_local_config_file = Path('bblocks-config-local.yml')
+    local_url_mappings = None
+    if bb_local_config_file.is_file():
+        bb_local_config = load_yaml(filename=bb_local_config_file)
+        if bb_local_config.get('imports-local'):
+            raise ValueError(
+                'Local imports are deprecated, please use local URL mappings instead: '
+                'https://ogcincubator.github.io/bblocks-docs/create/imports#local-url-mappings-for-testing'
+            )
+        local_url_mappings = bb_local_config.get('url-mappings')
+    if local_url_mappings:
+        # Enabled this early (rather than just around postprocess()) so that fetching
+        # imported registers while resolving `imports` -- including @org/register aliases --
+        # already honors the mappings; meta_register caches those responses for the real load.
+        logger.info("Enabling local URL mappings:\n%s",
+                    ' - ' + '\n - '.join(f"{k}: {v}" for k, v in local_url_mappings.items()))
+        http_interceptor.enable(local_url_mappings)
+
     # Read local bblocks-config.yaml, if present
     id_prefix = 'ogc.'
     annotated_path = Path(args.annotated_path)
@@ -255,9 +273,13 @@ if __name__ == '__main__':
         # Cached under .bblocks-sandbox (not annotated_path/_cache) because it must
         # survive --clean true, unlike the rest of that build output.
         meta_registry_cache_dir = Path(SANDBOX_DIR_NAME) / 'meta-register'
-        imported_registers = resolve_imports(bb_config.get('imports'), meta_registry_url,
-                                             DEFAULT_IMPORT_MARKER, MAIN_BBR,
-                                             cache_dir=meta_registry_cache_dir)
+        try:
+            imported_registers = resolve_imports(bb_config.get('imports'), meta_registry_url,
+                                                 DEFAULT_IMPORT_MARKER, MAIN_BBR,
+                                                 cache_dir=meta_registry_cache_dir)
+        except BaseException:
+            http_interceptor.disable()
+            raise
 
         for p in ('name', 'abstract', 'description'):
             v = bb_config.get(p)
@@ -280,17 +302,6 @@ if __name__ == '__main__':
             viewer_config['tabPlugins'] = raw_viewer['tab-plugins']
         if raw_viewer.get('dependency-graph-height'):
             viewer_config['dependencyGraphHeight'] = raw_viewer['dependency-graph-height']
-
-    bb_local_config_file = Path('bblocks-config-local.yml')
-    local_url_mappings = None
-    if bb_local_config_file.is_file():
-        bb_local_config = load_yaml(filename=bb_local_config_file)
-        if bb_local_config.get('imports-local'):
-            raise ValueError(
-                'Local imports are deprecated, please use local URL mappings instead: '
-                'https://ogcincubator.github.io/bblocks-docs/create/imports#local-url-mappings-for-testing'
-            )
-        local_url_mappings = bb_local_config.get('url-mappings')
 
     register_additional_metadata['modified'] = datetime.datetime.now().isoformat()
 
@@ -377,10 +388,6 @@ if __name__ == '__main__':
         # 1. Postprocess BBs
         logger.info("Running postprocess...")
         try:
-            if local_url_mappings:
-                logger.info("Enabling local URL mappings:\n%s",
-                            ' - ' + '\n - '.join(f"{k}: {v}" for k, v in local_url_mappings.items()))
-                http_interceptor.enable(local_url_mappings)
             postprocess(registered_items_path=items_dir,
                         output_file=args.register_file,
                         base_url=base_url,
