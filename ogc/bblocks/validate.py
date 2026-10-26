@@ -395,7 +395,9 @@ def validate_transform_output(
     """
     validators = [
         JsonValidator(profile_bblock, bblocks_register),
-        RdfValidator(profile_bblock, bblocks_register),
+        # The profile may already have been processed, with its published shaclShapes made absolute;
+        # don't overwrite them with working-directory-relative paths (opengeospatial/bblocks-postprocess#100)
+        RdfValidator(profile_bblock, bblocks_register, publish_shacl_shapes=False),
         *plugin_validators,
     ]
 
