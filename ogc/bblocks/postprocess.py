@@ -796,6 +796,11 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
         if viewer_config:
             output_register_json['viewer'] = viewer_config
 
+        if local_url_mappings:
+            # Only present when bblocks-config-local.yml is (i.e. never in CI): lets the
+            # local viewer serve and use the same mappings.
+            output_register_json['localUrlMappings'] = {str(k): str(v) for k, v in local_url_mappings.items()}
+
         if transform_plugins:
             output_register_json['transformPlugins'] = transform_plugins
 
