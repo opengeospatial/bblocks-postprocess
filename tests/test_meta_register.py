@@ -328,3 +328,25 @@ def test_network_failure_without_any_cache_still_raises(mocker, tmp_path):
     mocker.patch('requests.get', side_effect=requests.ConnectionError('boom'))
     with pytest.raises(MetaRegisterError, match='Could not fetch meta-registry index'):
         fetch_index(INDEX_URL, cache_dir=tmp_path, ttl_days=3)
+
+
+def test_alias_resolution_and_load_honor_local_url_mappings(mocker, tmp_path):
+    # Regression: with the interceptor enabled *before* alias resolution, the
+    # reachability check (and the response it caches for the real load) must
+    # come from the local mapping, not the real URL.
+    from ogc.bblocks import http_interceptor
+
+    (tmp_path / 'index.json').write_text(json.dumps({'@acme/foo': 'https://example.com/foo/register.json'}))
+    (tmp_path / 'foo').mkdir()
+    (tmp_path / 'foo' / 'register.json').write_text(json.dumps({'bblocks': [], 'local': True}))
+    send = mocker.patch('requests.adapters.HTTPAdapter.send', side_effect=AssertionError('real network access'))
+
+    http_interceptor.enable({'https://example.com': str(tmp_path)})
+    try:
+        urls = resolve_imports(['@acme/foo'], INDEX_URL,
+                               DEFAULT_IMPORT_MARKER, MAIN_BBR)
+        assert urls == ['https://example.com/foo/register.json']
+        assert get_response(urls[0]).json()['local'] is True
+    finally:
+        http_interceptor.disable()
+    send.assert_not_called()

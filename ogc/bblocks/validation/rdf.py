@@ -135,7 +135,12 @@ rdflib_logger = logging.getLogger('rdflib')
 
 class RdfValidator(Validator):
 
-    def __init__(self, bblock: BuildingBlock, register: BuildingBlockRegister):
+    def __init__(self, bblock: BuildingBlock, register: BuildingBlockRegister,
+                 publish_shacl_shapes: bool = True):
+        """publish_shacl_shapes: write the resolved inherited SHACL shapes (paths relative to the
+        working directory, made absolute by postprocess) back into bblock.metadata for publishing.
+        Disable when validating against a bblock whose metadata may already have been published,
+        e.g. a transform output profile, so its published (absolute) shapes aren't overwritten."""
         super().__init__(bblock, register)
 
         self.jsonld_error = None
@@ -176,7 +181,8 @@ class RdfValidator(Validator):
         self.closure_errors: list[str] = []
         self._shacl_closures_loaded = False
 
-        bblock.metadata['shaclShapes'] = inherited_shacl_shapes
+        if publish_shacl_shapes:
+            bblock.metadata['shaclShapes'] = inherited_shacl_shapes
 
         inherited_post_steps = register.get_inherited_post_uplift_steps(bblock.identifier)
         self.uplifter = Uplifter(self.bblock, inherited_post_steps=inherited_post_steps)
@@ -251,10 +257,14 @@ class RdfValidator(Validator):
             if isinstance(json_doc, dict):
                 if '@context' in json_doc:
                     existing_context = json_doc['@context']
-                    if isinstance(existing_context, list):
-                        new_context.extend(existing_context)
-                    else:
-                        new_context.append(existing_context)
+                    if not isinstance(existing_context, list):
+                        existing_context = [existing_context]
+                    # A reference to this bblock's own published context is already inlined
+                    # above; fetching it would load the previously published (or, for a local
+                    # build, unreachable) version over the one being built.
+                    new_context.extend(c for c in existing_context
+                                       if not (self.jsonld_context and self.jsonld_url
+                                               and c == self.jsonld_url))
                 jsonld_uplifted = json_doc.copy()
                 jsonld_uplifted.pop('@context', None)
                 jsonld_uplifted = {
@@ -357,7 +367,9 @@ class RdfValidator(Validator):
                             section=ValidationReportSection.TURTLE,
                             message=f"Prefixes are defined for {', '.join(prefixes.keys())}"
                         ))
-                    graph = Graph().parse(data=contents, format=rdf_format)
+                    # Relative IRIs in a document fetched from a URL resolve against that URL
+                    graph = Graph().parse(data=contents, format=rdf_format,
+                                          publicID=resource_url if resource_url and is_url(resource_url) else None)
                     report.add_entry(ValidationReportEntry(
                         section=ValidationReportSection.FILES,
                         message=f'Using {resource_url or filename.name} from {file_from}',

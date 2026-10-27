@@ -377,8 +377,13 @@ def validate_transform_output(
         output_file: Path,
         profile_output_base: Path,
         plugin_validators: list[PluginValidator] = (),
+        additional_shacl_closures: list[str] | None = None,
 ) -> ValidationReportItem:
     """Validate a transform output file against a profile building block.
+
+    additional_shacl_closures are the source snippet's own shacl-closure entries (URLs or
+    absolute paths: relative paths would otherwise be resolved against the profile
+    building block), added to the profile's inherited closures for SHACL validation.
 
     profile_output_base is the path (with extension) inside the per-profile
     subdirectory, used as the base for side-output naming: rdf.py calls
@@ -390,7 +395,9 @@ def validate_transform_output(
     """
     validators = [
         JsonValidator(profile_bblock, bblocks_register),
-        RdfValidator(profile_bblock, bblocks_register),
+        # The profile may already have been processed, with its published shaclShapes made absolute;
+        # don't overwrite them with working-directory-relative paths (opengeospatial/bblocks-postprocess#100)
+        RdfValidator(profile_bblock, bblocks_register, publish_shacl_shapes=False),
         *plugin_validators,
     ]
 
@@ -409,6 +416,7 @@ def validate_transform_output(
             validator.validate(
                 output_file, profile_output_base, report,
                 file_format=mime_type,
+                additional_shacl_closures=additional_shacl_closures,
                 bblock=profile_bblock,
                 bblocks_register=bblocks_register,
                 validation_resources=profile_bblock.validation_resources,

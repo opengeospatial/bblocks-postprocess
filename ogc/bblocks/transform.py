@@ -25,6 +25,7 @@ from ogc.bblocks import mimetypes
 from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister, ImportedBBlockProxy, TransformContext, TransformMetadata, TransformResult, BuildingBlockError
 from ogc.bblocks.transformers import transformers
 from ogc.bblocks.util import sanitize_filename
+from ogc.na.util import is_url
 from ogc.bblocks.validate import validate_transform_output, report_to_dict
 
 _SUBPROCESS_TRANSFORM_TYPES = ('python', 'node')
@@ -637,6 +638,10 @@ def apply_transforms(bblock: BuildingBlock,
                     profiles = (transform.get('outputs') or {}).get('profiles', [])
                     if profiles and bblocks_register:
                         profiles_validation = {}
+                        # the snippet's own closures (e.g. facts about related resources) also
+                        # apply to its transformed output; resolve them against this bblock
+                        snippet_closures = [c if is_url(c) else str(bblock.files_path.joinpath(c).resolve())
+                                            for c in snippet.get('shacl-closure') or []]
                         for profile_uri in profiles:
                             profile_id = (profile_uri[len('bblocks://'):]
                                           if profile_uri.startswith('bblocks://') else profile_uri)
@@ -666,6 +671,7 @@ def apply_transforms(bblock: BuildingBlock,
                                         output_file=output_fn,
                                         profile_output_base=profile_output_base,
                                         plugin_validators=plugin_validators,
+                                        additional_shacl_closures=snippet_closures or None,
                                     )
                                 except Exception as e:
                                     logger.error("Error validating transform '%s' output against "
