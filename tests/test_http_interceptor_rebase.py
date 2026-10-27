@@ -88,3 +88,33 @@ def test_mapping_to_export_dir_untouched(tmp_path, mappings):
     register = json.loads(http_interceptor.load_content(f'{UPSTREAM}build/register.json'))
 
     assert register['baseURL'] == LOCAL
+
+
+def test_base_url_without_trailing_slash_normalized(tmp_path, mappings):
+    checkout = _checkout(tmp_path / 'upstream', LOCAL.rstrip('/'))
+    (checkout / 'build-local' / 'annotated' / 'schema.json').write_text(
+        json.dumps({'$ref': f'{LOCAL}build-local/annotated/other.json'}))
+    mappings({UPSTREAM: checkout})
+
+    schema = json.loads(http_interceptor.load_content(f'{UPSTREAM}build-local/annotated/schema.json'))
+
+    assert schema['$ref'] == f'{UPSTREAM}build-local/annotated/other.json'
+
+
+def test_non_text_files_untouched(tmp_path, mappings):
+    checkout = _checkout(tmp_path / 'upstream', LOCAL)
+    blob = b'\x89PNG\x00' + LOCAL.encode() + b'\x00'
+    (checkout / 'build-local' / 'logo.png').write_bytes(blob)
+    mappings({UPSTREAM: checkout})
+
+    assert http_interceptor.load_content(f'{UPSTREAM}build-local/logo.png') == blob
+
+
+def test_rebase_logged_once_per_upstream(tmp_path, mappings, caplog):
+    mappings({UPSTREAM: _checkout(tmp_path / 'upstream', LOCAL)})
+
+    with caplog.at_level('INFO', logger=http_interceptor.logger.name):
+        http_interceptor.load_content(f'{UPSTREAM}build-local/register.json')
+        http_interceptor.load_content(f'{UPSTREAM}build-local/annotated/schema.json')
+
+    assert len([r for r in caplog.records if 'Rebasing local build' in r.message]) == 1
