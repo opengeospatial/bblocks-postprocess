@@ -55,7 +55,7 @@ url-mappings:
   https://example.com/path: /local/path
 ```
 
-The HTTP interceptor (`http_interceptor.py`) monkey-patches urllib/requests to redirect these. When a mapping points at a checkout, files served from its `build-local/` have that build's `baseURL` (from its `build-local/register.json`, usually `http://localhost:9090/register/`) rewritten to the mapped URL, so a plain local `build.sh` build of an upstream can be imported.
+The HTTP interceptor (`http_interceptor.py`) monkey-patches urllib/requests to redirect these. When a mapping points at a checkout, files served from its `build-local/` have that build's `baseURL` (from its `build-local/register.json`, usually `http://localhost:9090/register/`) rewritten to the mapped URL (text files only; the trailing slash is normalized and the rewrite is logged once per upstream), so a plain local `build.sh` build of an upstream can be imported.
 
 ## Architecture
 
