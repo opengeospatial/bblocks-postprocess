@@ -222,12 +222,26 @@ jobs:
             if (process.env.DEPLOY_MODE === 'branch') {
               // Guard against publishing to a branch that GitHub Pages is not serving
               const branch = process.env.DEPLOY_BRANCH;
-              if (!pages) {
-                core.warning(`deploy.mode is "branch", but the GitHub Pages configuration could not be read: make sure Pages is enabled, serving branch "${branch}" from "/ (root)"`);
+              const { owner, repo } = context.repo;
+              let branchExists = true;
+              try {
+                await github.rest.repos.getBranch({ owner, repo, branch });
+              } catch (e) {
+                if (e.status !== 404) {
+                  throw e;
+                }
+                branchExists = false;
+              }
+              const pagesHint = `Set the Pages source to "Deploy from a branch" (${branch}, "/ (root)")`;
+              if (!branchExists) {
+                // Pages can only be pointed at an existing branch, and this run creates it
+                core.warning(`Branch "${branch}" does not exist yet: it will be created by this run. ${pagesHint} afterwards to serve it.`);
+              } else if (!pages) {
+                core.warning(`deploy.mode is "branch", but the GitHub Pages configuration could not be read. ${pagesHint}.`);
               } else if (pages.build_type !== 'legacy') {
-                core.setFailed(`deploy.mode is "branch", but GitHub Pages is set to deploy from "${pages.build_type === 'workflow' ? 'GitHub Actions' : pages.build_type}". Change the Pages source to "Deploy from a branch" (${branch}, "/ (root)"), or set deploy.mode to "artifact".`);
+                core.setFailed(`deploy.mode is "branch", but GitHub Pages is set to deploy from "${pages.build_type === 'workflow' ? 'GitHub Actions' : pages.build_type}". ${pagesHint}, or set deploy.mode to "artifact".`);
               } else if (pages.source?.branch !== branch || (pages.source?.path ?? '/') !== '/') {
-                core.setFailed(`deploy.mode is "branch" with deploy.branch "${branch}", but GitHub Pages is serving "${pages.source?.branch}" from "${pages.source?.path}". Change the Pages source to ${branch} / "/ (root)", or update deploy.branch.`);
+                core.setFailed(`deploy.mode is "branch" with deploy.branch "${branch}", but GitHub Pages is serving "${pages.source?.branch}" from "${pages.source?.path}". ${pagesHint}, or update deploy.branch.`);
               }
             }
             // Remove trailing slash
