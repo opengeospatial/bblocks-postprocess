@@ -134,6 +134,32 @@ properties:
         minimum: 100
         default: 400
 
+  deploy:
+    type: object
+    description: >
+      How the validate-and-process.yml workflow publishes the built site (viewer, register.json
+      and the rest of the build output). Only read by that workflow; the postprocessor itself
+      ignores it.
+    properties:
+      mode:
+        type: string
+        enum: [artifact, branch]
+        default: artifact
+        description: >
+          "artifact" (default): the build output is committed to the source branch and the
+          whole site is deployed as a CI artifact (GitHub Pages source set to "GitHub Actions").
+          "branch": the build output is not committed to the source branch; instead, the site
+          is committed to the branch named in "branch" (GitHub Pages source set to
+          "Deploy from a branch", with that branch and the "/ (root)" folder).
+      branch:
+        type: string
+        minLength: 1
+        default: gh-pages
+        description: >
+          Branch the site is committed to when "mode" is "branch". Created as an orphan branch
+          if it does not exist yet. Ignored in "artifact" mode.
+    additionalProperties: false
+
   plugins:
     type: object
     description: >
