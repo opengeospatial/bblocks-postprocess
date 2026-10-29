@@ -131,11 +131,8 @@ jobs:
   validate-and-process:
     runs-on: ubuntu-latest
 
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-
     outputs:
+      deploy_mode: ${{ steps.deploy-config.outputs.mode }}
       sparql_config: ${{ steps.deploy-viewer.outputs.sparql_config }}
       register_url: ${{ steps.get-pages-url.outputs.result }}/${{ inputs.register_file }}
 
@@ -499,10 +496,6 @@ jobs:
         uses: actions/upload-pages-artifact@v5
         with:
           path: .
-      - name: Deploy to GH Pages
-        if: ${{ github.event.repository.has_pages && !inputs.skip-pages && steps.deploy-config.outputs.mode == 'artifact' }}
-        id: deployment
-        uses: actions/deploy-pages@v5
       - name: Publish to branch
         if: ${{ !inputs.skip-pages && steps.deploy-config.outputs.mode == 'branch' }}
         env:
@@ -567,9 +560,23 @@ jobs:
           done
           echo "::error::Timed out waiting for GitHub Pages to serve the updated register"
           exit 1
-  upload-to-triplestore:
+  # Separate job so that the github-pages environment (and its deployment branch protection
+  # rules) only applies to deploy.mode "artifact"; a skipped job never evaluates it
+  deploy-pages:
     needs: validate-and-process
-    if: ${{ github.event.repository.has_pages && !inputs.skip-pages && needs.validate-and-process.outputs.register_url }}
+    if: ${{ github.event.repository.has_pages && !inputs.skip-pages && needs.validate-and-process.outputs.deploy_mode == 'artifact' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GH Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
+  upload-to-triplestore:
+    needs: [validate-and-process, deploy-pages]
+    # deploy-pages is skipped in branch mode, so always() is needed for this job to run at all
+    if: ${{ always() && needs.validate-and-process.result == 'success' && needs.deploy-pages.result != 'failure' && needs.deploy-pages.result != 'cancelled' && github.event.repository.has_pages && !inputs.skip-pages && needs.validate-and-process.outputs.register_url }}
     uses: ./.github/workflows/upload-to-triplestore.yml
     with:
       sparql_config: ${{ needs.validate-and-process.outputs.sparql_config }}
