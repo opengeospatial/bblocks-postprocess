@@ -198,6 +198,7 @@ jobs:
         env:
           DEPLOY_MODE: ${{ steps.deploy-config.outputs.mode }}
           DEPLOY_BRANCH: ${{ steps.deploy-config.outputs.branch }}
+          SOURCE_REF: ${{ inputs.ref }}
         with:
           result-encoding: string
           script: |
@@ -216,7 +217,15 @@ jobs:
                 pages = response.data;
               } catch {
                 core.warning('No base_url provided, and the GitHub Pages URL could not be retrieved. Did you forget to enable GitHub Pages?');
-                base_url = `https://raw.githubusercontent.com/${owner}/${repo}/${context.ref_name}`;
+                if (process.env.DEPLOY_MODE === 'branch') {
+                  // The site only exists on the deploy branch, so the best guess is the default
+                  // Pages URL (the Pages source is expected to be configured after the first run)
+                  base_url = repo.toLowerCase() === `${owner}.github.io`.toLowerCase()
+                    ? `https://${owner}.github.io`
+                    : `https://${owner}.github.io/${repo}`;
+                } else {
+                  base_url = `https://raw.githubusercontent.com/${owner}/${repo}/${process.env.SOURCE_REF}`;
+                }
               }
             }
             if (process.env.DEPLOY_MODE === 'branch') {
