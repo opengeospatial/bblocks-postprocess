@@ -40,8 +40,19 @@ def _split_logical_lines(text: str) -> list[tuple[str, int, int]]:
     return logical
 
 
-def _has_interactive_flags(command: str) -> bool:
+_SHELL_VAR_RE = re.compile(r'^"?\$\{?(\w+)\}?"?$')
+
+
+def _has_interactive_flags(command: str, script: str = '') -> bool:
+    """Whether `command` passes -it, either literally or through a shell variable
+    that `script` sets to it - e.g. `TTY=$([ -t 0 ] && [ -t 1 ] && echo -it)` and
+    `docker run ${TTY} ...`, which only asks for a tty when one is attached, so
+    the same build.sh also works from agents and other non-interactive callers."""
     tokens = command.replace('\\\n', ' ').split()
+    for token in tokens:
+        var = _SHELL_VAR_RE.match(token)
+        if var and re.search(rf'^\s*(?:export\s+)?{var.group(1)}=.*(?:-it|-ti)\b', script, re.M):
+            return True
     if any(t in ('-it', '-ti') for t in tokens):
         return True
     has_i = any(t in ('-i', '--interactive') for t in tokens)
@@ -50,7 +61,8 @@ def _has_interactive_flags(command: str) -> bool:
 
 
 def ensure_build_script_interactive(repo_path: Path) -> bool:
-    """Make sure build.sh's `docker run` for the postprocess image passes `-it`.
+    """Make sure build.sh's `docker run` for the postprocess image passes `-it`
+    (literally, or via a variable set to it - see _has_interactive_flags).
 
     Without `-it`, stdin/a tty aren't available inside the container, so none
     of the interactive permission prompts (see permissions.py) can ever be
@@ -67,7 +79,7 @@ def ensure_build_script_interactive(repo_path: Path) -> bool:
     for logical_command, start, end in _split_logical_lines(text):
         if not _DOCKER_RUN_RE.search(logical_command) or _POSTPROCESS_IMAGE_MARKER not in logical_command:
             continue
-        if _has_interactive_flags(logical_command):
+        if _has_interactive_flags(logical_command, text):
             return False
 
         lines = text.splitlines(keepends=True)
