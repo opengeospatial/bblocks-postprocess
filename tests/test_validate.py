@@ -158,3 +158,22 @@ def test_rdf_validator_publishes_shacl_shapes_only_when_asked(mocker, tmp_path, 
         }
     else:
         assert bblock.metadata['shaclShapes'] is published
+
+
+def test_jsonld_context_error_item_is_a_failed_non_fatal_report_item(tmp_path):
+    from ogc.bblocks.validate import jsonld_context_error_item
+
+    try:
+        try:
+            raise ValueError("invalid IRI mapping")
+        except ValueError as cause:
+            raise Exception("Error writing context") from cause
+    except Exception as e:
+        item = jsonld_context_error_item(tmp_path / 'context.jsonld', e)
+
+    assert item.failed
+    assert item.source.type == ValidationItemSourceType.JSONLD_CONTEXT
+    entries = item.sections[ValidationReportSection.JSON_LD]
+    assert len(entries) == 1
+    assert entries[0].is_error
+    assert 'invalid IRI mapping' in entries[0].message

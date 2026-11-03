@@ -30,7 +30,7 @@ from ogc.bblocks.util import write_jsonld_context, CustomJSONEncoder, \
     PathOrUrl, get_git_repo_url, load_yaml, add_bblocks_uri, normalize_license
 from ogc.bblocks.schema import annotate_schema, resolve_all_schema_references, write_annotated_schema
 from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister, ImportedBuildingBlocks
-from ogc.bblocks.validate import validate_test_resources, write_report, load_validation_plugins
+from ogc.bblocks.validate import validate_test_resources, jsonld_context_error_item, write_report, load_validation_plugins
 from ogc.bblocks.transform import _rel, apply_transforms, load_transform_plugins, transformers, cleanup_sandbox
 from ogc.bblocks.permissions import check_permissions, check_build_plugin_permissions
 from ogc.bblocks.build_hooks.plugin import build_hook_context, load_build_plugins, dispatch_before_run, dispatch_after_register, \
@@ -645,12 +645,17 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                         if written_resolved:
                             logger.info("- %s", os.path.relpath(written_resolved))
                     except Exception as e:
+                        # A bad JSON-LD context is not a showstopper (the rest of the bblock is still
+                        # processed, and anything depending on the context will report its own errors):
+                        # log it and surface it in the bblock's validation report, regardless of fail_on_error.
                         written_context_msg = f" ({written_context})" if written_context else ''
-                        if fail_on_error:
-                            raise Exception(f'Error writing context for {building_block.identifier}'
-                                            f'{written_context_msg}') from e
                         logger.error("Error writing context for %s%s",
                                      building_block.identifier, written_context_msg, exc_info=e)
+                        building_block.build_validation_items.append(
+                            jsonld_context_error_item(
+                                Path(written_context) if written_context
+                                else building_block.annotated_schema.parent / 'context.jsonld',
+                                e))
                 if build_plugins:
                     dispatch_after_bblock(build_plugins, sandbox_dir, Stage.JSONLD,
                                           _bblock_hook_payload(building_block, cwd, urls_resolved=False),

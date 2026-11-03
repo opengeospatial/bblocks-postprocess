@@ -13,7 +13,7 @@ from collections import deque
 from functools import lru_cache
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, Generator, cast, AnyStr
+from typing import Any, Generator, cast, AnyStr, TYPE_CHECKING
 from urllib.parse import urlparse, urljoin
 
 import jsonschema
@@ -30,6 +30,9 @@ from ogc.bblocks import mimetypes
 from ogc.bblocks.util import get_schema, PathOrUrl, load_file, find_references_yaml, \
     find_references_xml, strip_bblocks_uri, add_bblocks_uri, normalize_license
 from ogc.bblocks.schema import RegisterSchemaResolver
+
+if TYPE_CHECKING:
+    from ogc.bblocks.validation import ValidationReportItem
 
 BBLOCK_METADATA_FILE = 'bblock.json'
 
@@ -169,6 +172,10 @@ class BuildingBlock:
         # Standard path fields are translated to cwd-relative; custom fields remain
         # as declared in bblock.json (bblock-source-relative).
         self.pre_baseurl_metadata: dict | None = None
+        # Validation report items for problems found by earlier build steps (e.g. an invalid
+        # JSON-LD context). Non-fatal: included in the bblock's validation report by
+        # validate_test_resources().
+        self.build_validation_items: list[ValidationReportItem] = []
 
         self.subdirs = rel_path
         if '.' in self.identifier:

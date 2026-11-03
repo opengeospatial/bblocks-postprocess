@@ -35,6 +35,7 @@ class ValidationItemSourceType(Enum):
     TEST_RESOURCE = 'Test resource'
     EXAMPLE = 'Example'
     TRANSFORM_OUTPUT = 'Transform output'
+    JSONLD_CONTEXT = 'JSON-LD context'
 
 
 class ValidationReportSection(Enum):

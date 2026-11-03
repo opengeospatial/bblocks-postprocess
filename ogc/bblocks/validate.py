@@ -268,6 +268,25 @@ def _resource_not_accessible_item(source: ValidationItemSource, ref: Any, load_e
     return report
 
 
+def jsonld_context_error_item(context_path: Path, error: BaseException) -> ValidationReportItem:
+    """Build a ValidationReportItem for a JSON-LD context that could not be generated or is invalid."""
+    report = ValidationReportItem(ValidationItemSource(
+        type=ValidationItemSourceType.JSONLD_CONTEXT,
+        filename=context_path,
+        language='jsonld',
+    ))
+    message = str(error).strip() or error.__class__.__qualname__
+    if error.__cause__ is not None and str(error.__cause__).strip():
+        message = f"{message}: {str(error.__cause__).strip()}"
+    report.add_entry(ValidationReportEntry(
+        section=ValidationReportSection.JSON_LD,
+        message=f"Error generating or validating JSON-LD context: {message}",
+        is_error=True,
+        is_global=False,
+    ))
+    return report
+
+
 def _mime_type_for_extension(suffix: str) -> str | None:
     """Resolve a file suffix (e.g. '.ttl') to its mime-type string, or None if
     unknown. mimetypes.from_extension() returns the full known-mimetype dict
@@ -451,7 +470,11 @@ def validate_test_resources(bblock: BuildingBlock,
     shutil.rmtree(output_dir, ignore_errors=True)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    all_results: list[ValidationReportItem] = []
+    # Items recorded by earlier build steps (e.g. invalid JSON-LD context)
+    all_results: list[ValidationReportItem] = list(bblock.build_validation_items)
+    for build_item in all_results:
+        final_result = final_result and not build_item.failed
+        test_count += 1
 
     output_base_filenames = set()
 
