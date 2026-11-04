@@ -52,6 +52,10 @@ def _apply_bblocks_uri_refs(metadata: dict) -> dict:
         v = result['isProfileOf']
         v = v if isinstance(v, list) else [v]
         result['isProfileOf'] = [add_bblocks_uri(i) for i in v]
+    if result.get('isDescribedBy'):
+        v = result['isDescribedBy']
+        v = v if isinstance(v, list) else [v]
+        result['isDescribedBy'] = [add_bblocks_uri(i) for i in v]
     ep = result.get('extensionPoints')
     if ep:
         result['extensionPoints'] = dict(ep)

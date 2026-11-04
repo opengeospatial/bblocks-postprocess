@@ -70,6 +70,8 @@ entrypoint.py         Parses CLI args, loads bblocks-config.yaml, calls postproc
 
 - **`models.py`** — `BuildingBlock` (single block), `BuildingBlockRegister` (collection), `ImportedBuildingBlocks` (external registers). Building blocks lazy-load their properties; remote resources are cached under `annotated_path/_cache/`.
 
+- **Dependency-like relationships** (`DEPENDENCY_FIELDS` in `models.py`: `dependsOn`, `isProfileOf`, `isDescribedBy`) — `isProfileOf` and `isDescribedBy` are sub-properties of `dependsOn`: every target they name is also copied into the block's published `dependsOn` (which is therefore always the complete set of direct dependencies), while the typed field is kept alongside it so consumers (e.g. bblocks-viewer) can show the more specific relation and collapse the duplicate pair. All of them are walked for inheritance (SHACL shapes, closures, post-uplift steps) and are edges in the dependency graph (processing order, missing-target errors, circular-dependency warnings). If a new relationship that implies a dependency is added in the future, it must be added to `DEPENDENCY_FIELDS` (and normalized/prefixed like the others in `models.py`, `postprocess.py` and `register-context.yaml`) so that it gets the same treatment, including the copy into `dependsOn`.
+
 - **`schema.py` + `extension.py`** — JSON Schema annotation (via ogc-na-tools) and reference resolution. `extension.py` merges extension points from child building blocks into parent schemas.
 
 - **`validate.py`** — Test validation and HTML/JSON/text report generation. Validators (JSON Schema, RDF/SHACL, semantic uplift) live in `validation/`.

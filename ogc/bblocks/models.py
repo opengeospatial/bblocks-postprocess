@@ -109,6 +109,33 @@ def _parse_rdf_best_effort(contents: str, content_type: str | None, source: str)
                      f"(tried: {', '.join(formats_to_try)}){hint}") from last_error
 
 
+# Metadata fields whose values are identifiers of other bblocks that this bblock (transitively)
+# depends on. isProfileOf and isDescribedBy behave as sub-properties of dependsOn: they are walked
+# for inheritance (SHACL shapes, closures, post-uplift steps) and for dependency cycle detection, and
+# their targets are also copied into the published dependsOn. Any future relationship that implies a
+# dependency must be added here as well.
+DEPENDENCY_FIELDS = ('dependsOn', 'isProfileOf', 'isDescribedBy')
+
+
+def _as_list(value) -> list:
+    if not value:
+        return []
+    return list(value) if isinstance(value, (list, tuple)) else [value]
+
+
+def get_direct_dependencies(metadata: dict) -> list[str]:
+    """Identifiers of all bblocks referenced from `metadata` through any of DEPENDENCY_FIELDS
+    (including the legacy `profileOf` spelling), in order and without duplicates."""
+    result: dict[str, None] = {}
+    for field in DEPENDENCY_FIELDS:
+        values = metadata.get(field)
+        if field == 'isProfileOf' and values is None:
+            values = metadata.get('profileOf')
+        for d in _as_list(values):
+            result.setdefault(d)
+    return list(result)
+
+
 def _canonical_cycles(graph: nx.DiGraph) -> list[list[str]]:
     """
     Lists the simple cycles of a graph in a reproducible form: `nx.simple_cycles` iterates over sets
@@ -257,6 +284,9 @@ class BuildingBlock:
             v = self.metadata['isProfileOf']
             v = v if isinstance(v, list) else [v]
             self.metadata['isProfileOf'] = [strip_bblocks_uri(i) for i in v]
+
+        if 'isDescribedBy' in self.metadata:
+            self.metadata['isDescribedBy'] = [strip_bblocks_uri(i) for i in _as_list(self.metadata['isDescribedBy'])]
 
         if 'dependsOn' in self.metadata:
             self.metadata['dependsOn'] = [strip_bblocks_uri(d) for d in self.metadata['dependsOn']]
@@ -774,6 +804,8 @@ class ImportedBuildingBlocks:
                 v = bblock['isProfileOf']
                 bblock['isProfileOf'] = ([strip_bblocks_uri(i) for i in v]
                                          if isinstance(v, list) else strip_bblocks_uri(v))
+            if 'isDescribedBy' in bblock:
+                bblock['isDescribedBy'] = [strip_bblocks_uri(i) for i in _as_list(bblock['isDescribedBy'])]
             ep = bblock.get('extensionPoints')
             if ep:
                 if 'baseBuildingBlock' in ep:
@@ -848,7 +880,7 @@ class BuildingBlockRegister:
                 continue
             dep_graph.add_node(identifier)
             dep_graph.add_edges_from([(d, identifier)
-                                      for d in imported_bblock.get('dependsOn', ())
+                                      for d in get_direct_dependencies(imported_bblock)
                                       if d != identifier])
             for schema_url in imported_bblock.get('schema', {}).values():
                 self.imported_bblock_files[schema_url] = identifier
@@ -878,12 +910,16 @@ class BuildingBlockRegister:
                     ep_extensions = bblock.extensionPoints.get('extensions') or {}
                     found_deps.update(ep_extensions.keys())
                     found_deps.update(ep_extensions.values())
+                # isProfileOf and isDescribedBy are sub-properties of dependsOn, so dependsOn
+                # always holds the complete set of direct dependencies (consumers disambiguate
+                # by preferring the more specific relation)
+                found_deps.update(get_direct_dependencies(bblock.metadata))
                 found_deps.discard(bblock.identifier)
                 if found_deps:
                     bblock.metadata['dependsOn'] = sorted(found_deps)
                 dep_graph.add_node(bblock.identifier)
                 dep_graph.add_edges_from([(d, bblock.identifier)
-                                          for d in bblock.metadata.get('dependsOn', ())
+                                          for d in get_direct_dependencies(bblock.metadata)
                                           if d != bblock.identifier])
             except Exception as e:
                 raise Exception(f'Error resolving dependencies for {bblock.identifier}') from e
@@ -981,15 +1017,9 @@ class BuildingBlockRegister:
 
         dependencies = [bblock or metadata]
         seen = (identifier,) if not seen else seen + (identifier,)
-        for d in metadata.get('dependsOn', ()):
+        for d in get_direct_dependencies(metadata):
             if d not in seen:
                 dependencies.extend(self.find_dependencies(d, seen=seen))
-
-        isProfileOf = metadata.get('isProfileOf', metadata.get('profileOf'))
-        if isProfileOf:
-            for d in isProfileOf if isinstance(isProfileOf, list) else [isProfileOf]:
-                if d not in seen:
-                    dependencies.extend(self.find_dependencies(d, seen=seen))
 
         return dependencies
 
@@ -1034,7 +1064,7 @@ class BuildingBlockRegister:
 
     def get_inherited_post_uplift_steps(self, identifier: str) -> list[dict]:
         """Postorder-resolves the "post"-stage semantic uplift steps this bblock inherits from its
-        transitive dependencies (dependsOn + isProfileOf, same edges as find_dependencies), subject
+        transitive dependencies (dependsOn + isProfileOf + isDescribedBy, same edges as find_dependencies), subject
         to this bblock's own "inheritedPostSteps" setting and each dependency's own "inheritable"
         flag on the individual step. Unlike find_dependencies's preorder list (fine for
         get_inherited_shacl_shapes, where results are deduped by identifier in a dict anyway), the
@@ -1073,12 +1103,8 @@ class BuildingBlockRegister:
                 return
 
             seen = seen + (dep_id,)
-            for d in dep_metadata.get('dependsOn', ()):
+            for d in get_direct_dependencies(dep_metadata):
                 visit(d, seen)
-            dep_is_profile_of = dep_metadata.get('isProfileOf', dep_metadata.get('profileOf'))
-            if dep_is_profile_of:
-                for d in dep_is_profile_of if isinstance(dep_is_profile_of, list) else [dep_is_profile_of]:
-                    visit(d, seen)
 
             emitted.add(dep_id)
 
@@ -1100,12 +1126,8 @@ class BuildingBlockRegister:
             root_metadata = self.bblocks[identifier].metadata
         else:
             root_metadata = self.imported_bblocks[identifier]
-        for d in root_metadata.get('dependsOn', ()):
+        for d in get_direct_dependencies(root_metadata):
             visit(d, (identifier,))
-        root_is_profile_of = root_metadata.get('isProfileOf', root_metadata.get('profileOf'))
-        if root_is_profile_of:
-            for d in root_is_profile_of if isinstance(root_is_profile_of, list) else [root_is_profile_of]:
-                visit(d, (identifier,))
 
         return result
 

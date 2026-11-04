@@ -185,6 +185,18 @@ properties:
       - type: array
         items:
           type: string
+  isDescribedBy:
+    description: |
+      Identifier of another Building Block that describes this Building Block (typically a
+      conceptual or information model that this schema Building Block implements), or list thereof.
+      Declared on the described block (e.g. the schema block), pointing at the model block. Like
+      isProfileOf, it implies a dependency on the target, so there is no need to also list it
+      in dependsOn.
+    oneOf:
+      - type: string
+      - type: array
+        items:
+          type: string
   dependsOn:
     description: Identifiers of other Building Blocks that this Building Block depends on
     type: array
