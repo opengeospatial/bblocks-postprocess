@@ -38,6 +38,14 @@ def get_source_url(source):
         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous">
         <style>
+            .entry-message.text-warning-emphasis,
+            .entry-message.text-danger {
+                border-left: 3px solid var(--bs-warning);
+                padding-left: .4rem;
+            }
+            .entry-message.text-danger {
+                border-left-color: var(--bs-danger);
+            }
             .entry-message {
                 white-space: pre-wrap;
                 font-size: 80%;
@@ -117,8 +125,10 @@ def get_source_url(source):
                                         <a class="anchor" href="#bblock-${e(report['bblockId'])}">¶</a>
                                     </div>
 
-                                    <span class="badge text-bg-${'success' if report['result'] else 'danger'} me-2">
-                                        % if report['result']:
+                                    <span class="badge text-bg-${'warning' if report['result'] and report.get('hasWarnings') else 'success' if report['result'] else 'danger'} me-2">
+                                        % if report['result'] and report.get('hasWarnings'):
+                                            Passed with warnings
+                                        % elif report['result']:
                                             Passed
                                         % else:
                                             Tests Failed
@@ -173,7 +183,9 @@ def get_source_url(source):
                                                     % endif
                                                     <a class="anchor" href="#item-${e(report['bblockId'])}-${loop.index + 1}">¶</a>
                                                     <div class="float-end">
-                                                        % if item['result']:
+                                                        % if item['result'] and item.get('hasWarnings'):
+                                                            <span class="badge text-bg-warning me-2">Passed with warnings</span>
+                                                        % elif item['result']:
                                                             <span class="badge text-bg-success me-2">Passed</span>
                                                         % else:
                                                             <span class="badge text-bg-danger me-2">Failed</span>
@@ -206,7 +218,19 @@ def get_source_url(source):
                                                                     % if subsection:
                                                                         <div class="font-monospace subsection-title mt-1 text-muted small">${e(subsection)}</div>
                                                                     % endif
-                                                                    <div class="font-monospace entry-message section-${e(section['name'].lower())} ${'text-danger' if entry['isError'] else ''}">${e(entry['message'])}</div>
+                                                                    <%
+                                                                    sev = entry.get('severity')
+                                                                    entry_class = ('text-warning-emphasis' if sev == 'warning'
+                                                                                   else 'text-danger' if entry['isError']
+                                                                                   else 'text-secondary' if sev == 'info' else '')
+                                                                    # Advisory results that still count as errors (shacl.allow-warnings: false)
+                                                                    advisory_error = sev in ('warning', 'info') and entry['isError']
+                                                                    %>
+                                                                    <div class="font-monospace entry-message section-${e(section['name'].lower())} ${entry_class}">\
+% if advisory_error:
+<div class="mb-1"><span class="badge text-bg-${'warning' if sev == 'warning' else 'secondary'}">${sev} (counted as error)</span></div>\
+% endif
+${e(entry['message'])}</div>
                                                                 % endfor
                                                             % endif
                                                         % endfor

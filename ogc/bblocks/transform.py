@@ -448,7 +448,8 @@ def apply_transforms(bblock: BuildingBlock,
                      imported_register_urls: list[str] | None = None,
                      transform_plugins: list[dict] | None = None,
                      allowed_transform_types: set[str] | None = None,
-                     plugin_validators=()):
+                     plugin_validators=(),
+                     shacl_allow_warnings=True):
 
     if not bblock.transforms:
         return
@@ -672,6 +673,7 @@ def apply_transforms(bblock: BuildingBlock,
                                         profile_output_base=profile_output_base,
                                         plugin_validators=plugin_validators,
                                         additional_shacl_closures=snippet_closures or None,
+                                        shacl_allow_warnings=shacl_allow_warnings,
                                     )
                                 except Exception as e:
                                     logger.error("Error validating transform '%s' output against "

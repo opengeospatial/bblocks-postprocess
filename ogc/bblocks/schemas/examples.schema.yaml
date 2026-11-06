@@ -31,6 +31,15 @@ $defs:
         description: |
           Base filename that will be used for writing this example to its own file. Extension, if any, will be discarded.
         type: string
+      allow-empty-graph:
+        description: |
+          By default, an example whose semantic uplift produces an empty RDF graph (no triples) is
+          reported as an error, as that usually means the JSON-LD context did not map anything.
+          Set to `true` when an empty graph is expected (e.g. a bare `{"@id": "..."}` reference): the
+          empty graph is then reported as a warning, which does not fail the building block
+          regardless of `shacl.allow-warnings`.
+        type: boolean
+        default: false
       prefixes:
         description: |
           Prefixes for this example. Will be merged with top-level `prefixes`, if any, with the example

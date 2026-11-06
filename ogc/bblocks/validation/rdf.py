@@ -11,13 +11,14 @@ import pyshacl
 from ogc.na.util import is_url, copy_triples
 from pyparsing import ParseBaseException
 from pyshacl.errors import ReportableRuntimeError
+from pyshacl.graph_abstraction import DataGraph
 from rdflib import Graph
 from rdflib.plugin import PluginException
 from rdflib.term import Node, URIRef, BNode
 
 from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister
 from ogc.bblocks.validation import Validator, ValidationItemSourceType, ValidationReportSection, ValidationReportEntry, \
-    ValidationReportItem, uplift
+    ValidationReportItem, ValidationItemSeverity, uplift
 from ogc.bblocks.validation.uplift import Uplifter
 from ogc.bblocks.util import load_yaml, load_file, PathOrUrl
 
@@ -73,14 +74,58 @@ def _parse_closure_source(graph: Graph, source: str | Path):
 
 def shacl_validate(g: Graph, s: Graph, ont_graph: Graph | None = None) \
         -> tuple[bool, Graph, str, dict[pyshacl.Shape, Sequence[Node]]]:
-    validator = pyshacl.Validator(g, shacl_graph=s, ont_graph=ont_graph, options={
-        'advanced': True
-    })
-    focus_nodes: dict[pyshacl.Shape, Sequence[Node]] = {shape: shape.focus_nodes(g)
+    # pyshacl.Validator requires its data graph wrapped in a DataGraph
+    data_graph = DataGraph.from_rdflib(g)
+
+    validator_data_graph = data_graph
+    validator_ont_graph = ont_graph
+    validator_options = {'advanced': True}
+    if ont_graph is not None and len(ont_graph):
+        # Since pyshacl 0.22, ont_graph only contributes RDFS/OWL axioms (classes, properties and
+        # relationships) to the data graph, so closure instance data (e.g. skos:Concept members
+        # checked through sh:class) would be lost. Mix the whole closure into a private copy of
+        # the data instead, as earlier pyshacl versions did. The copy is ours to modify, so
+        # SHACL-AF rules can run in place without pyshacl cloning it again.
+        mixed = Graph()
+        copy_triples(g, mixed)
+        copy_triples(ont_graph, mixed)
+        validator_data_graph = DataGraph.from_rdflib(mixed)
+        validator_ont_graph = None
+        validator_options['inplace'] = True
+
+    validator = pyshacl.Validator(validator_data_graph, shacl_graph=s, ont_graph=validator_ont_graph,
+                                  options=validator_options)
+    # Focus nodes are reported against the example's own data, not the mixed-in closure
+    focus_nodes: dict[pyshacl.Shape, Sequence[Node]] = {shape: shape.focus_nodes(data_graph)
                                                         for shape in validator.shacl_graph.shapes
                                                         if not shape.is_property_shape}
     conforms, shacl_result, shacl_report = validator.run()
     return conforms, shacl_result, shacl_report, focus_nodes
+
+
+_SHACL_SEVERITY = {
+    URIRef('http://www.w3.org/ns/shacl#Violation'): ValidationItemSeverity.ERROR,
+    URIRef('http://www.w3.org/ns/shacl#Warning'): ValidationItemSeverity.WARNING,
+    URIRef('http://www.w3.org/ns/shacl#Info'): ValidationItemSeverity.INFO,
+}
+
+
+_SH_RESULT_SEVERITY = URIRef('http://www.w3.org/ns/shacl#resultSeverity')
+_SEVERITY_PRIORITY = {ValidationItemSeverity.ERROR: 3, ValidationItemSeverity.WARNING: 2, ValidationItemSeverity.INFO: 1}
+
+
+def max_shacl_severity(results_graph: Graph) -> ValidationItemSeverity | None:
+    """Highest sh:resultSeverity among sh:ValidationResult nodes, or None if there are none."""
+
+    best = None
+    for severity in results_graph.objects(predicate=_SH_RESULT_SEVERITY):
+        sev = _SHACL_SEVERITY.get(severity)
+        if sev is None:
+            # Unknown/custom severity IRI -> fail-safe to ERROR
+            return ValidationItemSeverity.ERROR
+        if best is None or _SEVERITY_PRIORITY[sev] > _SEVERITY_PRIORITY[best]:
+            best = sev
+    return best
 
 
 def format_node(g: Graph, n: Node):
@@ -410,6 +455,8 @@ class RdfValidator(Validator):
                  prefixes: dict[str, str] | None = None,
                  file_format: str | None = None,
                  resource_url: str | None = None,
+                 shacl_allow_warnings: bool = True,
+                 allow_empty_graph: bool = False,
                  **kwargs) -> bool | None:
         graph = self._load_graph(filename, output_filename, report,
                                  contents, base_uri, prefixes, file_format=file_format,
@@ -430,10 +477,15 @@ class RdfValidator(Validator):
                         f.write('# Empty Turtle file\n')
                 report.add_uplifted_file('ttl', ttl_fn, graph.serialize(format='ttl'))
 
+                # An empty graph is an error unless the example declares it as expected
+                # (allow-empty-graph), in which case it is a warning, independent of shacl.allow-warnings
                 report.add_entry(ValidationReportEntry(
                     section=ValidationReportSection.FILES,
-                    message=f"{'O' if graph else '**Empty** o'}utput Turtle {ttl_fn.name} created",
-                    is_error=not graph,
+                    message=f"{'O' if graph else '**Empty** o'}utput Turtle {ttl_fn.name} created"
+                            + (" (empty graph allowed by the example's allow-empty-graph)"
+                               if not graph and allow_empty_graph else ''),
+                    is_error=not graph and not allow_empty_graph,
+                    severity=ValidationItemSeverity.WARNING if not graph and allow_empty_graph else None,
                     payload={
                         'op': 'ttl-create',
                         'empty': not graph,
@@ -512,14 +564,23 @@ class RdfValidator(Validator):
                     shacl_conforms, shacl_result, shacl_report, focus_nodes = shacl_validate(
                         graph, shacl_graph, ont_graph=ont_graph)
 
-                    if not shacl_conforms:
+                    severity = max_shacl_severity(shacl_result)
+                    if severity is None and not shacl_conforms:
+                        # Non-conforming but no readable results: fail-safe to ERROR
+                        severity = ValidationItemSeverity.ERROR
+                    advisory_only = severity in (ValidationItemSeverity.WARNING, ValidationItemSeverity.INFO)
+                    is_error = (severity == ValidationItemSeverity.ERROR) or (advisory_only and not shacl_allow_warnings)
+                    if is_error:
                         shacl_errors_found = True
+                    elif advisory_only:
+                        logging.warning("SHACL advisory results for %s (not failing: shacl.allow-warnings)", shacl_file)
 
                     report.add_entry(ValidationReportEntry(
                         section=ValidationReportSection.SHACL,
                         message=f"Validation result for {shacl_file}:\n"
                                 f"{re.sub(r'^', '  ', shacl_report, flags=re.M)}",
-                        is_error=not shacl_conforms,
+                        is_error=is_error,
+                        severity=severity,
                         payload={
                             'op': 'shacl-report',
                             'shaclFile': str(shacl_file),
@@ -598,13 +659,13 @@ class RdfValidator(Validator):
                         }
                     ))
                     shacl_errors_found = True
-            # The validator ran regardless of the SHACL outcome (conformance or
-            # violation) - that outcome is already conveyed via the report
-            # entries above (is_error=not shacl_conforms). Returning False here
-            # would be misread by the caller as "this validator declined to
-            # run" (the convention used elsewhere, e.g. JsonValidator returning
-            # False for a non-JSON file), silently dropping a resource that
-            # actually failed SHACL validation - as expected for a -fail test -
-            # from the report.
+
+            # The validator ran regardless of the SHACL outcome; that
+            # outcome is conveyed via per-entry severity and is_error
+            # fields. Returning False here would be misread by the caller as
+            # "this validator declined to run" (the convention used elsewhere,
+            # e.g. JsonValidator returning False for a non-JSON file), silently
+            # dropping a resource that actually failed SHACL validation — as
+            # expected for a -fail test — from the report.
             return True
         return None

@@ -188,7 +188,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                 local_url_mappings: dict | None = None,
                 links: list[dict] = None,
                 viewer_config: dict | None = None,
-                default_license: dict | str | None = None) -> list[dict]:
+                default_license: dict | str | None = None,
+                shacl_allow_warnings: bool = True) -> list[dict]:
 
     cwd = Path().resolve()
 
@@ -394,7 +395,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                     bblocks_register=bbr,
                     outputs_path=test_outputs_path,
                     base_url=base_url,
-                    plugin_validators=plugin_validators)
+                    plugin_validators=plugin_validators,
+                    shacl_allow_warnings=shacl_allow_warnings)
                 validation_reports.append(json_report)
 
                 bblock.metadata['validationPassed'] = validation_passed
@@ -713,7 +715,8 @@ def postprocess(registered_items_path: str | Path = 'registereditems',
                                      imported_register_urls=imported_registers,
                                      transform_plugins=transform_plugins,
                                      allowed_transform_types=allowed_transform_types,
-                                     plugin_validators=plugin_validators)
+                                     plugin_validators=plugin_validators,
+                                     shacl_allow_warnings=shacl_allow_warnings)
                 if build_plugins:
                     dispatch_after_bblock(build_plugins, sandbox_dir, Stage.TRANSFORMS,
                                           _bblock_hook_payload(building_block, cwd, urls_resolved=True),

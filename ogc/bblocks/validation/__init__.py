@@ -50,6 +50,12 @@ class ValidationReportSection(Enum):
     UNKNOWN = 'Unknown errors'
 
 
+class ValidationItemSeverity(Enum):
+    INFO = 'info'
+    WARNING = 'warning'
+    ERROR = 'error'
+
+
 @dataclasses.dataclass
 class ValidationItemSource:
     type: ValidationItemSourceType
@@ -69,6 +75,7 @@ class ValidationReportEntry:
     is_error: bool = False
     payload: dict | None = None
     is_global: bool = False
+    severity: ValidationItemSeverity | None = None
 
 
 class ValidationReportItem:
@@ -110,12 +117,23 @@ class ValidationReportItem:
                             f.write(f"\n--- Plugin: {plugin or '(unknown)'} ---\n")
                     if entry.is_error:
                         f.write("\n** Validation error **\n")
+                    elif entry.severity == ValidationItemSeverity.WARNING:
+                        f.write("\n** Validation warning **\n")
                     f.write(f"{entry.message}\n")
                 f.write(f"=== End {section.value} ===\n\n")
 
     @property
     def failed(self) -> bool:
         return self._has_general_errors or self.source.require_fail != self._has_errors
+
+    @property
+    def has_warnings(self) -> bool:
+        """True if any entry across all sections has WARNING severity."""
+        for entries in self._sections.values():
+            for entry in entries:
+                if entry.severity == ValidationItemSeverity.WARNING:
+                    return True
+        return False
 
     @property
     def general_errors(self) -> bool:

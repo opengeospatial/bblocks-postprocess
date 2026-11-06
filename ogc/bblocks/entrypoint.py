@@ -26,7 +26,7 @@ from ogc.na import ingest_json, update_vocabs
 
 import jsonschema
 
-from ogc.bblocks.util import get_github_repo, load_yaml, get_schema
+from ogc.bblocks.util import get_github_repo, load_yaml, get_schema, resolve_shacl_allow_warnings
 
 MAIN_BBR = 'https://opengeospatial.github.io/bblocks/register.json'
 DEFAULT_IMPORT_MARKER = 'default'
@@ -409,6 +409,7 @@ if __name__ == '__main__':
                         default_license=bb_config.get('license') if bb_config else None,
                         schemas_oas30_downcompile=schema_oas30_downcompile,
                         local_url_mappings=local_url_mappings,
+                        shacl_allow_warnings=resolve_shacl_allow_warnings(bb_config),
                         links=[
                             {
                                 'rel': 'self',

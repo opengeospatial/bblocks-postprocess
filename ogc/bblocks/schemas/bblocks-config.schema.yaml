@@ -57,6 +57,19 @@ properties:
     description: >
       When true, JSON Schemas are downcompiled to OpenAPI 3.0 format during annotation.
 
+  shacl:
+    description: SHACL validation configuration for this register.
+    properties:
+      allow-warnings:
+        type: boolean
+        default: true
+        description: >
+          When true (the default), SHACL advisory results (sh:Warning and sh:Info) do not
+          mark a building block as failed; they appear in reports visibly marked as
+          warnings but the build passes. When false, any non-conforming result —
+          including advisories — fails the block.
+    type: object
+
   sparql:
     description: >
       SPARQL endpoint configuration for semantic publishing. Set to null or false

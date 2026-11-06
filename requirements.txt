@@ -2,15 +2,15 @@ asciidoc
 pyyaml~=6.0
 Mako~=1.3.12
 jsonschema @ git+https://github.com/ogcincubator/jsonschema@bblocks-postprocess#egg=ogc-na
-# 0.6.0 requires a newer pyshacl than the one pinned below
-ogc-na<0.6.0
+ogc-na>=0.6.0
 requests~=2.33.0
-pyparsing~=3.0.9
-pyshacl~=0.21.0
-# pyshacl 0.21 imports pkg_resources, removed from setuptools 82+
-setuptools<81
+pyparsing~=3.1
+# Pinned exactly: validation/rdf.py relies on pyshacl internals (Validator/DataGraph,
+# Shape.focus_nodes, ShapesGraph.shapes) and on the pre-0.22 closure semantics worked around
+# in shacl_validate(), so re-verify both before bumping
+pyshacl==0.40.1
 # Includes rdflib fixes
-rdflib @ git+https://github.com/avillar/rdflib.git@6.x#egg=rdflib
+rdflib @ git+https://github.com/avillar/rdflib.git@7.x#egg=rdflib
 jsonref~=1.1.0
 networkx~=3.1
 jq~=1.6

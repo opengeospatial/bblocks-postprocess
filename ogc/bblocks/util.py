@@ -401,3 +401,10 @@ def load_yaml(filename: str | Path | None = None,
                     logger.warning("%s not found, using %s with alternate extension", filename, p)
                 filename = p
     return na_load_yaml(filename, content, url, safe=True)
+
+
+def resolve_shacl_allow_warnings(bb_config: dict | None) -> bool:
+    """Effective ``shacl.allow-warnings`` setting from bblocks-config.yaml (default: true)."""
+    shacl_config = (bb_config or {}).get('shacl') or {}
+    value = shacl_config.get('allow-warnings')
+    return True if value is None else bool(value)

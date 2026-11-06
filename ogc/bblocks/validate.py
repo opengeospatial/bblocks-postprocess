@@ -200,6 +200,8 @@ def report_to_dict(bblock: BuildingBlock,
                                 v = fv
                             entry_dict[k] = v
                     entry_dict['isError'] = entry.is_error
+                    if entry.severity is not None:
+                        entry_dict['severity'] = entry.severity.value  # 'info' | 'warning' | 'error'
                     entry_dict['message'] = entry.message
                     if not entry.is_global:
                         section['entries'].append(entry_dict)
@@ -209,11 +211,14 @@ def report_to_dict(bblock: BuildingBlock,
             res_item = {
                 'source': source,
                 'result': not item.failed,
+                # Passed, but with advisory (warning) results
+                'hasWarnings': not item.failed and item.has_warnings,
                 'sections': sections,
             }
             result['items'].append(res_item)
 
     result['globalErrors'] = global_errors
+    result['hasWarnings'] = any(i['hasWarnings'] for i in result['items'])
     result['counts'] = {
         'total': len(result['items']),
         'passed': len(result['items']) - failed_count,
@@ -314,7 +319,9 @@ def _validate_resource(bblock: BuildingBlock,
                        prefixes: dict[str, str] | None = None,
                        file_format: str | None = None,
                        bblocks_register: BuildingBlockRegister | None = None,
-                       validation_resources: list[dict] | None = None) -> ValidationReportItem | None:
+                       validation_resources: list[dict] | None = None,
+                       shacl_allow_warnings: bool = True,
+                       allow_empty_graph: bool = False) -> ValidationReportItem | None:
     if require_fail is None:
         require_fail = filename.stem.endswith('-fail') and not example_index
 
@@ -353,7 +360,9 @@ def _validate_resource(bblock: BuildingBlock,
                                         resource_url=resource_url,
                                         bblock=bblock,
                                         bblocks_register=bblocks_register,
-                                        validation_resources=validation_resources)
+                                        validation_resources=validation_resources,
+                                        shacl_allow_warnings=shacl_allow_warnings,
+                                        allow_empty_graph=allow_empty_graph)
             any_validator_run = any_validator_run or (result is not False)
 
     except Exception as unknown_exc:
@@ -397,6 +406,7 @@ def validate_transform_output(
         profile_output_base: Path,
         plugin_validators: list[PluginValidator] = (),
         additional_shacl_closures: list[str] | None = None,
+        shacl_allow_warnings: bool = True,
 ) -> ValidationReportItem:
     """Validate a transform output file against a profile building block.
 
@@ -439,6 +449,7 @@ def validate_transform_output(
                 bblock=profile_bblock,
                 bblocks_register=bblocks_register,
                 validation_resources=profile_bblock.validation_resources,
+                shacl_allow_warnings=shacl_allow_warnings,
             )
     except Exception as unknown_exc:
         report.add_entry(ValidationReportEntry(
@@ -459,7 +470,8 @@ def validate_test_resources(bblock: BuildingBlock,
                             bblocks_register: BuildingBlockRegister,
                             outputs_path: Path | None = None,
                             base_url: str | None = None,
-                            plugin_validators: list[PluginValidator] = ()) -> tuple[bool, int, dict]:
+                            plugin_validators: list[PluginValidator] = (),
+                            shacl_allow_warnings: bool = True) -> tuple[bool, int, dict]:
     final_result = True
     test_count = 0
 
@@ -499,6 +511,7 @@ def validate_test_resources(bblock: BuildingBlock,
                 validators=validators,
                 bblocks_register=bblocks_register,
                 validation_resources=bblock.validation_resources,
+                shacl_allow_warnings=shacl_allow_warnings,
             )
             if test_result:
                 all_results.append(test_result)
@@ -541,6 +554,7 @@ def validate_test_resources(bblock: BuildingBlock,
             file_format=file_format,
             bblocks_register=bblocks_register,
             validation_resources=bblock.validation_resources,
+            shacl_allow_warnings=shacl_allow_warnings,
         )
         if test_result:
             all_results.append(test_result)
@@ -617,6 +631,8 @@ def validate_test_resources(bblock: BuildingBlock,
                     additional_shacl_closures=snippet.get('shacl-closure'),
                     bblocks_register=bblocks_register,
                     validation_resources=bblock.validation_resources,
+                    shacl_allow_warnings=shacl_allow_warnings,
+                    allow_empty_graph=bool(example.get('allow-empty-graph', False)),
                 )
                 if example_result:
                     all_results.append(example_result)

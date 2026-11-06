@@ -137,7 +137,7 @@ This cross-repo propagation is for changes that have actually shipped (merged to
 
 ## Dependencies
 
-- **Python**: ogc-na-tools (semantic annotation + RDF), pyshacl, rdflib (custom fork `avillar/rdflib@6.x`), jsonschema, mako, requests
+- **Python**: ogc-na-tools (semantic annotation + RDF), pyshacl (pinned exactly; see `requirements.txt`), rdflib (custom fork `avillar/rdflib@7.x`), jsonschema, mako, requests
 - **Node.js**: `jsonld` package (for JSON-LD processing)
 - Install: `pip install -r requirements.txt && npm install`
 
