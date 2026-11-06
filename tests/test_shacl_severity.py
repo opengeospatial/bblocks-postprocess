@@ -72,26 +72,28 @@ def _validate(tmp_path, severity, allow, require_fail=False, extra_shapes=None):
         type=ValidationItemSourceType.TEST_RESOURCE, filename=Path('t.ttl'), require_fail=require_fail))
     ran = validator.validate(Path('t.ttl'), tmp_path / 't.ttl', item, contents='x', shacl_allow_warnings=allow)
     assert ran is True
-    (entry,) = [e for e in item._sections[ValidationReportSection.SHACL]
-                if (e.payload or {}).get('op') == 'shacl-report']
-    return item, entry
+    entries = item._sections[ValidationReportSection.SHACL]
+    result_entries = [e for e in entries if (e.payload or {}).get('op') == 'shacl-result']
+    (summary,) = [e for e in entries if (e.payload or {}).get('op') == 'shacl-report']
+    assert summary.payload['graph'] and not summary.is_error
+    return item, result_entries
 
 
 @pytest.mark.parametrize('sev,expected', [('Warning', Sev.WARNING), ('Info', Sev.INFO)])
 def test_advisory_fails_by_default(tmp_path, sev, expected):
-    item, entry = _validate(tmp_path, sev, allow=False)
+    item, (entry,) = _validate(tmp_path, sev, allow=False)
     assert entry.severity == expected and entry.is_error and item.failed
 
 
 @pytest.mark.parametrize('sev,expected', [('Warning', Sev.WARNING), ('Info', Sev.INFO)])
 def test_advisory_passes_when_allowed(tmp_path, sev, expected):
-    item, entry = _validate(tmp_path, sev, allow=True)
+    item, (entry,) = _validate(tmp_path, sev, allow=True)
     assert entry.severity == expected and not entry.is_error and not item.failed
-    assert 'Validation result for' in entry.message and entry.payload['graph']
+    assert entry.payload['resultMessage'] and entry.message
 
 
 def test_violation_fails_even_when_allowed(tmp_path):
-    item, entry = _validate(tmp_path, None, allow=True)
+    item, (entry,) = _validate(tmp_path, None, allow=True)
     assert entry.severity == Sev.ERROR and entry.is_error and item.failed
 
 
@@ -100,12 +102,15 @@ def test_mixed_warning_and_violation_fails_when_allowed(tmp_path):
         @prefix sh: <http://www.w3.org/ns/shacl#> . @prefix ex: <http://example.com/> .
         ex:S2 a sh:NodeShape ; sh:targetClass ex:Thing ;
           sh:property [ sh:path ex:other ; sh:minCount 1 ] .""", format='turtle')
-    item, entry = _validate(tmp_path, 'Warning', allow=True, extra_shapes=extra)
-    assert entry.severity == Sev.ERROR and item.failed
+    item, entries = _validate(tmp_path, 'Warning', allow=True, extra_shapes=extra)
+    # Each result is reported with its own severity: the violation fails the block, the warning does not
+    assert {(e.severity, e.is_error) for e in entries} == {(Sev.ERROR, True), (Sev.WARNING, False)}
+    assert entries[0].severity == Sev.ERROR  # most severe first
+    assert item.failed
 
 
 def test_fail_test_with_only_warnings_does_not_satisfy_require_fail(tmp_path):
-    item, entry = _validate(tmp_path, 'Warning', allow=True, require_fail=True)
+    item, (entry,) = _validate(tmp_path, 'Warning', allow=True, require_fail=True)
     assert not entry.is_error
     assert item.failed  # a '-fail' resource must produce a real violation
 
@@ -206,3 +211,56 @@ def test_allowed_empty_graph_is_a_warning_independent_of_shacl_setting(tmp_path,
     assert not entry.is_error and entry.severity == Sev.WARNING
     assert 'allow-empty-graph' in entry.message
     assert not item.failed and item.has_warnings
+
+
+def test_result_payload_identifies_shape_focus_node_and_path(tmp_path):
+    named = Graph().parse(data="""
+        @prefix sh: <http://www.w3.org/ns/shacl#> . @prefix ex: <http://example.com/> .
+        ex:Named a sh:NodeShape ; sh:targetClass ex:Thing ;
+          sh:property [ sh:path ( ex:p [ sh:inversePath ex:q ] ) ; sh:name "Complex" ; sh:minCount 1 ] .""",
+                          format='turtle')
+    validator = RdfValidator.__new__(RdfValidator)
+    validator.shacl_graphs = {Path('shapes.ttl'): named}
+    validator.shacl_errors = []
+    validator.closure_errors = []
+    validator.added_shacl_closures = []
+    validator.closure_graph = None
+    validator.closure_graph_sources = []
+    validator._ensure_shacl_closures_loaded = lambda: None
+    validator._load_graph = lambda *a, **kw: Graph().parse(data=DATA, format='turtle')
+    item = ValidationReportItem(ValidationItemSource(type=ValidationItemSourceType.TEST_RESOURCE,
+                                                     filename=Path('t.ttl')))
+    validator.validate(Path('t.ttl'), tmp_path / 't.ttl', item, contents='x')
+    (entry,) = [e for e in item._sections[ValidationReportSection.SHACL]
+                if (e.payload or {}).get('op') == 'shacl-result']
+    payload = entry.payload
+    assert payload['focusNode'] == 'http://example.com/a'
+    assert payload['resultPath'].endswith('p/^ex:q')
+    assert payload['sourceConstraintComponent'].endswith('MinCountConstraintComponent')
+    # the (blank node) property shape is identified through its named parent, name and path
+    assert 'ex:Named' in payload['sourceShapeDescription'] and '"Complex"' in payload['sourceShapeDescription']
+    assert 'path' in payload['sourceShapeDescription']
+    assert 'Focus node: ex:a' in entry.message
+
+
+def test_path_formatting():
+    from ogc.bblocks.validation.rdf import format_shacl_path
+    g = Graph().parse(data="""
+        @prefix sh: <http://www.w3.org/ns/shacl#> . @prefix ex: <http://example.com/> .
+        ex:s sh:path [ sh:alternativePath ( ex:a [ sh:zeroOrMorePath ex:b ] ) ] .""", format='turtle')
+    path = g.value(URIRef('http://example.com/s'), URIRef('http://www.w3.org/ns/shacl#path'))
+    assert format_shacl_path(path, [g], g) == 'ex:a|ex:b*'
+
+
+def test_negative_tests_do_not_report_warnings(tmp_path):
+    from ogc.bblocks.validate import report_to_dict
+    item = ValidationReportItem(ValidationItemSource(type=ValidationItemSourceType.TEST_RESOURCE,
+                                                     filename=tmp_path / 'x-fail.json', require_fail=True))
+    item.add_entry(ValidationReportEntry(section=ValidationReportSection.SHACL, message='violation',
+                                         is_error=True, severity=Sev.ERROR))
+    item.add_entry(ValidationReportEntry(section=ValidationReportSection.SHACL, message='advisory',
+                                         severity=Sev.WARNING))
+    assert not item.failed and not item.has_warnings
+    bb = type('B', (), {'identifier': 'x', 'name': 'X'})()
+    rep = report_to_dict(bb, [item])
+    assert rep['items'][0]['result'] and not rep['items'][0]['hasWarnings'] and not rep['hasWarnings']

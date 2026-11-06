@@ -1,3 +1,4 @@
+import dataclasses
 import json
 import logging
 import os
@@ -12,7 +13,8 @@ from ogc.na.util import is_url, copy_triples
 from pyparsing import ParseBaseException
 from pyshacl.errors import ReportableRuntimeError
 from pyshacl.graph_abstraction import DataGraph
-from rdflib import Graph
+from rdflib import Graph, Literal, Namespace, RDF
+from rdflib.collection import Collection
 from rdflib.plugin import PluginException
 from rdflib.term import Node, URIRef, BNode
 
@@ -21,7 +23,6 @@ from ogc.bblocks.validation import Validator, ValidationItemSourceType, Validati
     ValidationReportItem, ValidationItemSeverity, uplift
 from ogc.bblocks.validation.uplift import Uplifter
 from ogc.bblocks.util import load_yaml, load_file, PathOrUrl
-
 
 NATIVE_RDF_LANGS = {
     'application/ld+json': 'jsonld',
@@ -103,29 +104,84 @@ def shacl_validate(g: Graph, s: Graph, ont_graph: Graph | None = None) \
     return conforms, shacl_result, shacl_report, focus_nodes
 
 
+SH = Namespace('http://www.w3.org/ns/shacl#')
+
 _SHACL_SEVERITY = {
-    URIRef('http://www.w3.org/ns/shacl#Violation'): ValidationItemSeverity.ERROR,
-    URIRef('http://www.w3.org/ns/shacl#Warning'): ValidationItemSeverity.WARNING,
-    URIRef('http://www.w3.org/ns/shacl#Info'): ValidationItemSeverity.INFO,
+    SH.Violation: ValidationItemSeverity.ERROR,
+    SH.Warning: ValidationItemSeverity.WARNING,
+    SH.Info: ValidationItemSeverity.INFO,
+}
+_SEVERITY_PRIORITY = {
+    ValidationItemSeverity.ERROR: 3,
+    ValidationItemSeverity.WARNING: 2,
+    ValidationItemSeverity.INFO: 1
+}
+_SEVERITY_LABEL = {
+    ValidationItemSeverity.ERROR: 'Violation',
+    ValidationItemSeverity.WARNING: 'Warning',
+    ValidationItemSeverity.INFO: 'Info',
 }
 
+_SHACL_RESULTS_QUERY = """
+PREFIX sh: <http://www.w3.org/ns/shacl#>
+SELECT ?result ?severity ?focus ?path ?component ?shape ?message ?value WHERE {
+  ?result a sh:ValidationResult .
+  OPTIONAL { ?result sh:resultSeverity ?severity }
+  OPTIONAL { ?result sh:focusNode ?focus }
+  OPTIONAL { ?result sh:resultPath ?path }
+  OPTIONAL { ?result sh:sourceConstraintComponent ?component }
+  OPTIONAL { ?result sh:sourceShape ?shape }
+  OPTIONAL { ?result sh:resultMessage ?message }
+  OPTIONAL { ?result sh:value ?value }
+}
+"""
 
-_SH_RESULT_SEVERITY = URIRef('http://www.w3.org/ns/shacl#resultSeverity')
-_SEVERITY_PRIORITY = {ValidationItemSeverity.ERROR: 3, ValidationItemSeverity.WARNING: 2, ValidationItemSeverity.INFO: 1}
+
+@dataclasses.dataclass
+class ShaclResult:
+    """A single sh:ValidationResult from a SHACL validation report graph."""
+    severity: ValidationItemSeverity
+    severity_node: Node | None = None
+    focus_node: Node | None = None
+    path: Node | None = None
+    component: Node | None = None
+    source_shape: Node | None = None
+    value: Node | None = None
+    messages: list[str] = dataclasses.field(default_factory=list)
+
+
+def shacl_results(results_graph: Graph) -> list[ShaclResult]:
+    """Read the sh:ValidationResult nodes of a SHACL report graph, most severe first.
+
+    A missing or unknown (custom) sh:resultSeverity is treated as an error (fail-safe).
+    """
+
+    by_result: dict[Node, ShaclResult] = {}
+    for row in results_graph.query(_SHACL_RESULTS_QUERY):
+        result = by_result.get(row.result)
+        if result is None:
+            result = by_result[row.result] = ShaclResult(
+                severity=_SHACL_SEVERITY.get(row.severity, ValidationItemSeverity.ERROR),
+                severity_node=row.severity,
+                focus_node=row.focus,
+                path=row.path,
+                component=row.component,
+                source_shape=row.shape,
+                value=row.value,
+            )
+        if row.message is not None and str(row.message) not in result.messages:
+            result.messages.append(str(row.message))
+
+    return sorted(by_result.values(),
+                  key=lambda r: (-_SEVERITY_PRIORITY[r.severity], str(r.source_shape), str(r.focus_node),
+                                 str(r.path), r.messages))
 
 
 def max_shacl_severity(results_graph: Graph) -> ValidationItemSeverity | None:
-    """Highest sh:resultSeverity among sh:ValidationResult nodes, or None if there are none."""
+    """Highest severity among the sh:ValidationResult nodes, or None if there are none."""
 
-    best = None
-    for severity in results_graph.objects(predicate=_SH_RESULT_SEVERITY):
-        sev = _SHACL_SEVERITY.get(severity)
-        if sev is None:
-            # Unknown/custom severity IRI -> fail-safe to ERROR
-            return ValidationItemSeverity.ERROR
-        if best is None or _SEVERITY_PRIORITY[sev] > _SEVERITY_PRIORITY[best]:
-            best = sev
-    return best
+    results = shacl_results(results_graph)
+    return results[0].severity if results else None
 
 
 def format_node(g: Graph, n: Node):
@@ -159,6 +215,117 @@ def find_closest_uri(g: Graph, n: Node, max_depth=3) -> list[URIRef] | None:
             return found + [p]
 
     return None
+
+
+def _first_value(graphs: Sequence[Graph], s: Node, p: URIRef) -> Node | None:
+    for g in graphs:
+        v = g.value(s, p)
+        if v is not None:
+            return v
+    return None
+
+
+def format_shacl_path(path: Node, graphs: Sequence[Graph], fmt_graph: Graph, _depth: int = 0) -> str:
+    """Render a SHACL property path (a predicate IRI or a path expression made of blank nodes)
+    using SPARQL-like notation: ``a/b`` sequence, ``a|b`` alternative, ``^a`` inverse, ``a*``, ``a+``, ``a?``.
+
+    ``graphs`` are searched, in order, for the blank node structure of complex paths.
+    """
+
+    if isinstance(path, URIRef) or _depth > 8:
+        return format_node(fmt_graph, path)
+
+    def sub(node: Node) -> str:
+        text = format_shacl_path(node, graphs, fmt_graph, _depth + 1)
+        # Only sequences and alternatives need grouping inside a larger expression
+        composite = not isinstance(node, URIRef) and (
+                any((node, RDF.first, None) in g for g in graphs)
+                or _first_value(graphs, node, SH.alternativePath) is not None)
+        return f"({text})" if composite else text
+
+    for g in graphs:
+        if (path, RDF.first, None) in g:
+            return '/'.join(sub(item) for item in Collection(g, path))
+
+    alternative = _first_value(graphs, path, SH.alternativePath)
+    if alternative is not None:
+        for g in graphs:
+            if (alternative, RDF.first, None) in g:
+                return '|'.join(sub(item) for item in Collection(g, alternative))
+    inverse = _first_value(graphs, path, SH.inversePath)
+    if inverse is not None:
+        return '^' + sub(inverse)
+    for pred, suffix in ((SH.zeroOrMorePath, '*'), (SH.oneOrMorePath, '+'), (SH.zeroOrOnePath, '?')):
+        inner = _first_value(graphs, path, pred)
+        if inner is not None:
+            return sub(inner) + suffix
+
+    return format_node(fmt_graph, path)
+
+
+def describe_shacl_shape(shape: Node | None, shapes_graph: Graph, results_graph: Graph) -> str | None:
+    """Human-readable identification of the shape that produced a result.
+
+    Named shapes are shown by their IRI. For (usually blank node) property shapes, the closest named
+    ancestor in the shapes graph is shown, followed by the shape's ``sh:name`` and path if any,
+    e.g. ``ex:MyShape/sh:property "Label" (path ex:prop)``.
+    """
+
+    if shape is None:
+        return None
+    if isinstance(shape, URIRef):
+        return format_node(shapes_graph, shape)
+
+    # Blank nodes keep their ids when copied into the report graph, so look the shape up in the shapes graph
+    graphs = (shapes_graph, results_graph)
+    description = '/'.join(format_node(shapes_graph, n)
+                           for n in (find_closest_uri(shapes_graph, shape) or ())) or format_node(shapes_graph, shape)
+    name = _first_value(graphs, shape, SH.name)
+    if name is not None:
+        description += f' "{name}"'
+    shape_path = _first_value(graphs, shape, SH.path)
+    if shape_path is not None:
+        description += f" (path {format_shacl_path(shape_path, graphs, shapes_graph)})"
+    return description
+
+
+def format_shacl_result(result: ShaclResult, data_graph: Graph, shapes_graph: Graph,
+                        results_graph: Graph) -> tuple[str, dict]:
+    """Build the report text and the structured payload for a single SHACL result."""
+
+    graphs = (results_graph, shapes_graph)
+    severity_label = _SEVERITY_LABEL[result.severity] if result.severity_node in _SHACL_SEVERITY \
+        else format_node(shapes_graph, result.severity_node) if result.severity_node is not None else 'Violation'
+    component = format_node(shapes_graph, result.component) if result.component is not None else None
+    shape_description = describe_shacl_shape(result.source_shape, shapes_graph, results_graph)
+    path = format_shacl_path(result.path, graphs, data_graph) if result.path is not None else None
+    focus = format_node(data_graph, result.focus_node) if result.focus_node is not None else None
+    if result.value is None:
+        value = None
+    elif isinstance(result.value, Literal):
+        value = result.value.n3(data_graph.namespace_manager)
+    else:
+        value = format_node(data_graph, result.value)
+    message = '\n'.join(result.messages) or None
+
+    lines = [f"{severity_label}" + (f" ({component})" if component else '') + ':']
+    for label, content in (('Source shape', shape_description), ('Focus node', focus), ('Result path', path),
+                           ('Value', value), ('Message', message)):
+        if content is not None:
+            lines.append(f"  {label}: {content}")
+
+    payload = {
+        'op': 'shacl-result',
+        'resultSeverity': str(result.severity_node) if result.severity_node is not None else None,
+        'focusNode': str(result.focus_node) if result.focus_node is not None else None,
+        'resultPath': path,
+        'sourceConstraintComponent': str(result.component) if result.component is not None else None,
+        'sourceShape': (str(result.source_shape) if isinstance(result.source_shape, URIRef) else None),
+        'sourceShapeDescription': shape_description,
+        'value': value,
+        'resultMessage': message,
+    }
+    return '\n'.join(lines), payload
 
 
 class CaptureLogHandler(logging.StreamHandler):
@@ -564,29 +731,56 @@ class RdfValidator(Validator):
                     shacl_conforms, shacl_result, shacl_report, focus_nodes = shacl_validate(
                         graph, shacl_graph, ont_graph=ont_graph)
 
-                    severity = max_shacl_severity(shacl_result)
-                    if severity is None and not shacl_conforms:
-                        # Non-conforming but no readable results: fail-safe to ERROR
-                        severity = ValidationItemSeverity.ERROR
-                    advisory_only = severity in (ValidationItemSeverity.WARNING, ValidationItemSeverity.INFO)
-                    is_error = (severity == ValidationItemSeverity.ERROR) or (advisory_only and not shacl_allow_warnings)
-                    if is_error:
+                    results = shacl_results(shacl_result)
+                    if not results and not shacl_conforms:
+                        # Non-conforming but no readable results: fail-safe to a global error
                         shacl_errors_found = True
-                    elif advisory_only:
-                        logging.warning("SHACL advisory results for %s (not failing: shacl.allow-warnings)", shacl_file)
-
-                    report.add_entry(ValidationReportEntry(
-                        section=ValidationReportSection.SHACL,
-                        message=f"Validation result for {shacl_file}:\n"
-                                f"{re.sub(r'^', '  ', shacl_report, flags=re.M)}",
-                        is_error=is_error,
-                        severity=severity,
-                        payload={
-                            'op': 'shacl-report',
-                            'shaclFile': str(shacl_file),
-                            'graph': shacl_result.serialize(),
-                        }
-                    ))
+                        report.add_entry(ValidationReportEntry(
+                            section=ValidationReportSection.SHACL,
+                            message=f"Validation result for {shacl_file}: not conforming, but no results could be read",
+                            is_error=True,
+                            severity=ValidationItemSeverity.ERROR,
+                            payload={
+                                'op': 'shacl-report',
+                                'shaclFile': str(shacl_file),
+                                'graph': shacl_result.serialize(),
+                            }
+                        ))
+                    else:
+                        counts = {sev: sum(1 for r in results if r.severity == sev)
+                                  for sev in (ValidationItemSeverity.ERROR, ValidationItemSeverity.WARNING,
+                                              ValidationItemSeverity.INFO)}
+                        summary = ', '.join(f"{n} {_SEVERITY_LABEL[sev].lower()}{'' if n == 1 else 's'}"
+                                            for sev, n in counts.items() if n) or 'no results'
+                        # The summary entry only carries the full results graph; each result is reported
+                        # in its own entry, with its own severity
+                        report.add_entry(ValidationReportEntry(
+                            section=ValidationReportSection.SHACL,
+                            message=f"Validation result for {shacl_file}: {summary}",
+                            is_error=False,
+                            payload={
+                                'op': 'shacl-report',
+                                'shaclFile': str(shacl_file),
+                                'graph': shacl_result.serialize(),
+                            }
+                        ))
+                        for result in results:
+                            result_text, result_payload = format_shacl_result(result, graph, shacl_graph, shacl_result)
+                            result_payload['shaclFile'] = str(shacl_file)
+                            is_error = (result.severity == ValidationItemSeverity.ERROR) or not shacl_allow_warnings
+                            if is_error:
+                                shacl_errors_found = True
+                            report.add_entry(ValidationReportEntry(
+                                section=ValidationReportSection.SHACL,
+                                message=result_text,
+                                is_error=is_error,
+                                severity=result.severity,
+                                payload=result_payload,
+                            ))
+                        if results and not any(r.severity == ValidationItemSeverity.ERROR for r in results) \
+                                and shacl_allow_warnings:
+                            logging.warning("SHACL advisory results for %s (not failing: shacl.allow-warnings)",
+                                            shacl_file)
                     if focus_nodes:
                         focus_nodes_report = ''
                         focus_nodes_payload = {}

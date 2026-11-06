@@ -128,7 +128,12 @@ class ValidationReportItem:
 
     @property
     def has_warnings(self) -> bool:
-        """True if any entry across all sections has WARNING severity."""
+        """True if any entry across all sections has WARNING severity.
+
+        Negative ("-fail") tests never report warnings: only the expected failure matters for them.
+        """
+        if self.source.require_fail:
+            return False
         for entries in self._sections.values():
             for entry in entries:
                 if entry.severity == ValidationItemSeverity.WARNING:
