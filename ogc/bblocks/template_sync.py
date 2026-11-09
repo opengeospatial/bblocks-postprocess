@@ -41,7 +41,8 @@ def _split_logical_lines(text: str) -> list[tuple[str, int, int]]:
 
 
 def _has_interactive_flags(command: str) -> bool:
-    tokens = command.replace('\\\n', ' ').split()
+    # Split on shell punctuation too, so `$(... && echo -it)` yields `-it` regardless of spacing
+    tokens = [t for t in re.split(r'[\s()\[\]{};&|`"\']+', command.replace('\\\n', ' ')) if t]
     if any(t in ('-it', '-ti') for t in tokens):
         return True
     has_i = any(t in ('-i', '--interactive') for t in tokens)

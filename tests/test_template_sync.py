@@ -17,6 +17,17 @@ def test_literal_it_is_interactive():
     assert _has_interactive_flags(f'docker run -it --rm {_IMAGE}')
 
 
+def test_inline_conditional_tty_without_spacing_is_interactive():
+    assert _has_interactive_flags(f'docker run $([ -t 0 ] && echo -it) --rm {_IMAGE}')
+    assert _has_interactive_flags(f'docker run $([ -t 0 ] && echo "-it") --rm {_IMAGE}')
+    assert _has_interactive_flags(f'docker run `[ -t 0 ] && echo -it` --rm {_IMAGE}')
+
+
+def test_flag_like_substrings_are_not_interactive():
+    assert not _has_interactive_flags(f'docker run --rm -e FOO=-it {_IMAGE}')
+    assert not _has_interactive_flags(f'docker run --rm --init {_IMAGE}')
+
+
 def test_separate_i_and_t_are_interactive():
     assert _has_interactive_flags(f'docker run -i --tty --rm {_IMAGE}')
 
