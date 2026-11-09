@@ -637,18 +637,26 @@ class RdfValidator(Validator):
         if graph is not None and (contents or filename.suffix != '.ttl'):
             try:
                 ttl_fn = output_filename.with_suffix('.ttl')
-                if graph:
-                    graph.serialize(ttl_fn, format='ttl')
+                if ttl_fn == output_filename:
+                    # The resource already is Turtle: keep it exactly as authored (an rdflib
+                    # round trip could re-encode values) and use it as its own Turtle version
+                    if isinstance(contents, bytes):
+                        contents = contents.decode('utf-8')
+                    report.add_uplifted_file('ttl', ttl_fn, contents)
                 else:
-                    with open(ttl_fn, 'w') as f:
-                        f.write('# Empty Turtle file\n')
-                report.add_uplifted_file('ttl', ttl_fn, graph.serialize(format='ttl'))
+                    if graph:
+                        graph.serialize(ttl_fn, format='ttl')
+                    else:
+                        with open(ttl_fn, 'w') as f:
+                            f.write('# Empty Turtle file\n')
+                    report.add_uplifted_file('ttl', ttl_fn, graph.serialize(format='ttl'))
 
                 # An empty graph is an error unless the example declares it as expected
                 # (allow-empty-graph), in which case it is a warning, independent of shacl.allow-warnings
                 report.add_entry(ValidationReportEntry(
                     section=ValidationReportSection.FILES,
-                    message=f"{'O' if graph else '**Empty** o'}utput Turtle {ttl_fn.name} created"
+                    message=f"{'O' if graph else '**Empty** o'}utput Turtle {ttl_fn.name} "
+                            f"{'kept as provided' if ttl_fn == output_filename else 'created'}"
                             + (" (empty graph allowed by the example's allow-empty-graph)"
                                if not graph and allow_empty_graph else ''),
                     is_error=not graph and not allow_empty_graph,

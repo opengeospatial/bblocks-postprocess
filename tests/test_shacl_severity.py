@@ -264,3 +264,20 @@ def test_negative_tests_do_not_report_warnings(tmp_path):
     bb = type('B', (), {'identifier': 'x', 'name': 'X'})()
     rep = report_to_dict(bb, [item])
     assert rep['items'][0]['result'] and not rep['items'][0]['hasWarnings'] and not rep['hasWarnings']
+
+
+def test_turtle_example_is_kept_as_authored(tmp_path):
+    # A Turtle example must not be overwritten by an rdflib re-serialization
+    ttl = ('@prefix ex: <http://example.com/> .\n'
+           'ex:a ex:p ex:_b .   # authored spacing/comment must survive\n')
+    out = tmp_path / 'e.ttl'
+    out.write_text(ttl)
+    validator = RdfValidator.__new__(RdfValidator)
+    validator.shacl_graphs = {}
+    validator.shacl_errors = []
+    validator._load_graph = lambda *a, **kw: Graph().parse(data=ttl, format='turtle')
+    item = ValidationReportItem(ValidationItemSource(
+        type=ValidationItemSourceType.EXAMPLE, filename=tmp_path / 'e.ttl', example_index=(1, 1)))
+    validator.validate(tmp_path / 'e.ttl', out, item, contents=ttl.encode())
+    assert out.read_text() == ttl
+    assert item.uplifted_files['ttl'] == (out, ttl)
