@@ -131,11 +131,8 @@ jobs:
   validate-and-process:
     runs-on: ubuntu-latest
 
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-
     outputs:
+      deploy_mode: ${{ steps.deploy-config.outputs.mode }}
       sparql_config: ${{ steps.deploy-viewer.outputs.sparql_config }}
       register_url: ${{ steps.get-pages-url.outputs.result }}/${{ inputs.register_file }}
 
@@ -147,13 +144,63 @@ jobs:
           ref: ${{ inputs.ref }}
       - name: Update submodules
         run: git submodule update --recursive --remote
+      - name: Read deploy configuration
+        id: deploy-config
+        env:
+          CONFIG_FILE: ${{ inputs.config_file }}
+          SOURCE_REF: ${{ inputs.ref }}
+        run: |
+          # Same override semantics as the sparql config below: bblocks-config-override.yml
+          # (deep-merged) wins over the main config file.
+          OVERRIDE_FILE=""
+          for f in bblocks-config-override.yml bblocks-config-override.yaml; do
+            if [ -f "$f" ]; then
+              OVERRIDE_FILE="$f"
+              break
+            fi
+          done
+          if [ ! -f "$CONFIG_FILE" ]; then
+            DEPLOY_JSON='null'
+          elif [ -n "$OVERRIDE_FILE" ]; then
+            DEPLOY_JSON="$(yq eval-all -o=json 'select(fi==0) * select(fi==1) | .deploy' "$CONFIG_FILE" "$OVERRIDE_FILE")"
+          else
+            DEPLOY_JSON="$(yq -o=json '.deploy' "$CONFIG_FILE")"
+          fi
+          MODE="$(jq -r '.mode // "artifact"' <<< "${DEPLOY_JSON:-null}")"
+          BRANCH="$(jq -r '.branch // "gh-pages"' <<< "${DEPLOY_JSON:-null}")"
+
+          case "$MODE" in
+            artifact|branch) ;;
+            *)
+              echo "::error::Invalid deploy.mode '$MODE' in bblocks-config.yaml (expected 'artifact' or 'branch')"
+              exit 1
+              ;;
+          esac
+          if [ "$MODE" = "branch" ]; then
+            if ! git check-ref-format --branch "$BRANCH" > /dev/null; then
+              echo "::error::Invalid deploy.branch '$BRANCH' in bblocks-config.yaml"
+              exit 1
+            fi
+            if [ "$BRANCH" = "$SOURCE_REF" ]; then
+              echo "::error::deploy.branch '$BRANCH' is the branch being built; the site would overwrite the sources"
+              exit 1
+            fi
+          fi
+          echo "Deploy mode: $MODE (branch: $BRANCH)"
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
       - name: Get Pages Base URL
         id: get-pages-url
         uses: actions/github-script@v9
+        env:
+          DEPLOY_MODE: ${{ steps.deploy-config.outputs.mode }}
+          DEPLOY_BRANCH: ${{ steps.deploy-config.outputs.branch }}
+          SOURCE_REF: ${{ inputs.ref }}
         with:
           result-encoding: string
           script: |
             let base_url;
+            let pages;
             if ("${{ inputs.base_url }}"?.trim()) {
               base_url = "${{ inputs.base_url }}";
             } else {
@@ -164,9 +211,43 @@ jobs:
                   repo
                 });
                 base_url = response.data.html_url;
+                pages = response.data;
               } catch {
                 core.warning('No base_url provided, and the GitHub Pages URL could not be retrieved. Did you forget to enable GitHub Pages?');
-                base_url = `https://raw.githubusercontent.com/${owner}/${repo}/${context.ref_name}`;
+                if (process.env.DEPLOY_MODE === 'branch') {
+                  // The site only exists on the deploy branch, so the best guess is the default
+                  // Pages URL (the Pages source is expected to be configured after the first run)
+                  base_url = repo.toLowerCase() === `${owner}.github.io`.toLowerCase()
+                    ? `https://${owner}.github.io`
+                    : `https://${owner}.github.io/${repo}`;
+                } else {
+                  base_url = `https://raw.githubusercontent.com/${owner}/${repo}/${process.env.SOURCE_REF}`;
+                }
+              }
+            }
+            if (process.env.DEPLOY_MODE === 'branch') {
+              // Guard against publishing to a branch that GitHub Pages is not serving
+              const branch = process.env.DEPLOY_BRANCH;
+              const { owner, repo } = context.repo;
+              let branchExists = true;
+              try {
+                await github.rest.repos.getBranch({ owner, repo, branch });
+              } catch (e) {
+                if (e.status !== 404) {
+                  throw e;
+                }
+                branchExists = false;
+              }
+              const pagesHint = `Set the Pages source to "Deploy from a branch" (${branch}, "/ (root)")`;
+              if (!branchExists) {
+                // Pages can only be pointed at an existing branch, and this run creates it
+                core.warning(`Branch "${branch}" does not exist yet: it will be created by this run. ${pagesHint} afterwards to serve it.`);
+              } else if (!pages) {
+                core.warning(`deploy.mode is "branch", but the GitHub Pages configuration could not be read. ${pagesHint}.`);
+              } else if (pages.build_type !== 'legacy') {
+                core.setFailed(`deploy.mode is "branch", but GitHub Pages is set to deploy from "${pages.build_type === 'workflow' ? 'GitHub Actions' : pages.build_type}". ${pagesHint}, or set deploy.mode to "artifact".`);
+              } else if (pages.source?.branch !== branch || (pages.source?.path ?? '/') !== '/') {
+                core.setFailed(`deploy.mode is "branch" with deploy.branch "${branch}", but GitHub Pages is serving "${pages.source?.branch}" from "${pages.source?.path}". ${pagesHint}, or update deploy.branch.`);
               }
             }
             // Remove trailing slash
@@ -176,6 +257,7 @@ jobs:
             core.exportVariable('PAGES_PATH', parsed.pathname);
             return base_url;
       - name: Process GitHub repository mappings
+        id: repo-mappings
         run: |
           export RANDOM_DIR="_repos_$(openssl rand -hex 8)"
           mkdir "$RANDOM_DIR"
@@ -194,6 +276,7 @@ jobs:
           
           MAPPINGS_YML="bblocks-config-local.yml"
           echo 'url-mappings:' > $MAPPINGS_YML
+          echo "generated_local_config=true" >> "$GITHUB_OUTPUT"
           
           if [ -z "${{ secrets.GH_PAT }}" ]; then
             GH_AUTH=
@@ -256,7 +339,7 @@ jobs:
             -exec gzip \{\} \; || true
           git pull
       - name: Add & Commit
-        if: ${{ !endsWith(github.repository, '/bblocks-template') && !inputs.skip-build }}
+        if: ${{ !endsWith(github.repository, '/bblocks-template') && !inputs.skip-build && steps.deploy-config.outputs.mode != 'branch' }}
         uses: EndBug/add-and-commit@v10
         with:
           message: Building blocks postprocessing
@@ -406,20 +489,94 @@ jobs:
         if: ${{inputs.before_pages}}
         run: ${{inputs.before_pages}}
       - name: Setup Pages
-        if: ${{ github.event.repository.has_pages && !inputs.skip-pages }}
+        if: ${{ github.event.repository.has_pages && !inputs.skip-pages && steps.deploy-config.outputs.mode == 'artifact' }}
         uses: actions/configure-pages@v6
       - name: Upload artifacts
-        if: ${{ github.event.repository.has_pages && !inputs.skip-pages }}
+        if: ${{ github.event.repository.has_pages && !inputs.skip-pages && steps.deploy-config.outputs.mode == 'artifact' }}
         uses: actions/upload-pages-artifact@v5
         with:
           path: .
+      - name: Publish to branch
+        if: ${{ !inputs.skip-pages && steps.deploy-config.outputs.mode == 'branch' }}
+        env:
+          PAGES_BRANCH: ${{ steps.deploy-config.outputs.branch }}
+          GENERATED_LOCAL_CONFIG: ${{ steps.repo-mappings.outputs.generated_local_config }}
+        run: |
+          SITE_DIR="$(pwd)"
+          PUBLISH_DIR="$(mktemp -d)"
+          # A worktree of this checkout reuses its (token-bearing) git config for the push
+          if git fetch origin "+refs/heads/${PAGES_BRANCH}:refs/remotes/origin/${PAGES_BRANCH}"; then
+            git worktree add -B "$PAGES_BRANCH" "$PUBLISH_DIR" "origin/${PAGES_BRANCH}"
+          else
+            echo "Branch '${PAGES_BRANCH}' does not exist yet: creating it"
+            git worktree add --detach "$PUBLISH_DIR"
+            git -C "$PUBLISH_DIR" checkout --orphan "$PAGES_BRANCH"
+            git -C "$PUBLISH_DIR" rm -rfq --ignore-unmatch .
+          fi
+
+          # Hidden files are left out (as upload-pages-artifact does), and so are the clones and
+          # the generated script from the repository mappings step
+          rsync -a --checksum --delete \
+            --exclude='.*' --exclude='/_repos_*' --exclude='/_script.sh' \
+            "$SITE_DIR/" "$PUBLISH_DIR/"
+          # rsync leaves excluded paths alone in the destination, so also purge the generated
+          # script if an earlier publish ever left it on the branch (it can embed the PAT)
+          rm -f "$PUBLISH_DIR/_script.sh"
+          # Same for the URL mappings generated for the cloned repositories (they point at
+          # clones that aren't published); a bblocks-config-local.yml the repo ships stays
+          if [ "$GENERATED_LOCAL_CONFIG" = "true" ]; then
+            rm -f "$PUBLISH_DIR/bblocks-config-local.yml"
+          fi
+          # Branch deployments run Jekyll unless told otherwise, which would drop all
+          # underscore-prefixed paths
+          touch "$PUBLISH_DIR/.nojekyll"
+
+          cd "$PUBLISH_DIR"
+          git add -A
+          if git diff --cached --quiet && git rev-parse -q --verify HEAD > /dev/null; then
+            echo "No changes to publish"
+          else
+            git -c user.name='github-actions[bot]' \
+                -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+                commit -q -m "Building blocks postprocessing" -m "Source: ${GITHUB_REPOSITORY}@${GITHUB_SHA}"
+            git push origin "HEAD:refs/heads/${PAGES_BRANCH}"
+          fi
+      - name: Wait for Pages to serve the new register
+        # Only needed by upload-to-triplestore, which fetches the published register.json
+        if: ${{ github.event.repository.has_pages && !inputs.skip-pages && steps.deploy-config.outputs.mode == 'branch' && inputs.enable_sparql == 'true' && steps.deploy-viewer.outputs.sparql_config != 'null' && steps.deploy-viewer.outputs.sparql_config != 'false' }}
+        env:
+          REGISTER_URL: ${{ steps.get-pages-url.outputs.result }}/${{ inputs.register_file }}
+          REGISTER_FILE: ${{ inputs.register_file }}
+        run: |
+          EXPECTED="$(sha256sum "$REGISTER_FILE" | cut -d' ' -f1)"
+          for i in $(seq 1 40); do
+            ACTUAL="$(curl -fsSL "${REGISTER_URL}?_=${RANDOM}" | sha256sum | cut -d' ' -f1 || true)"
+            if [ "$ACTUAL" = "$EXPECTED" ]; then
+              echo "Published register is up to date"
+              exit 0
+            fi
+            echo "Waiting for ${REGISTER_URL} to be updated (attempt $i)..."
+            sleep 15
+          done
+          echo "::error::Timed out waiting for GitHub Pages to serve the updated register"
+          exit 1
+  # Separate job so that the github-pages environment (and its deployment branch protection
+  # rules) only applies to deploy.mode "artifact"; a skipped job never evaluates it
+  deploy-pages:
+    needs: validate-and-process
+    if: ${{ github.event.repository.has_pages && !inputs.skip-pages && needs.validate-and-process.outputs.deploy_mode == 'artifact' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - name: Deploy to GH Pages
-        if: ${{ github.event.repository.has_pages && !inputs.skip-pages }}
         id: deployment
         uses: actions/deploy-pages@v5
   upload-to-triplestore:
-    needs: validate-and-process
-    if: ${{ github.event.repository.has_pages && !inputs.skip-pages && needs.validate-and-process.outputs.register_url }}
+    needs: [validate-and-process, deploy-pages]
+    # deploy-pages is skipped in branch mode, so always() is needed for this job to run at all
+    if: ${{ always() && needs.validate-and-process.result == 'success' && needs.deploy-pages.result != 'failure' && needs.deploy-pages.result != 'cancelled' && github.event.repository.has_pages && !inputs.skip-pages && needs.validate-and-process.outputs.register_url }}
     uses: ./.github/workflows/upload-to-triplestore.yml
     with:
       sparql_config: ${{ needs.validate-and-process.outputs.sparql_config }}
