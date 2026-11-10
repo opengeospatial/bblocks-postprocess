@@ -1,5 +1,5 @@
-"""Tests for ogc.bblocks.permissions's pure/near-pure permission-decision logic
-(Tier 1, docs/pytest-testing-plan.md): the on-disk cache round-trip, ask_yes_no's
+"""Tests for ogc.bblocks.permissions's pure/near-pure permission-decision logic:
+the on-disk cache round-trip, ask_yes_no's
 prompt handling (including the closed-stdin/EOF path), and
 _check_plugin_permissions's cache-hit / prompt / stale-version behavior.
 

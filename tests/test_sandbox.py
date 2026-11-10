@@ -1,5 +1,5 @@
-"""Tests for ogc.bblocks.sandbox's pure/near-pure venv-management logic (Tier 1,
-docs/pytest-testing-plan.md): pip_slug's deterministic slug generation and
+"""Tests for ogc.bblocks.sandbox's pure/near-pure venv-management logic:
+pip_slug's deterministic slug generation and
 venv_needs_recreate's staleness checks. ensure_venv/pip_install_cached themselves
 spawn real subprocesses and aren't covered here.
 """

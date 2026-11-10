@@ -43,9 +43,7 @@ pip install -r requirements.txt -r requirements-dev.txt
 python -m pytest
 ```
 
-CI runs these via `.github/workflows/pytest.yml` on push/PR. See
-`docs/pytest-testing-plan.md` for the prioritized checklist of what still needs
-coverage.
+CI runs these via `.github/workflows/pytest.yml` on push/PR.
 
 ## Local Testing with URL Mappings
 

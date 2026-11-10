@@ -1,5 +1,5 @@
-"""Smoke test for the test scaffolding itself, plus a first real Tier-1 case
-(see docs/pytest-testing-plan.md) for ogc.bblocks.mimetypes.
+"""Smoke test for the test scaffolding itself, plus a first real case
+for ogc.bblocks.mimetypes.
 """
 from ogc.bblocks.mimetypes import from_extension, lookup, normalize
 

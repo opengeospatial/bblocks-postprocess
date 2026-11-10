@@ -1,5 +1,5 @@
 """Integration test for the real _plugin_harness.py subprocess wire protocol
-(Tier 2 of docs/pytest-testing-plan.md) - spawns the actual harness script
+- spawns the actual harness script
 against tests/fixtures/hook_fixture_plugin.py, talking line-delimited JSON
 over stdin/stdout exactly as ogc.bblocks.build_hooks.plugin._BuildHookProcess does.
 No venv/pip install involved: the fixture plugin has no dependencies, so the

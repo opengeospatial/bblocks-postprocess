@@ -1,5 +1,4 @@
-"""Unit tests for ogc.bblocks.build_hooks.plugin's dispatch logic (Tier 2 of
-docs/pytest-testing-plan.md): seam ordering, after_register mutation
+"""Unit tests for ogc.bblocks.build_hooks.plugin's dispatch logic: seam ordering, after_register mutation
 chaining, and the before_bblock/after_bblock two-tier failure rule from
 docs/build-lifecycle-hooks.md's "Failure semantics".
 

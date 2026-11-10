@@ -1,5 +1,4 @@
-"""Tests for ogc.bblocks.validation.json_.JsonValidator's "@graph" handling (Tier 2,
-docs/pytest-testing-plan.md), including the #77 fallback: a document with a top-level
+"""Tests for ogc.bblocks.validation.json_.JsonValidator's "@graph" handling, including the #77 fallback: a document with a top-level
 "@graph" is first validated with it unwrapped (the common batch-of-instances
 convention); if that fails, it's retried as the full, wrapped document (e.g. schemas
 like the W3C PROV-JSONLD submission's, where "@context"/"@graph" are themselves the
