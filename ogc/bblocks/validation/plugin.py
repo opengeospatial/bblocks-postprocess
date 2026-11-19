@@ -9,7 +9,8 @@ from pathlib import Path
 
 from ogc.bblocks.log import run_logged, log_indent
 from ogc.bblocks.sandbox import ensure_venv, pip_slug, pip_install_cached
-from ogc.bblocks.validation import ValidationReportEntry, ValidationReportItem, ValidationReportSection
+from ogc.bblocks.validation import (ValidationItemSeverity, ValidationReportEntry, ValidationReportItem,
+                                    ValidationReportSection)
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,70 @@ def _to_wire_path(ref: str) -> str:
         return os.path.relpath(ref)
     except ValueError:
         return ref  # Windows cross-drive path — keep absolute
+
+# Payload keys that plugin entries cannot set: they are flattened into the JSON report entry next to
+# the report's own fields, and `op` ('require-fail') changes how errors are counted.
+_RESERVED_PAYLOAD_KEYS = frozenset({'op', 'isError', 'severity', 'message', 'plugin'})
+
+
+def _entry_from_wire(entry, plugin_id: str) -> ValidationReportEntry:
+    """Build a report entry from a plugin's (JSON-decoded) entry dict.
+
+    Plugins run in their own venv and return plain dicts:
+    ``{"message": str, "severity"?: "info"|"warning"|"error", "is_error"?: bool, "payload"?: dict}``.
+    ``severity`` wins over ``is_error`` if both are given and disagree; with only ``is_error``,
+    the severity is ``error`` or ``info``. Malformed input is reported, never silently dropped.
+    """
+    if not isinstance(entry, dict):
+        return ValidationReportEntry(
+            section=ValidationReportSection.PLUGIN,
+            message=f"Validator plugin '{plugin_id}' returned a malformed entry (expected an object): {entry!r}",
+            is_error=True,
+            severity=ValidationItemSeverity.ERROR,
+            payload={'plugin': plugin_id},
+        )
+
+    raw_message = entry.get('message')
+    message = str(raw_message) if raw_message is not None else '(validator plugin entry without a message)'
+
+    severity = None
+    raw_severity = entry.get('severity')
+    if raw_severity is not None:
+        try:
+            severity = ValidationItemSeverity(str(raw_severity).strip().lower())
+        except ValueError:
+            logger.warning("Validator plugin '%s' returned an entry with unrecognized severity %r; ignoring it",
+                           plugin_id, raw_severity)
+            message += f" [unrecognized severity {raw_severity!r}]"
+
+    if severity is not None:
+        is_error = severity == ValidationItemSeverity.ERROR
+        if 'is_error' in entry and bool(entry['is_error']) != is_error:
+            logger.warning("Validator plugin '%s' returned an entry with severity %r but is_error=%r; "
+                           "using severity", plugin_id, severity.value, entry['is_error'])
+    else:
+        is_error = bool(entry.get('is_error', False))
+        severity = ValidationItemSeverity.ERROR if is_error else ValidationItemSeverity.INFO
+
+    raw_payload = entry.get('payload')
+    payload = {}
+    if isinstance(raw_payload, dict):
+        payload = {k: v for k, v in raw_payload.items() if k not in _RESERVED_PAYLOAD_KEYS}
+        dropped = sorted(set(raw_payload) & _RESERVED_PAYLOAD_KEYS)
+        if dropped:
+            logger.debug("Validator plugin '%s': ignoring reserved payload keys %s", plugin_id, dropped)
+    elif raw_payload is not None:
+        logger.warning("Validator plugin '%s' returned a non-object payload; ignoring it", plugin_id)
+    payload['plugin'] = plugin_id
+
+    return ValidationReportEntry(
+        section=ValidationReportSection.PLUGIN,
+        message=message,
+        is_error=is_error,
+        severity=severity,
+        payload=payload,
+    )
+
 
 _HARNESS = Path(__file__).parent / '_plugin_harness.py'
 _PLUGIN_TIMEOUT = 120
@@ -216,16 +281,7 @@ class PluginValidator:
             plugin_id = f"{self.module_path}.{self.class_name}"
             entries = data.get('entries') or []
             for entry in entries:
-                if not isinstance(entry, dict):
-                    continue
-                payload = dict(entry.get('payload') or {})
-                payload['plugin'] = plugin_id
-                report.add_entry(ValidationReportEntry(
-                    section=ValidationReportSection.PLUGIN,
-                    message=entry.get('message', ''),
-                    is_error=bool(entry.get('is_error', False)),
-                    payload=payload,
-                ))
+                report.add_entry(_entry_from_wire(entry, plugin_id))
 
             return True if entries else None
 

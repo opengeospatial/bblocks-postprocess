@@ -8,6 +8,8 @@ ogc.bblocks.validation.rdf.RdfValidator._load_graph, which raised
 "TypeError: unhashable type: 'dict'" for any RDF-suffixed transform output
 (.ttl/.jsonld/.rdf) -- see the reported traceback in validate_transform_output.
 """
+from pathlib import Path
+
 import pytest
 
 from ogc.bblocks.validate import _mime_type_for_extension, _resource_not_accessible_item
@@ -177,3 +179,137 @@ def test_jsonld_context_error_item_is_a_failed_non_fatal_report_item(tmp_path):
     assert len(entries) == 1
     assert entries[0].is_error
     assert 'invalid IRI mapping' in entries[0].message
+
+
+# --- Validator plugin entries (wire format -> report entries) ---
+
+def _wire(entry):
+    from ogc.bblocks.validation.plugin import _entry_from_wire
+    return _entry_from_wire(entry, 'mod.Cls')
+
+
+@pytest.mark.parametrize('wire, severity, is_error', [
+    ({'message': 'm'}, 'info', False),
+    ({'message': 'm', 'is_error': False}, 'info', False),
+    ({'message': 'm', 'is_error': True}, 'error', True),
+    ({'message': 'm', 'severity': 'info'}, 'info', False),
+    ({'message': 'm', 'severity': 'Warning'}, 'warning', False),
+    ({'message': 'm', 'severity': 'error'}, 'error', True),
+    # severity wins over is_error when they disagree
+    ({'message': 'm', 'severity': 'warning', 'is_error': True}, 'warning', False),
+    ({'message': 'm', 'severity': 'error', 'is_error': False}, 'error', True),
+])
+def test_plugin_entry_severity_matrix(wire, severity, is_error):
+    entry = _wire(wire)
+    assert entry.severity.value == severity
+    assert entry.is_error is is_error
+    assert entry.section == ValidationReportSection.PLUGIN
+    assert entry.payload['plugin'] == 'mod.Cls'
+    assert not entry.is_global
+
+
+def test_plugin_entry_unknown_severity_falls_back_to_is_error_and_is_noted(caplog):
+    entry = _wire({'message': 'm', 'severity': 'eror', 'is_error': True})
+    assert entry.is_error is True
+    assert entry.severity.value == 'error'
+    assert "'eror'" in entry.message
+    assert 'unrecognized severity' in caplog.text
+
+    entry = _wire({'message': 'm', 'severity': 'bogus'})
+    assert entry.is_error is False
+    assert entry.severity.value == 'info'
+
+
+def test_plugin_entry_payload_is_merged_without_reserved_keys():
+    entry = _wire({'message': 'm', 'payload': {'line': 3, 'subsection': 'S', 'op': 'require-fail',
+                                                'isError': False, 'severity': 'x', 'message': 'y',
+                                                'plugin': 'spoofed'}})
+    assert entry.payload == {'line': 3, 'subsection': 'S', 'plugin': 'mod.Cls'}
+
+
+def test_plugin_entry_message_is_coerced_to_str():
+    assert _wire({'message': 42}).message == '42'
+    assert 'without a message' in _wire({'is_error': True}).message
+    assert 'without a message' in _wire({'message': None}).message
+
+
+def test_plugin_entry_malformed_entry_is_reported_as_error():
+    entry = _wire('not a dict')
+    assert entry.is_error
+    assert 'malformed entry' in entry.message
+    assert "'not a dict'" in entry.message
+
+
+def _plugin_report(tmp_path, monkeypatch):
+    """Run PluginValidator.validate through the real harness subprocess (current interpreter)."""
+    import os
+    import sys
+    from ogc.bblocks.validation import ValidationReportItem
+    from ogc.bblocks.validation.plugin import PluginValidator
+
+    monkeypatch.setenv('PYTHONPATH', str(Path(__file__).parent / 'fixtures'))
+    validator = PluginValidator('validator_fixture_plugin', 'FixtureValidator', [], tmp_path,
+                                ['text/plain'], ['.txt'])
+    venv_bin = validator._venv_dir() / 'bin'
+    venv_bin.mkdir(parents=True)
+    os.symlink(sys.executable, venv_bin / 'python')
+
+    input_file = tmp_path / 'in.txt'
+    input_file.write_text('hello')
+    report = ValidationReportItem(ValidationItemSource(type=ValidationItemSourceType.EXAMPLE))
+    assert validator.validate(input_file, input_file, report, file_format='text/plain') is True
+    return report
+
+
+def test_plugin_validator_harness_round_trip_preserves_severity(tmp_path, monkeypatch):
+    report = _plugin_report(tmp_path, monkeypatch)
+    entries = report.sections[ValidationReportSection.PLUGIN]
+
+    assert [(e.message, e.severity.value, e.is_error) for e in entries] == [
+        ('legacy ok', 'info', False),
+        ('legacy bad', 'error', True),
+        ('just a warning', 'warning', False),
+        ('info', 'info', False),
+    ]
+    assert entries[2].payload == {'subsection': 'Checks', 'line': 3, 'plugin': 'validator_fixture_plugin.FixtureValidator'}
+    assert report.failed  # the legacy error entry
+
+
+def test_plugin_warning_only_result_has_warnings_and_json_severity(tmp_path):
+    from ogc.bblocks.validate import report_to_dict
+    from ogc.bblocks.validation import ValidationReportItem
+
+    report = ValidationReportItem(ValidationItemSource(type=ValidationItemSourceType.EXAMPLE))
+    report.add_entry(_wire({'message': 'careful', 'severity': 'warning'}))
+    report.add_entry(_wire({'message': 'fine'}))
+
+    assert not report.failed
+    assert report.has_warnings
+
+    class _BB:
+        identifier = 'x.y'
+        name = 'Y'
+
+    entries = report_to_dict(_BB(), [report])['items'][0]['sections'][0]['entries']
+    assert [(e['message'], e['severity'], e['isError']) for e in entries] == [
+        ('careful', 'warning', False),
+        ('fine', 'info', False),
+    ]
+    assert all(e['plugin'] == 'mod.Cls' for e in entries)
+
+
+def test_plugin_harness_reports_non_list_return(tmp_path, monkeypatch):
+    import json
+    import subprocess
+    import sys
+    from ogc.bblocks.validation.plugin import _HARNESS
+
+    (tmp_path / 'bad_return_plugin.py').write_text(
+        "class V:\n    file_extensions = ['.txt']\n    def validate(self, meta):\n        return {'message': 'x'}\n")
+    monkeypatch.setenv('PYTHONPATH', str(tmp_path))
+    proc = subprocess.run([sys.executable, str(_HARNESS), json.dumps(
+        {'module': 'bad_return_plugin', 'class_name': 'V', 'input_path': 'x'})],
+        capture_output=True, text=True)
+    data = json.loads(proc.stdout)
+    assert data['entries'] == []
+    assert 'must return a list' in data['stderr']

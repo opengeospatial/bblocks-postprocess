@@ -35,7 +35,16 @@ Harness for plugin validator types. Two modes:
       {"entries": [...], "log": "...", "stderr": null}
 
     Each entry dict:
-      {"message": str, "is_error": bool, "section"?: str, "payload"?: dict}
+      {"message": str,
+       "severity"?: "info" | "warning" | "error",
+       "is_error"?: bool,           # legacy; used only when "severity" is absent
+       "payload"?: dict}
+
+    "severity" wins over "is_error" if both are given and disagree. With only "is_error",
+    the severity is "error" (true) or "info" (false). Only "error" entries fail validation.
+    Entries always appear in the report's Plugin section, grouped by plugin. "payload" keys
+    are merged into the report entry (e.g. "subsection" groups entries under a sub-heading);
+    the reserved keys op, isError, severity, message and plugin are ignored.
 
     Return None or [] from validate() to signal "nothing to report".
 """
@@ -134,7 +143,11 @@ def _validate(meta_json: str) -> None:
 
     entries = result or []
     if not isinstance(entries, list):
-        entries = []
+        print(json.dumps({
+            'entries': [], 'log': log,
+            'stderr': f'validate() must return a list of entry dicts or None, got {type(result).__name__}',
+        }))
+        return
 
     print(json.dumps({'entries': entries, 'log': log, 'stderr': None}))
 
