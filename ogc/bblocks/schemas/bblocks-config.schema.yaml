@@ -100,6 +100,13 @@ properties:
               ontologies:
                 type: boolean
                 description: When true, ontology files from building blocks are uploaded to the triplestore.
+              data:
+                type: boolean
+                description: >
+                  When true, the RDF resources of each building block (entries in `resources` with role `data`
+                  and an RDF format such as text/turtle) are uploaded to the triplestore, merged into a single
+                  named graph per building block (`urn:ogc:bblocks/<id>/data`). Non-RDF data resources are
+                  skipped. Unlike ontologies, no profile entailment is applied.
       - const: null
       - const: false
 

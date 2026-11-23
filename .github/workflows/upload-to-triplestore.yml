@@ -53,6 +53,11 @@ jobs:
           resources = sparql_config.get('resources', {})
           
           ontologies = resources.get('ontologies') is True
+          data = resources.get('data') is True
+          rdf_mimetypes = {
+              'text/turtle', 'application/rdf+xml', 'application/ld+json', 'application/n-triples',
+              'text/n3', 'application/trig', 'application/n-quads', 'application/trix',
+          }
           
           if not sparql_endpoint:
               logging.info('No SPARQL endpoint enabled. Exiting.')
@@ -93,5 +98,25 @@ jobs:
                   graph_uri = f"urn:ogc:bblocks/{bblock['itemIdentifier']}/ontology"
                   newg, entail_artifacts = profile_registry.entail(g, profile_uris)
           
-                  update_vocabs.load_vocab(newg, graph_uri=graph_uri, 
+                  update_vocabs.load_vocab(newg, graph_uri=graph_uri,
                                            graph_store=sparql_endpoint, auth_details=auth_details)
+
+              if data:
+                  # RDF resources with role 'data'; non-RDF ones (CSV, NetCDF...) are skipped
+                  data_sources = [
+                      r for r in bblock.get('resources') or []
+                      if r.get('role') == 'data' and r.get('ref')
+                      and (r.get('format') or '').split(';')[0].strip().lower() in rdf_mimetypes
+                  ]
+                  if data_sources:
+                      logging.debug(f"Loading RDF data for {bblock['itemIdentifier']}")
+                      g = Graph()
+                      for r in data_sources:
+                          # rdflib registers its parsers under these mimetypes, so the declared
+                          # format can be used as-is (and avoids relying on the server's content type)
+                          g.parse(r['ref'], format=r['format'].split(';')[0].strip().lower())
+                      # One graph per bblock, replaced on each load, so removed or changed
+                      # resources don't leave stale triples behind. No profile entailment.
+                      graph_uri = f"urn:ogc:bblocks/{bblock['itemIdentifier']}/data"
+                      update_vocabs.load_vocab(g, graph_uri=graph_uri,
+                                               graph_store=sparql_endpoint, auth_details=auth_details)
