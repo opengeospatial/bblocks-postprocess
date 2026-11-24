@@ -1,3 +1,4 @@
+import functools
 import json
 import logging
 import os
@@ -18,7 +19,7 @@ from jsonschema.protocols import Validator
 from jsonschema.validators import validator_for
 from referencing import Registry, Resource
 from referencing.jsonschema import DRAFT3, DRAFT4, DRAFT202012, specification_with
-from ogc.bblocks.util import load_yaml, is_url, PathOrUrl
+from ogc.bblocks.util import load_yaml, is_url, PathOrUrl, HTTP_TIMEOUT
 from yaml import MarkedYAMLError
 
 from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister
@@ -52,20 +53,34 @@ def validate_json(instance: Any, validator: Validator):
         raise error
 
 
+@functools.lru_cache(maxsize=None)
+def _fetch_remote(uri: str) -> Any:
+    """
+    Downloads and parses a remote schema, once per run: referencing does not keep what it retrieves
+    between lookups, so without this the same document is requested for every $ref that reaches it.
+    The result is shared between callers and must not be modified. Failures are not cached.
+    """
+    response = requests.get(uri, timeout=HTTP_TIMEOUT)
+    response.raise_for_status()
+    return load_yaml(content=response.content)
+
+
 def _make_retriever(bblocks_register: BuildingBlockRegister | None, default_spec):
     """
     Creates a ``retrieve`` callback for a ``referencing.Registry``. Schemas belonging to building blocks
     of the register being processed are served directly from their annotated contents (they might not
     have been committed or published yet); anything else is fetched, and parsed as YAML or JSON.
+    Each document is retrieved only once per callback, and remote ones only once per run.
     """
 
+    @functools.lru_cache(maxsize=None)
     def retrieve(uri: str) -> Resource:
         if bblocks_register and uri in bblocks_register.local_bblock_files:
             bblock_id = bblocks_register.local_bblock_files[uri]
             bblock = bblocks_register.bblocks[bblock_id]
             contents = load_yaml(content=bblock.annotated_schema_contents)
         elif urlsplit(uri).scheme in ('http', 'https'):
-            contents = load_yaml(content=requests.get(uri).content)
+            contents = _fetch_remote(uri)
         else:
             # Otherwise, pass off to urllib and assume utf-8
             with urlopen(uri) as url:

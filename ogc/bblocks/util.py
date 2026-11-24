@@ -25,6 +25,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ogc.bblocks.models import BuildingBlockRegister
 
+# (connect, read) timeouts in seconds, so that a stalled server cannot hang the build
+HTTP_TIMEOUT = (10, 60)
+
 BBLOCKS_REF_ANNOTATION = 'x-bblocks-ref'
 BBLOCKS_URI_PREFIX = 'bblocks://'
 
@@ -73,7 +76,7 @@ def load_file(fn, remote_cache_dir: Path | None = None, binary: bool = False,
     if isinstance(fn, PathOrUrl):
         fn = fn.value
     if isinstance(fn, str) and is_url(fn):
-        r = requests.get(fn, headers=headers)
+        r = requests.get(fn, headers=headers, timeout=HTTP_TIMEOUT)
         r.raise_for_status()
 
         if remote_cache_dir:

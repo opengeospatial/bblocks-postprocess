@@ -35,6 +35,10 @@ on:
         description: |
           Shell code to run before running the bblocks postprocessing (e.g., for setting up custom settings)
         default: ''
+      timeout_minutes:
+        type: number
+        description: Maximum duration of the PR check job, in minutes. Raise it for registers that take long to build.
+        default: 30
     secrets:
       gh_pat:
         description: GitHub Personal Access Token to use when cloning repository-mapping dependencies
@@ -53,6 +57,7 @@ concurrency:
 jobs:
   pr-check:
     runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout_minutes }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7

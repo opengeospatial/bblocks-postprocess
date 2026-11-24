@@ -106,6 +106,10 @@ on:
           default) to auto-resolve based on the ref this workflow is called at (see
           postprocess/action.yml). Set explicitly to override.
         default: ''
+      timeout_minutes:
+        type: number
+        description: Maximum duration of the postprocessing job, in minutes. Raise it for registers that take long to build.
+        default: 30
     secrets:
       sparql_username:
         description: SPARQL Graph Store Protocol user name for push authentication
@@ -130,6 +134,7 @@ concurrency:
 jobs:
   validate-and-process:
     runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout_minutes }}
 
     outputs:
       deploy_mode: ${{ steps.deploy-config.outputs.mode }}

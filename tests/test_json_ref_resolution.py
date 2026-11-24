@@ -9,9 +9,17 @@ from unittest import mock
 
 import pytest
 
-from ogc.bblocks.validation.json_ import get_json_validator, validate_json
+from ogc.bblocks.validation.json_ import _fetch_remote, get_json_validator, validate_json
+from ogc.bblocks.util import HTTP_TIMEOUT
 
 LOCAL_URI = 'https://example.org/local/schema.yaml'
+
+
+@pytest.fixture(autouse=True)
+def _clear_remote_cache():
+    _fetch_remote.cache_clear()
+    yield
+    _fetch_remote.cache_clear()
 
 
 def _register(contents: str):
@@ -47,7 +55,7 @@ def test_remote_yaml_ref_is_fetched():
         validator = get_json_validator({'$ref': 'https://example.org/remote.yaml'}, None, None)
         assert validator.is_valid('x')
         assert not validator.is_valid(1)
-    get.assert_called_with('https://example.org/remote.yaml')
+    get.assert_called_once_with('https://example.org/remote.yaml', timeout=HTTP_TIMEOUT)
 
 
 def test_property_named_dollar_id():
@@ -78,3 +86,24 @@ def test_unresolvable_ref_raises():
     with mock.patch('ogc.bblocks.validation.json_.requests.get', side_effect=IOError('nope')):
         with pytest.raises(Exception):
             validate_json(1, validator)
+
+
+def test_remote_ref_is_fetched_once_across_references_and_validators():
+    url = 'https://example.org/remote.yaml'
+    response = mock.Mock(content=b'type: string\n')
+    schema = {'anyOf': [{'$ref': url}, {'$ref': url}], 'items': {'$ref': url}}
+    with mock.patch('ogc.bblocks.validation.json_.requests.get', return_value=response) as get:
+        for _ in range(2):
+            validator = get_json_validator(schema, None, None)
+            assert validator.is_valid('x')
+            assert not validator.is_valid([1, 2])
+    assert get.call_count == 1
+
+
+def test_failed_remote_fetch_is_not_cached():
+    ref = {'$ref': 'https://example.org/remote.yaml'}
+    response = mock.Mock(content=b'type: string\n')
+    with mock.patch('ogc.bblocks.validation.json_.requests.get', side_effect=[IOError('nope'), response]):
+        with pytest.raises(Exception):
+            validate_json('x', get_json_validator(ref, None, None))
+        validate_json('x', get_json_validator(ref, None, None))
