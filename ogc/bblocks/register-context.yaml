@@ -11,7 +11,6 @@ transform:
       | .schema |= (if length > 0 then to_entries | map({ "prof:hasArtifact": .value , "prof:hasRole": "role:schema", "dct:format": .key, "dct:conformsTo": "https://json-schema.org/draft/2020-12/schema" }) else null end)
       | .openAPIDocument |= if . then { "prof:hasArtifact": . , "prof:hasRole": "role:schema", "dct:format": "application/yaml", "dct:conformsTo": "https://spec.openapis.org/oas/v3.1.0.html" } else null end
       | .ontology |= if . then { "prof:hasArtifact": . , "prof:hasRole": "role:specification", "dct:format": "text/turtle", "dct:conformsTo": "http://www.w3.org/2002/07/owl#Ontology" } else null end
-      | .rdfData |= if length > 0 then map({ "prof:hasArtifact": . , "prof:hasRole": "role:data", "dct:format": "text/turtle" }) else [] end
       | .dependsOn |= if length > 0 then map(if startswith("bblocks://") then . else "bblocks://\(.)" end) else null end
       | .isProfileOf |= if length > 0 then if type == "array" then map(if startswith("bblocks://") then . else "bblocks://\(.)" end) else if startswith("bblocks://") then . else "bblocks://\(.)" end end else null end
       | .isDescribedBy |= if length > 0 then if type == "array" then map(if startswith("bblocks://") then . else "bblocks://\(.)" end) else if startswith("bblocks://") then . else "bblocks://\(.)" end end else null end
@@ -167,9 +166,6 @@ context:
     ontology:
       '@id': prof:hasResource
       '@type': '@id'
-    rdfData:
-      '@id': prof:hasResource
-      '@type': '@id'
     links:
       '@id': prof:hasResource
       '@context': https://opengeospatial.github.io/bblocks/annotated-schemas/ogc-utils/json-link/context.jsonld
@@ -194,6 +190,9 @@ context:
         validation: role:validation
         vocabulary: role:vocabulary
         data: role:data
+        requirements: role:requirements
+        terms: role:terms
+        references: role:references
         ref:
           '@id': 'prof:hasArtifact'
           '@type': '@id'
