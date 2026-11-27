@@ -2,7 +2,6 @@ import dataclasses
 import json
 import logging
 import os
-import re
 from io import StringIO
 from pathlib import Path
 from typing import Sequence
@@ -15,62 +14,20 @@ from pyshacl.errors import ReportableRuntimeError
 from pyshacl.graph_abstraction import DataGraph
 from rdflib import Graph, Literal, Namespace, RDF
 from rdflib.collection import Collection
-from rdflib.plugin import PluginException
 from rdflib.term import Node, URIRef, BNode
 
 from ogc.bblocks.models import BuildingBlock, BuildingBlockRegister
 from ogc.bblocks.validation import Validator, ValidationItemSourceType, ValidationReportSection, ValidationReportEntry, \
     ValidationReportItem, ValidationItemSeverity, uplift
+from ogc.bblocks.validation.graph_cache import load_graph, prefetch
 from ogc.bblocks.validation.uplift import Uplifter
-from ogc.bblocks.util import load_yaml, load_file, PathOrUrl
+from ogc.bblocks.util import load_yaml, PathOrUrl
 
 NATIVE_RDF_LANGS = {
     'application/ld+json': 'jsonld',
     'text/turtle': 'ttl',
     'application/rdf+xml': 'xml',
 }
-
-STRUCTURED_SUFFIX_RE = re.compile(r'\+([a-zA-Z0-9.-]+)$')
-
-# RFC 6839 structured syntax suffix -> rdflib format name. Not the same as
-# rdflib.util.SUFFIX_FORMAT_MAP, which is keyed by file extension (e.g. 'ttl'),
-# not by the suffix name a media type actually uses (e.g. 'turtle').
-STRUCTURED_SUFFIX_FORMATS = {
-    'turtle': 'turtle',
-    'ttl': 'turtle',
-    'json': 'json-ld',
-    'xml': 'xml',
-    'n3': 'n3',
-}
-
-
-def _parse_closure_source(graph: Graph, source: str | Path):
-    """
-    Parse an RDF closure source into `graph`, same as `graph.parse(source)`, but
-    with an extra fallback for media types using an RFC 6839 structured suffix
-    (e.g. `text/anot+turtle`) that rdflib does not recognise and cannot otherwise
-    guess from the source's file extension - such as the OGC's own
-    `defs.opengis.net`, which serves ontologies this way.
-
-    Passing `format=` straight to `graph.parse(source)` is not equivalent: doing
-    so changes the `Accept` header rdflib sends, and some servers respond
-    differently (even erroring) to that header. So on this specific failure the
-    content is fetched (as it would have been fetched anyway) and parsed from
-    the resulting bytes, using the suffix as the format hint instead.
-    """
-    try:
-        graph.parse(source)
-        return
-    except PluginException:
-        if isinstance(source, Path) or not is_url(source):
-            raise
-        contents, content_type = load_file(source, binary=True, return_content_type=True)
-        suffix_match = STRUCTURED_SUFFIX_RE.search(content_type or '')
-        fmt = STRUCTURED_SUFFIX_FORMATS.get(suffix_match.group(1)) if suffix_match else None
-        if not fmt:
-            # No structured suffix we recognise either - nothing more we can do
-            raise
-        graph.parse(data=contents, format=fmt, publicID=str(source))
 
 
 def shacl_validate(g: Graph, s: Graph, ont_graph: Graph | None = None) \
@@ -373,6 +330,7 @@ class RdfValidator(Validator):
         self.shacl_graphs: dict[str, Graph] = {}
         self.shacl_errors: list[str] = []
         inherited_shacl_shapes = register.get_inherited_shacl_shapes(bblock.identifier)
+        prefetch((f for files in inherited_shacl_shapes.values() for f in files), fmt='turtle')
         for shacl_bblock in list(inherited_shacl_shapes.keys()):
             bblock_shacl_files = set()
             for shacl_file in inherited_shacl_shapes[shacl_bblock]:
@@ -381,7 +339,7 @@ class RdfValidator(Validator):
                     shacl_file = str(os.path.relpath(bblock.files_path / shacl_file))
                 bblock_shacl_files.add(shacl_file)
                 try:
-                    self.shacl_graphs[shacl_file] = Graph().parse(shacl_file, format='turtle')
+                    self.shacl_graphs[shacl_file] = load_graph(Graph(), shacl_file, fmt='turtle')
                 except HTTPError as e:
                     self.shacl_errors.append(f"Error retrieving {e.url}: {e}")
                 except Exception as e:
@@ -405,15 +363,15 @@ class RdfValidator(Validator):
         if self._shacl_closures_loaded:
             return
         self._shacl_closures_loaded = True
-        for closure_source in self.register.get_inherited_closure_sources(self.bblock.identifier):
+        closure_sources = self.register.get_inherited_closure_sources(self.bblock.identifier)
+        prefetch(closure_sources)
+        for closure_source in closure_sources:
             try:
-                # No format= hint: sources are a mix of declared SHACL closures, ontologies
+                # No format hint: sources are a mix of declared SHACL closures, ontologies
                 # (which may be RDF/XML, e.g. '.owl') and RDF data resources, so let rdflib
-                # guess from the file extension / response Content-Type instead of assuming
-                # Turtle, same as the snippet-declared closures below. _parse_closure_source
-                # additionally falls back to a structured media type suffix (e.g.
-                # 'text/anot+turtle') when rdflib doesn't recognise the plain Content-Type.
-                _parse_closure_source(self.closure_graph, closure_source)
+                # guess from the response Content-Type / file extension instead of assuming
+                # Turtle, same as the snippet-declared closures below.
+                load_graph(self.closure_graph, closure_source)
                 self.added_shacl_closures.append(closure_source)
                 self.closure_graph_sources.add(closure_source)
             except HTTPError as e:
@@ -732,7 +690,7 @@ class RdfValidator(Validator):
                     if additional_shacl_closures:
                         for additional_shacl_closure in additional_shacl_closures:
                             if additional_shacl_closure not in self.closure_graph_sources:
-                                ont_graph.parse(additional_shacl_closure)
+                                load_graph(ont_graph, additional_shacl_closure)
                     if self.closure_graph:
                         copy_triples(self.closure_graph, ont_graph)
 
